@@ -70,6 +70,8 @@ internal sealed class RemotePlayerView
         if (cam != null) _label.rotation = Quaternion.LookRotation(_label.position - cam.transform.position);
     }
 
+    public Vector3 Position => _root != null ? _root.transform.position : Vector3.zero;
+
     public void Destroy()
     {
         if (_root != null) Object.Destroy(_root);

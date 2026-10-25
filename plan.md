@@ -7,8 +7,8 @@ Implementation status belongs in [sync-progress.md](sync-progress.md). Source ev
 ## Current position
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
-- Current implementation: two-player LAN host/join and remote capsule position/yaw/presence. Shared-world implementation has not started.
-- All phases below are **Not started**. No numbered phase has been audited or expanded into implementation substeps yet.
+- Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host-ordered world change pipeline (exercised only by diagnostic markers), and remote capsule position/yaw/presence. No game world state is shared yet.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Auditing**. Phases 3–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -64,6 +64,75 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** session/consistency register; player/workshop singleton-state risks; source/build coverage ledger.
 
+**Status: Complete.** Focused audit: [docs/audit/phase-1.md](docs/audit/phase-1.md). Owner decisions for this phase (October 25, 2026): the host orders all world changes; the guest waits for the host's confirmation; a different mod/protocol/game build is refused while DLC or part catalog differences only warn; players stay labelled Host/Client with a hidden install ID.
+
+#### 1a. Focused audit and owner decisions
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** phase evidence and contracts recorded; SS-002–SS-041 subset, PW-001–003/015, CP-024/025/028 (see the audit's factor table).
+- **Dependencies and decisions:** the four phase 1 owner answers above.
+- **Scope and evidence:** transport source; native `StartNewGame`, `ResetFreebuild`, pause, `SaveLoadSystem` statics; identity declarations (`PartInstance`, `ComputerSave`, `BenchSlot`); `boot.config`.
+- **Work:** audit document; questions asked before any dependent code.
+- **Acceptance:** every phase 1 factor has a disposition or named owner phase.
+- **Completion evidence:** [phase-1.md](docs/audit/phase-1.md).
+
+#### 1b. Join handshake and compatibility
+
+- **Status:** Complete (loopback + one local two-instance run).
+- **Outcome and audit IDs:** each peer sends `PeerIdentity` (install ID, mod, protocol, game version + build GUID, DLC list, part catalog hash/count); incompatible joins are refused with a readable reason, warnings are shown on the in-game status line. SS-002, SS-003, SS-004, SS-012, CP-028.
+- **Dependencies and decisions:** mismatch policy decision.
+- **Scope and evidence:** [Compatibility.cs](src/PCBS2Coop.Network/Compatibility.cs), [CoopSession.cs](src/PCBS2Coop.Network/CoopSession.cs), [GameInfo.cs](src/PCBS2Coop.Plugin/GameInfo.cs). Build GUID from `PCBS2_Data/boot.config`; DLC from `DlcManagerAssetBundles.Instance.LoadedDlcs`; catalog from `PartsDatabase.s_instance.m_parts`.
+- **Work:** handshake in the connect request, `Welcome` from host, guest double-checks; install ID in BepInEx config.
+- **Acceptance:** identical installs join without warnings; different build refused with reason on the guest; DLC difference joins with warnings on both; third player refused with reason.
+- **Completion evidence:** network suite (90/90) and run R1. Different-build and DLC cases only in loopback (no second install available).
+
+#### 1c. Host-ordered change pipeline
+
+- **Status:** Complete (fault-tested in memory and over loopback; exercised in game with diagnostic markers).
+- **Outcome and audit IDs:** `WorldSync`: operation IDs, host validation, revisions per world generation, reliable ordered delivery, duplicate/out-of-order handling with remembered outcomes, stale generation refusal/drop, gap and change-hash divergence detection, size limits. SS-011, SS-016, SS-018, SS-020, SS-021, SS-025 (partial), SS-038, SS-039 (partial), SS-041.
+- **Dependencies and decisions:** host decides; wait for host OK.
+- **Scope and evidence:** [WorldSync.cs](src/PCBS2Coop.Network/WorldSync.cs), [Protocol.cs](src/PCBS2Coop.Network/Protocol.cs).
+- **Work:** pipeline, message types `Welcome`/`WorldReset`/`Command`/`Mutation`/`CommandResult`, diagnostic marker command.
+- **Acceptance:** concurrent requests apply in one order on both peers; invalid/unknown/oversize/truncated/duplicate/stale requests change nothing and report once; lost or corrupted changes are detected.
+- **Completion evidence:** network suite; run R1 (identical revision 10 and hash on both peers, invalid marker refused).
+
+#### 1d. Object and player identity primitives
+
+- **Status:** Complete (unit-tested; no game objects bound yet by design).
+- **Outcome and audit IDs:** `PlayerId`, `ActorSlot`, `OperationId`, `NetObjectId`, `NetObjectIdAllocator`, `NetObjectRegistry<T>` with tombstones. SS-012, SS-013, SS-014, SS-024 (foundation).
+- **Dependencies and decisions:** none beyond 1a.
+- **Scope and evidence:** [Identity.cs](src/PCBS2Coop.Network/Identity.cs), [ObjectRegistry.cs](src/PCBS2Coop.Network/ObjectRegistry.cs). Game data has no instance IDs for parts/PCs/benches (audit).
+- **Work:** types and registry. Binding PCs/parts/benches is phase 3/4; the allocator's next value must be saved with co-op worlds (phase 2/8).
+- **Acceptance:** IDs never reused; deleted IDs resolve as retired; world reset clears.
+- **Completion evidence:** network suite.
+
+#### 1e. Plugin integration on the main thread
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** session/world wired into `CoopController`; host starts a generation on entering the workshop (provisional until phase 2); position validation; out-of-sync and compatibility warnings on the status line; dialog waits for the full handshake. SS-011, SS-027, SS-038, SS-040.
+- **Dependencies and decisions:** 1b–1d.
+- **Scope and evidence:** [CoopController.cs](src/PCBS2Coop.Plugin/CoopController.cs), [CoopRunner.cs](src/PCBS2Coop.Plugin/CoopRunner.cs), [WorldHandlers.cs](src/PCBS2Coop.Plugin/WorldHandlers.cs), [MultiplayerMenu.cs](src/PCBS2Coop.Plugin/MultiplayerMenu.cs).
+- **Work:** as above. Contract: `Apply` makes only the change; remote activity is never written into `GameController`/`WorkshopController` singleton fields.
+- **Acceptance:** plugin builds against real interop; existing Host/Join/capsule flow unchanged.
+- **Completion evidence:** Release build; run R1.
+
+#### 1f. Diagnostics and controlled test setup
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** self test isolates saves in a disposable folder and only auto-accepts overwrite prompts there; exchanges markers and logs a comparable world summary; opt-in census (`PCBS2COOP_DIAG=1` or self test) records identity, save paths, load/pause flags, bench slots and scene roots. SS-040; test-safety finding on the shared `Saves` folder.
+- **Dependencies and decisions:** working rule 5 (owner's saves untouched).
+- **Scope and evidence:** [AutoTest.cs](src/PCBS2Coop.Plugin/AutoTest.cs), [Diagnostics.cs](src/PCBS2Coop.Plugin/Diagnostics.cs).
+- **Work:** as above.
+- **Acceptance:** owner's save files unchanged by a self-test run; both peers log the same world summary.
+- **Completion evidence:** run R1 (save hashes identical; census files written).
+
+#### 1g. Phase validation
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** exit criteria checked with recorded evidence.
+- **Acceptance:** network suite passes; two-instance run passes on both peers; capsule visible to the other player; owner saves untouched.
+- **Completion evidence:** network suite 90/90; runs R1 and R2 passed on both peers with identical world summaries; owner saves unchanged. Closed October 25, 2026 when the owner approved moving to phase 2. Carried forward: the visual check that the capsule renders (R2 logs show it spawned 1.3–2.7 m away but just outside the screenshot frame) moves to phase 2's first in-game run, which aims the camera at it; a two-machine run stays recommended and is owned by phase 2 validation. Next phase: phase 2.
+
 ### 2. One shared Free Build session and world lifecycle
 
 **Purpose:** place players into the same logical Free Build world safely.
@@ -73,6 +142,8 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 **Exit:** both peers load the selected baseline and agree on world identity/readiness; one player's UI does not seize the other's controls; stale-world traffic is rejected; failed admission or departure leaves usable menus/worlds according to policy; solo saves are preserved.
 
 **Audit starting points:** SS lifecycle/readiness/snapshots; PW scenes/doors/state; CP mode/save boundaries.
+
+**Status: Auditing.** Focused audit: [docs/audit/phase-2.md](docs/audit/phase-2.md).
 
 ### 3. PCs, inventory, carrying and benches
 

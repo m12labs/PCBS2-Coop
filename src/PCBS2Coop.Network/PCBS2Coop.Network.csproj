@@ -2,6 +2,7 @@
   <PropertyGroup><TargetFramework>net6.0</TargetFramework></PropertyGroup>
   <ItemGroup>
     <PackageReference Include="LiteNetLib" Version="2.1.4" />
+    <InternalsVisibleTo Include="PCBS2Coop.Network.Tests" />
   </ItemGroup>
   <Target Name="GenerateModVersion" BeforeTargets="BeforeCompile">
     <WriteLinesToFile File="$(IntermediateOutputPath)ModVersion.g.cs"

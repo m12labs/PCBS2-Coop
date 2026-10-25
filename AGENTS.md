@@ -6,9 +6,9 @@ PCBS2 Coop is a BepInEx 6 IL2CPP multiplayer mod for PC Building Simulator 2 (Un
 
 | Path | What it is |
 | --- | --- |
-| `src/PCBS2Coop.Network` | Unity-free session layer over LiteNetLib 2.1.4: `CoopSession` (one host, one client), `Protocol` (`PlayerState`, connection key = mod version) |
-| `src/PCBS2Coop.Plugin` | BepInEx plugin (`PCBS2Coop.dll`): `CoopRunner` main-thread driver, `MultiplayerMenu` + `CoopDialog` main-menu UI, `CoopController` session/remote view, `RemotePlayerView` capsule + name tag, `AutoTest` |
-| `tests/PCBS2Coop.Network.Tests` | Loopback acceptance test for the network layer (`dotnet run`) |
+| `src/PCBS2Coop.Network` | Unity-free layer over LiteNetLib 2.1.4: `CoopSession` (one host, one guest, identity handshake), `Compatibility` (refuse mod/protocol/game build, warn DLC/catalog), `WorldSync` (host-ordered world changes), `Identity` + `ObjectRegistry` (player/operation/object IDs), `Protocol` (message types, limits) |
+| `src/PCBS2Coop.Plugin` | BepInEx plugin (`PCBS2Coop.dll`): `CoopRunner` main-thread driver, `MultiplayerMenu` + `CoopDialog` main-menu UI, `CoopController` session/world/remote view, `GameInfo` local identity, `WorldHandlers`, `RemotePlayerView` capsule + name tag, `Diagnostics` census, `AutoTest` |
+| `tests/PCBS2Coop.Network.Tests` | Network acceptance tests (`dotnet run`): identity/compatibility, in-memory fault injection for `WorldSync`, UDP loopback sessions |
 | `scripts/Install-Loader.ps1` / `Uninstall-Loader.ps1` | Install BepInEx be.791 into the game with a rollback manifest in `.local/` |
 | `il2cpp-decompile.md`, `tools/decompile/` | How the decompiled workspace in `artiffacts/` was produced |
 | `artiffacts/` (ignored) | Decompiled game, ISIL, Ghidra project, BepInEx download |
@@ -24,7 +24,7 @@ dotnet build PCBS2Coop.sln -c Release                           # builds and cop
 
 ### Two-instance self test
 
-Set `PCBS2COOP_AUTOTEST=host` for one launch of `PCBS2.exe` and `=join` for a second. Each instance clicks its button with real pointer events, connects on 127.0.0.1:7777, auto-accepts the "New Game" overwrite prompt, loads Free Build, the client walks a circle, and both save screenshots to `<GameDir>\BepInEx\PCBS2Coop-diag\`. Logs: `BepInEx\LogOutput.log` (first instance) and `LogOutput.1.log` (second). Normal launches never run this.
+Set `PCBS2COOP_AUTOTEST=host` for one launch of `PCBS2.exe` and `=join` for a second (working directory `<GameDir>`). Each instance first redirects the game's save folder to a fresh `BepInEx\PCBS2Coop-diag\saves-<role>` (the owner's `Saves` folder is never used; an overwrite prompt is only auto-accepted while that redirect holds), clicks its button with real pointer events, connects on 127.0.0.1:7777, loads Free Build, and the client walks a circle. Once the other player's capsule is shown, each side submits five diagnostic markers (the guest also one invalid marker) and logs `AUTOTEST: world summary …` and `AUTOTEST: PASSED/FAILED`. Both summaries must match (generation, revision, hash, marker order). Census files and screenshots go to `<GameDir>\BepInEx\PCBS2Coop-diag\`. Logs: `BepInEx\LogOutput.log` (first instance) and `LogOutput.1.log` (second). Normal launches never run this. `PCBS2COOP_DIAG=1` writes census files without the self test.
 
 ## Findings the code depends on
 
@@ -35,6 +35,18 @@ Set `PCBS2COOP_AUTOTEST=host` for one launch of `PCBS2.exe` and `=join` for a se
 - HDRP: Unity's default primitive material doesn't render. Copy an `HDRP/Lit` material already in the scene.
 - Unity 6 interop `CoreModule` exports its own `NullableAttribute`, so the plugin project builds with `<Nullable>disable</Nullable>`. Lambdas taking parameters from nullable-annotated Network events need explicit parameter types.
 - `Input.inputString` is stripped. TMP input fields work through the game's `InputModule`.
+- Saves: `SaveLoadSystem.s_saveDir` is the relative path `Saves`, i.e. `<GameDir>\Saves`, shared by every local instance. Redirecting `s_saveDir` on the main menu also redirects PlayFree's existing-save check (run R1).
+- Identity: `Application.version` is just `0.1`; the build GUID comes from `PCBS2_Data\boot.config`. The part catalog (`PartsDatabase.s_instance.m_parts`, 2816 parts) is already loaded on the main menu. Parts, PCs and benches have no instance IDs in game data; the mod assigns `NetObjectId`s.
+- The game has its own global type named `Compatibility`; use `PCBS2Coop.Network.Compatibility` in the plugin.
+- LiteNetLib 2.1.4 throws `InvalidOperationException` on short reads; parsers use `Protocol.IsReadError`. Don't use `PutBytesWithLength`; use `Protocol.WriteBlob`/`ReadBlob`.
+
+## Synchronization contracts (phase 1)
+
+- The host orders every world change. Guests submit requests through `Session.World.Submit`; a change takes effect on both peers only when the host's confirmed `Mutation` arrives. Register one `ICommandHandler` per command type in `CoopController.OnWorldCreated`.
+- `Validate` runs on the host only. `Apply` runs on both peers in revision order on the main thread; it must make the change only, never trigger game paths that submit another change.
+- A world generation is one incarnation of the world (host starts it with `BeginGeneration`, never from inside `Apply`). Requests/changes from another generation are refused or dropped.
+- Remote players' activity is per-actor data. Never write it into `GameController`/`WorkshopController` singleton fields.
+- Details and evidence: `docs/audit/phase-1.md`.
 
 ## Working rules
 

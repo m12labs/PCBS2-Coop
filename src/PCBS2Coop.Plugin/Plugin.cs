@@ -18,6 +18,7 @@ public sealed class Plugin : BasePlugin
     public override void Load()
     {
         Logger = Log;
+        GameInfo.Init(Config);
         ClassInjector.RegisterTypeInIl2Cpp<CoopRunner>();
         var host = new GameObject("PCBS2Coop");
         Object.DontDestroyOnLoad(host);

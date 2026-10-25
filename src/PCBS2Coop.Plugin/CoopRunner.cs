@@ -45,6 +45,7 @@ public sealed class CoopRunner : MonoBehaviour
             if (scene == MenuScene && Scene != "" && Scene != "Logos") Coop.Stop("Returned to the main menu.");
             Scene = scene;
             Menu = null;
+            if (scene == WorkshopScene) Coop.OnHostWorldEntered(scene);
         }
 
         if (scene == MenuScene && (Menu == null || !Menu.IsAlive)) Menu = MultiplayerMenu.TryBuild(Coop);
@@ -66,9 +67,9 @@ public sealed class CoopRunner : MonoBehaviour
         _status.gameObject.SetActive(show);
         if (!show) return;
         var s = Coop.Session;
-        _status.text = s.Role == Role.Host
-            ? (s.HasPeer ? $"Co-op host · port {s.Port} · Client connected ({s.PingMs} ms)" : $"Co-op host · port {s.Port} · waiting for Client")
-            : (s.HasPeer ? $"Co-op client · connected to Host ({s.PingMs} ms)" : "Co-op client · disconnected");
+        _status.text = (s.Role == Role.Host
+            ? (s.IsJoined ? $"Co-op host · port {s.Port} · Client connected ({s.PingMs} ms)" : $"Co-op host · port {s.Port} · waiting for Client")
+            : (s.IsJoined ? $"Co-op client · connected to Host ({s.PingMs} ms)" : "Co-op client · disconnected")) + Coop.ProblemSummary;
     }
 
     private TextMeshProUGUI CreateStatus()
@@ -87,7 +88,7 @@ public sealed class CoopRunner : MonoBehaviour
         var rt = text.rectTransform;
         rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0, 1);
         rt.anchoredPosition = new Vector2(16, -12);
-        rt.sizeDelta = new Vector2(900, 40);
+        rt.sizeDelta = new Vector2(1600, 40);
         text.color = Color.white;
         text.outlineWidth = 0.2f;
         text.outlineColor = Color.black;

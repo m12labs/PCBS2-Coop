@@ -235,7 +235,7 @@ internal sealed class CoopDialog
     public void Update()
     {
         if (!IsOpen || !_waiting) return;
-        if (_coop.Session.HasPeer)
+        if (_coop.Session.IsJoined)
         {
             Close();
             StartFreeBuild();
