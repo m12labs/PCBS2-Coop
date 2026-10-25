@@ -1,6 +1,6 @@
 # Phase 2 focused audit: one shared Free Build session and world lifecycle
 
-October 25, 2026. Starting point: phase 1 complete (commit `9f6fa54`), working tree clean. Game build GUID `92d05e5a20c14d41aacbb9c6a804d5a3`, `Application.version` 0.1, part catalog 2816 parts (hash `822939a6afd9935b`). Evidence labels: **N** native ISIL, **D** decompiled declarations, **R** observed in the running game (probe run P1 below), **I** inference.
+October 25, 2026. Starting point: phase 1 complete (commit `cfe7e0a`, ID after the path-removal history rewrite), working tree clean. Game build GUID `92d05e5a20c14d41aacbb9c6a804d5a3`, `Application.version` 0.1, part catalog 2816 parts (hash `822939a6afd9935b`). Evidence labels: **N** native ISIL, **D** decompiled declarations, **R** observed in the running game (probe run P1 below), **I** inference.
 
 ## Before this phase
 

@@ -6,7 +6,7 @@ Evidence labels follow the [audit README](README.md): **M** mod source, **D** de
 
 ## Starting state (M)
 
-- Git: the baseline (proof of concept, decompile tooling, broad audit and roadmap) is commits `9e7d407` and `2505667`; no unrelated edits found. Phase 1 changes are on top of them, uncommitted.
+- Git: the baseline (proof of concept, decompile tooling, broad audit and roadmap) is commits `c0190af` and `bb04fa1` (IDs after the October 25, 2026 history rewrite that removed local paths); no unrelated edits found. Phase 1 changes are on top of them, uncommitted.
 - Transport: [CoopSession](../../src/PCBS2Coop.Network/CoopSession.cs) one host, one IPv4 guest, LiteNetLib 2.1.4. Before this phase the only message was `PlayerState` (sequenced), and the connection key was the mod version string.
 - Plugin: `CoopRunner.Update` polls on the main thread; the remote capsule hides after two seconds without a state; returning to `Main_Menu` stops the session.
 - Test setup: the opt-in two-instance self test auto-accepted the "New Game" overwrite prompt **in the game's real save folder** (see [Saves](#saves-and-test-isolation)).
