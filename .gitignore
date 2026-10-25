@@ -1,0 +1,24 @@
+# Generated game inputs, recovered code, tools, databases, and audit inventories.
+/artiffacts/
+/artifacts/
+
+# .NET build and test output.
+**/bin/
+**/obj/
+/TestResults/
+*.binlog
+*.trx
+
+# Local dependencies, loader rollback records, and temporary audit helpers.
+/.local/
+
+# IDE state, diagnostics, and editor leftovers.
+/.vs/
+*.user
+*.suo
+*.sln.docstates
+*.log
+*.pdb
+*.dmp
+*.tmp
+*~

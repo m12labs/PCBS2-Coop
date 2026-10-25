@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>PCBS2Coop</AssemblyName>
+    <RootNamespace>PCBS2Coop</RootNamespace>
+    <!-- Unity 6 interop CoreModule exports its own NullableAttribute; nullable metadata cannot be emitted here. -->
+    <Nullable>disable</Nullable>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PCBS2Coop.Network\PCBS2Coop.Network.csproj" />
+    <Reference Include="BepInEx.Core"><HintPath>$(GameDir)\BepInEx\core\BepInEx.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(GameDir)\BepInEx\core\BepInEx.Unity.IL2CPP.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(GameDir)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Common"><HintPath>$(GameDir)\BepInEx\core\Il2CppInterop.Common.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(GameDir)\BepInEx\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="$(GameDir)\BepInEx\interop\*.dll"><Private>false</Private></Reference>
+  </ItemGroup>
+  <Target Name="CheckGameBindings" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(GameDir)\BepInEx\interop\Assembly-CSharp.dll')" Text="Install BepInEx (scripts/Install-Loader.ps1) and launch the game once to generate BepInEx/interop. Do not use decompilation dummy DLLs." />
+  </Target>
+  <!-- Copy the plugin into the game after each build. Skipped (with a warning) while the game is running. -->
+  <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(DeployToGame)' != 'false'">
+    <PropertyGroup><PluginDir>$(GameDir)\BepInEx\plugins\PCBS2Coop</PluginDir></PropertyGroup>
+    <ItemGroup>
+      <DeployFiles Include="$(OutDir)PCBS2Coop.dll;$(OutDir)PCBS2Coop.Network.dll;$(OutDir)LiteNetLib.dll" />
+    </ItemGroup>
+    <MakeDir Directories="$(PluginDir)" />
+    <Copy SourceFiles="@(DeployFiles)" DestinationFolder="$(PluginDir)" Retries="0" ContinueOnError="WarnAndContinue" />
+    <Message Importance="high" Text="Deployed to $(PluginDir)" />
+  </Target>
+</Project>

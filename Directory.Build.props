@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <!-- Single version for the plugin, network assembly and handshake. -->
+    <Version>0.1.0</Version>
+    <GameDir Condition="'$(GameDir)' == ''">$(PCBS2_GAME_DIR)</GameDir>
+  </PropertyGroup>
+</Project>

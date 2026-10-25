@@ -1,2 +1,4 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Normalize repository text consistently across Windows tools and Git.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf

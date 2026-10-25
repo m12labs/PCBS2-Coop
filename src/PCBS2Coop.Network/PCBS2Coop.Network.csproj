@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net6.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="LiteNetLib" Version="2.1.4" />
+  </ItemGroup>
+  <Target Name="GenerateModVersion" BeforeTargets="BeforeCompile">
+    <WriteLinesToFile File="$(IntermediateOutputPath)ModVersion.g.cs"
+                      Lines="namespace PCBS2Coop.Network { public static class ModVersion { public const string Value = &quot;$(Version)&quot;%3B } }"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)ModVersion.g.cs" />
+    </ItemGroup>
+  </Target>
+</Project>
