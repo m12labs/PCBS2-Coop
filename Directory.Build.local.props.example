@@ -1,0 +1,13 @@
+<Project>
+  <!--
+    Copy this file to Directory.Build.local.props (git-ignored) and fill in your own folders.
+    The build and the scripts read it; environment variables PCBS2_GAME_DIR, GHIDRA_HOME and CPP2IL_PATH work too.
+  -->
+  <PropertyGroup>
+    <!-- Folder that contains PCBS2.exe and GameAssembly.dll. -->
+    <GameDir>X:\path\to\PCBS2</GameDir>
+    <!-- Only for tools/decompile: Ghidra installation and Cpp2IL executable. -->
+    <GhidraHome></GhidraHome>
+    <Cpp2ILPath></Cpp2ILPath>
+  </PropertyGroup>
+</Project>

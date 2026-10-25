@@ -10,7 +10,7 @@ Run from the repository root with PowerShell, .NET 8 or later, Java 21, [Cpp2IL]
 .\tools\decompile\Invoke-Decompile.ps1
 ```
 
-The initial run uses the Cpp2IL executable already copied into the output directory. On another machine, provide `-Cpp2ILPath`, `-GamePath`, and `-GhidraHome`. The validated Cpp2IL version is `2022.1.0-pre-release.21`, commit `58fc404ac503f4e512055cafc48c03088fc6e224`; Ghidra is `12.0.1`.
+The initial run uses the Cpp2IL executable already copied into the output directory. On another machine, provide `-Cpp2ILPath`, `-GamePath`, and `-GhidraHome`, or set them once in the git-ignored `Directory.Build.local.props` (`Cpp2ILPath`, `GameDir`, `GhidraHome`) or as `CPP2IL_PATH`, `PCBS2_GAME_DIR`, `GHIDRA_HOME`. The validated Cpp2IL version is `2022.1.0-pre-release.21`, commit `58fc404ac503f4e512055cafc48c03088fc6e224`; Ghidra is `12.0.1`.
 
 Use `-SkipMetadata` to reuse the structural and instruction exports while rerunning native analysis. Use `-SkipNative` to regenerate those exports without Ghidra. A changed game binary or metadata requires a fresh ignored `-OutputRoot`; the script rejects mixing builds in an existing Ghidra project.
 

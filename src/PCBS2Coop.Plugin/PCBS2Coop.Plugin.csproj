@@ -17,6 +17,7 @@
     <Reference Include="$(GameDir)\BepInEx\interop\*.dll"><Private>false</Private></Reference>
   </ItemGroup>
   <Target Name="CheckGameBindings" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(GameDir)' == ''" Text="Set the game folder: copy Directory.Build.local.props.example to Directory.Build.local.props and fill in GameDir, or set the PCBS2_GAME_DIR environment variable, or build with -p:GameDir=..." />
     <Error Condition="!Exists('$(GameDir)\BepInEx\interop\Assembly-CSharp.dll')" Text="Install BepInEx (scripts/Install-Loader.ps1) and launch the game once to generate BepInEx/interop. Do not use decompilation dummy DLLs." />
   </Target>
   <!-- Copy the plugin into the game after each build. Skipped (with a warning) while the game is running. -->

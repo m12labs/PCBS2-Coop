@@ -1,9 +1,12 @@
 param(
-    [string]$GamePath = $env:PCBS2_GAME_DIR,
+    [string]$GamePath,
     [string]$OutputRoot = (Join-Path $PSScriptRoot '..\..\artiffacts\decompiled'),
-    [string]$GhidraHome = $env:GHIDRA_HOME
+    [string]$GhidraHome
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\..\scripts\LocalPaths.ps1')
+$GamePath = Resolve-LocalPath $GamePath -EnvName 'PCBS2_GAME_DIR' -PropName 'GameDir' -What 'game folder'
+$GhidraHome = Resolve-LocalPath $GhidraHome -EnvName 'GHIDRA_HOME' -PropName 'GhidraHome' -What 'Ghidra folder'
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $GamePath = [IO.Path]::GetFullPath($GamePath).TrimEnd('\')
 $indexRoot = Join-Path $OutputRoot 'indexes'

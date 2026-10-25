@@ -1,6 +1,8 @@
 [CmdletBinding()]
-param([string]$GameDir = $env:PCBS2_GAME_DIR)
+param([string]$GameDir)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'LocalPaths.ps1')
+$GameDir = Resolve-LocalPath $GameDir -EnvName 'PCBS2_GAME_DIR' -PropName 'GameDir' -What 'game folder'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $GameDir = (Resolve-Path -LiteralPath $GameDir).Path
 if (!(Test-Path -LiteralPath (Join-Path $GameDir 'GameAssembly.dll'))) { throw 'Expected an IL2CPP game directory.' }

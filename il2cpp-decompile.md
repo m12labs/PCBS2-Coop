@@ -389,7 +389,7 @@ The reusable entry point is:
 .\tools\decompile\Invoke-Decompile.ps1
 ```
 
-For a new machine, provide the local game path, official Cpp2IL executable, and Ghidra installation:
+For a new machine, provide the local game path, official Cpp2IL executable, and Ghidra installation (or set them in the git-ignored `Directory.Build.local.props`; see `Directory.Build.local.props.example`):
 
 ```powershell
 $parameters = @{

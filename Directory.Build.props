@@ -1,4 +1,6 @@
 <Project>
+  <!-- Machine-specific folders live in the git-ignored Directory.Build.local.props (see the .example next to it). -->
+  <Import Project="$(MSBuildThisFileDirectory)Directory.Build.local.props" Condition="Exists('$(MSBuildThisFileDirectory)Directory.Build.local.props')" />
   <PropertyGroup>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -9,6 +11,7 @@
       when this matches exactly. Each bump adds one: 0.1, 0.2, 0.3, 0.4... See AGENTS.md "Versioning".
     -->
     <Version>0.3</Version>
+    <!-- Game folder: -p:GameDir=..., else Directory.Build.local.props, else the PCBS2_GAME_DIR environment variable. -->
     <GameDir Condition="'$(GameDir)' == ''">$(PCBS2_GAME_DIR)</GameDir>
   </PropertyGroup>
 </Project>

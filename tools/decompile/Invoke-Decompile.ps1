@@ -1,12 +1,16 @@
 param(
-    [string]$GamePath = $env:PCBS2_GAME_DIR,
+    [string]$GamePath,
     [string]$OutputRoot = (Join-Path $PSScriptRoot '..\..\artiffacts\decompiled'),
     [string]$Cpp2ILPath,
-    [string]$GhidraHome = $env:GHIDRA_HOME,
+    [string]$GhidraHome,
     [switch]$SkipMetadata,
     [switch]$SkipNative
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\..\scripts\LocalPaths.ps1')
+$GamePath = Resolve-LocalPath $GamePath -EnvName 'PCBS2_GAME_DIR' -PropName 'GameDir' -What 'game folder'
+$GhidraHome = Resolve-LocalPath $GhidraHome -EnvName 'GHIDRA_HOME' -PropName 'GhidraHome' -What 'Ghidra folder' -Optional:$SkipNative
+$Cpp2ILPath = Resolve-LocalPath $Cpp2ILPath -EnvName 'CPP2IL_PATH' -PropName 'Cpp2ILPath' -What 'Cpp2IL path' -Optional
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $binary = Join-Path $GamePath 'GameAssembly.dll'
 $metadata = Join-Path $GamePath 'PCBS2_Data\il2cpp_data\Metadata\global-metadata.dat'

@@ -12,6 +12,9 @@
 # Local dependencies, loader rollback records, and temporary audit helpers.
 /.local/
 
+# Machine-specific folders (game, Ghidra, Cpp2IL). Copy Directory.Build.local.props.example.
+/Directory.Build.local.props
+
 # IDE state, diagnostics, and editor leftovers.
 /.vs/
 *.user
