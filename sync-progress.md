@@ -1,10 +1,12 @@
 # PCBS2 Co-op synchronization progress
 
+**October 25, 2026 — phase 2 complete.** One shared Free Build world: the host loads a co-op world (New world / Continue) from `Saves\Coop`; a guest can drop in at any time and loads a snapshot of the host's current world, with changes made during its load held and applied once; host saves are copied to the guest; host or guest leaving is handled; nobody's pause stops the session. Evidence: [phase 2 audit](docs/audit/phase-2.md#runtime-evidence) (network suite 142/142; two-instance runs S1–S3). The world is shared at join time only: live edits to parts, PCs and benches are not synchronized yet (phase 3 onward).
+
 **October 25, 2026 — phase 1 complete.** Foundations only: join handshake with game/content identity, host-ordered world change pipeline with generations/revisions/duplicate and divergence handling, identity primitives, diagnostics and a save-isolated self test. Evidence: [phase 1 audit](docs/audit/phase-1.md#runtime-evidence) (network suite 90/90; local two-instance runs R1 and R2). No game world state (parts, PCs, saves) is shared yet. The audit-pass notes below are kept as written.
 
 **October 25, 2026 — audit only.** The broad static sync audit is documented under [docs/audit](docs/audit/README.md). Three Luna subagents covered hardware/building, screens/software/simulation, and career/economy/persistence. The tables use Postal-style checkmarks. The implementation order and phase workflow are in [plan.md](plan.md). No gameplay or networking implementation changed.
 
-The mod remains the two-player LAN proof of concept: Host/Join from the main menu, separate Free Build worlds, and a remote capsule driven by position/yaw. **Parts, PCs, saves, inventory, software, economy and animations are not synchronized.** The checkmarks describe the implementation found in source; no fresh running-game acceptance was performed in this audit. Historical capsule/session evidence is described in the audit.
+(Audit-pass text, before phases 1–2.) The mod remains the two-player LAN proof of concept: Host/Join from the main menu, separate Free Build worlds, and a remote capsule driven by position/yaw. **Parts, PCs, saves, inventory, software, economy and animations are not synchronized.** The checkmarks describe the implementation found in source; no fresh running-game acceptance was performed in this audit. Historical capsule/session evidence is described in the audit.
 
 ## Audit progress markers
 
@@ -36,7 +38,7 @@ Each feature has exactly one checkmark in **Not synced**, **Partially synced** o
 
 Owner-approved personal preferences appear in the **Intentionally local** table. A completed audit or written plan does not change a feature's sync checkmark. Update a checkmark only with implementation evidence and record the relevant test evidence or remaining verification gap.
 
-Since phase 1 the protocol (version 2) has `PlayerState(X, Y, Z, Yaw, InWorkshop)` on a sequenced stream plus `Welcome`, `WorldReset`, `Command`, `Mutation` and `CommandResult` on one reliable ordered stream; see [Protocol.cs](src/PCBS2Coop.Network/Protocol.cs). The only world command is a diagnostic marker. The tables summarize detailed registers; follow report links for source evidence, small constituent factors, risks and acceptance cases.
+Since phase 1 the protocol (versioned only by the mod version, now 0.3) has `PlayerState(X, Y, Z, Yaw, InWorkshop)` on a sequenced stream plus `Welcome`, `WorldReset`, `Command`, `Mutation` and `CommandResult` on one reliable ordered stream; see [Protocol.cs](src/PCBS2Coop.Network/Protocol.cs). The only world command is a diagnostic marker. The tables summarize detailed registers; follow report links for source evidence, small constituent factors, risks and acceptance cases.
 
 ## Session and world lifetime
 
@@ -45,19 +47,19 @@ Detailed evidence: [SS-001–042](docs/audit/session-and-consistency.md).
 | Feature | Not synced | Partially synced | Synced | Comments |
 | --- | :---: | :---: | :---: | --- |
 | Direct IPv4 host/join, custom port, one host/one client | | | ✅ | LiteNetLib session; no lobby/friend carrier. |
-| Join handshake: mod/protocol/game build/DLC/part catalog identity | | | ✅ | Phase 1b. Different mod, protocol or game build refused with reason; DLC/catalog differences join with a status-line warning. Game run R1 + loopback. |
+| Join handshake: mod version/game build/DLC/part catalog identity | | | ✅ | Phase 1b. Different mod version or game build refused with reason (the mod version is the only version); DLC/catalog differences join with a status-line warning. Game run R1 + loopback. |
 | Connection failure/full/timeout/refusal messages | | | ✅ | Refusal reasons reach the guest's dialog (loopback-tested). |
 | Install player ID | | | ✅ | Phase 1b/1d. Persistent per install (BepInEx config); labels stay Host/Client by owner decision. Not yet used for rejoin. |
-| Main-menu Host/Join | | | ✅ | Both start local New Free Build; no world transfer. |
-| Timeout/disconnect cleanup | | ✅ | | Capsule removal; guest's pending requests abandoned. No world reservations/tool cleanup yet. |
-| Reconnect | | ✅ | | Transport reconnect; guest adopts host's world position (generation/revision/hash) but no world snapshot. |
-| Common mode/save/workshop, travel/restart/day/load coordination | ✅ | | | No shared lifecycle or readiness barrier. Host's workshop entry starts a world generation (phase 1 provisional trigger). |
-| Snapshots, late join, deltas, revisions and resync | | ✅ | | Phase 1c: revisions per world generation and gap detection exist. No snapshot/resync yet (phase 2). |
+| Main-menu Host/Join | | | ✅ | Phase 2: Host dialog has New world / Continue (one co-op world, confirm before replacing); Join connects and loads the host's world. Runs S1–S3. |
+| Timeout/disconnect cleanup | | ✅ | | Capsule removal; guest's pending requests abandoned; guest leaves the world and returns to the menu with the reason. No world reservations/tool cleanup yet (phase 3+). |
+| Reconnect / rejoin | | | ✅ | Phase 2: a rejoining guest loads a fresh snapshot of the host's current world (loopback + run S3 round 2). Fresh-process resume of live state: phase 8. |
+| Common mode/save/workshop, travel/restart/day/load coordination | | ✅ | | Phase 2: Free Build in `Stage_02_Workshop`; host's world starts a generation once its load has settled (readiness barrier); guest enters only after its own load settles. Other workshops/career travel and day changes: phases 12, 15–17. |
+| Snapshots, late join, deltas, revisions and resync | | ✅ | | Phase 2: drop-in join from a chunked, hashed snapshot (game save + mod state) with changes during the load held and applied once (S3: held 1). Game-state deltas after the snapshot arrive with each object family (phase 3+); in-world resync after divergence not yet. |
 | Stable PC/part/slot/connector/job/order/operation IDs | | ✅ | | Phase 1c/1d: operation IDs and host-allocated never-reused object IDs with tombstones. No game object is bound to an ID yet. |
 | Conflict resolution, reliable mutations, exactly-once outcomes | | ✅ | | Phase 1c: host-ordered reliable changes, duplicate/out-of-order/stale handling, remembered outcomes. Per-object conflict rules arrive with each object family. |
-| Shared pause/time/simulation authority and host departure | ✅ | | | Target: host pause freezes both; guest menu is personal; host departure returns guest to menu. Host now orders world changes; pause/time not implemented. |
-| Co-op save ownership/isolation and fresh-process recovery | ✅ | | | Target: host-owned shared co-op saves, separate from solo. Finding: the game's `Saves` folder is relative to the game folder and shared by local instances. Self test now isolates its saves. |
-| World diagnostics, divergence detection, large payload delivery | | ✅ | | Phase 1c/1f: change-hash divergence, counters, world summary, census dumps. Payloads capped at 16 KiB; no chunked transfer yet. |
+| Shared pause/time/simulation authority and host departure | | ✅ | | Phase 2: no shared pause (owner decision); the game keeps running in the background and sync continues during either player's pause (S3). Host departure returns the guest to the menu with the reason. Shared simulation time: phase 7. |
+| Co-op save ownership/isolation and fresh-process recovery | | ✅ | | Phase 2: host saves the co-op world in `Saves\Coop`; guest plays from `Saves\Coop\GuestSession` and keeps the latest host save in `Saves\Coop\Joined`; solo saves untouched (S1–S3). Mod state isn't saved yet, and a resumed world doesn't restore live state: phase 8. |
+| World diagnostics, divergence detection, large payload delivery | | ✅ | | Phase 1c/1f: change-hash divergence, counters, world summary, census dumps. Phase 2: chunked snapshot transfer up to 64 MiB (2.2 MB saves in practice). Images: phase 12. |
 
 ## Player, workshop, animation and sound
 

@@ -8,7 +8,7 @@ Implementation status belongs in [sync-progress.md](sync-progress.md). Source ev
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host-ordered world change pipeline (exercised only by diagnostic markers), and remote capsule position/yaw/presence. No game world state is shared yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Auditing**. Phases 3–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is next and needs its focused audit. Phases 3–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -34,7 +34,7 @@ The owner confirmed these choices on October 25, 2026. Use this table as the cur
 | Simultaneous PC work | Both players may work on different parts of the same PC. Block conflicting edits and pickup/store/sell or other movement of an actively used PC. Avoid a blanket one-player-per-PC lock. | 3–5, 9–11 |
 | Computer desktop/input | Same visible desktop/apps for both players; both may provide input simultaneously. Consistent mutation ordering must preserve this capability rather than introduce one exclusive controller. | 6–7, 13 |
 | Tablets | A personal tablet per player; show its physical screen/activity remotely. Each player's input/camera remains their own; tablet commands affecting shared PCs/world still mutate that shared model. | 6, 12–13 |
-| Pause and travel | Host pause freezes both; guest menu remains personal; host controls load/workshop/day changes. | 2, 7–8, 12, 17 |
+| Pause and travel | During a co-op session the game runs in the background and nobody's pause menu (host or guest) freezes the shared world; sync keeps going (owner, October 25, 2026, replacing "host pause freezes both"). Guest menu remains personal; host controls load/workshop/day changes. | 2, 7–8, 12, 17 |
 | Host departure/recovery | Host departure ends the session and returns the guest to the menu. Support host-save resume and full guest rejoin into the current world. Host migration is outside this roadmap. | 2, 8, 14, 18 |
 | Presentation parity | Target all shared-world details, including ambient/music phases. Detailed avatars follow core Free Build functionality. Personal output volume does not change shared track/playhead/effect inputs. | 7, 11–14 |
 | Player collision | Players pass through each other; preserve world/interaction validation without introducing player-body blocking. | 3, 13–14 |
@@ -143,7 +143,68 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** SS lifecycle/readiness/snapshots; PW scenes/doors/state; CP mode/save boundaries.
 
-**Status: Auditing.** Focused audit: [docs/audit/phase-2.md](docs/audit/phase-2.md).
+**Status: Complete.** Focused audit: [docs/audit/phase-2.md](docs/audit/phase-2.md). Owner decisions for this phase (October 25, 2026): drop-in join at any time with a copy of the host's current world; one co-op Free Build world (new or continue) in `Saves\Coop`; the guest keeps a separate joined copy; Host dialog gets New world / Continue; no shared pause during a session; guest menu personal.
+
+#### 2a. Focused audit and owner decisions
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** native save/load/new/continue/exit/pause paths and readiness signals established; decisions recorded. SS-006–SS-011, SS-022, SS-025–SS-026, SS-029, SS-032, SS-034–SS-035, SS-038–SS-039, SS-042, CP-001, CP-022, CP-024, CP-026, CP-055–CP-059, PW-003, PW-012, PW-031–PW-032.
+- **Completion evidence:** [phase-2 audit](docs/audit/phase-2.md); probe run P1 (owner saves unchanged).
+
+#### 2b. Co-op save folders
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** co-op worlds never touch solo saves (SS-032, CP-022, CP-024, CP-059).
+- **Dependencies and decisions:** `Saves\Coop`; guest copy in `Saves\Coop\Joined`.
+- **Scope and evidence:** `SaveLoadSystem.s_saveDir` redirect (R: P1), shipped default build copy (N: PlayFree lambdas).
+- **Work:** `CoopSaves` folder manager (host, guest session, joined copy, transfer); restore only on the main menu; default build copy; detect an existing co-op world.
+- **Acceptance:** solo `Saves` files byte-identical after host and guest sessions; new co-op world has the default PCs.
+- **Completion evidence:** `CoopSaves` ([CoopSaves.cs](src/PCBS2Coop.Plugin/CoopSaves.cs)); default build copied once; restore only on the main menu. S1–S3: owner `Saves` hashes unchanged; each instance wrote only inside its `Coop` folder; new co-op world has the default PCs (2 cases).
+
+#### 2c. Snapshot transfer and admission (network layer)
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** a guest enters the world only from a host snapshot; changes around the snapshot apply exactly once (SS-022, SS-038, SS-039, SS-041).
+- **Work:** new messages (snapshot mark, file header, chunks, abort, guest status); bounded and hashed transfer; guest hold-and-replay of world messages after the mark; mod-state providers in the snapshot; host learns when the guest is in the world; host departure reason.
+- **Acceptance:** network tests: late join with earlier changes, changes during transfer, corrupt/oversized/misnamed/out-of-order chunks, disconnect mid-transfer, rejoin, copy transfer.
+- **Completion evidence:** [WorldTransfer.cs](src/PCBS2Coop.Network/WorldTransfer.cs), admission in `WorldSync`/`CoopSession`. Network suite 142/142 (all listed cases).
+
+#### 2d. Host world: New world / Continue, snapshot capture, guest copy updates
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** host picks the co-op world in the Host dialog; snapshots taken on demand; host saves sent to the guest as copies (SS-009, CP-026, CP-056).
+- **Work:** dialog buttons and confirm; `CoopSaves` host mode; generation on world ready; snapshot via `CreateSaveGame` into the transfer folder with save-name restore; Harmony hook on `CreateSaveGame` for copies; wait while carrying.
+- **Acceptance:** New/Continue load the co-op world; snapshot doesn't change the host's save name; host save updates the guest copy.
+- **Completion evidence:** Host dialog New world / Continue with confirm; generation on world ready; snapshot via `CreateSaveGame` into `Coop/Transfer` with save name restored; [GamePatches.cs](src/PCBS2Coop.Plugin/GamePatches.cs) save hook (fires for native calls). S3: Continue enabled only after a co-op save and loads it; host save copied to the guest.
+
+#### 2e. Guest world: receive, load, ready, hold/replay
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** guest loads the host's world through `ContinueFreeBuild` from its session folder and reports ready (SS-010, SS-011, PW-032).
+- **Work:** join dialog progress; write file after the hash check; readiness signal; complete admission; timeouts; status line.
+- **Acceptance:** both peers' census match after admission; guest summary matches host summary.
+- **Completion evidence:** [WorldReadiness.cs](src/PCBS2Coop.Plugin/WorldReadiness.cs); guest loads via `ContinueFreeBuild` from its session folder; join dialog progress. S1/S3: identical summaries; S3 held 1 change during the load; shared census identical.
+
+#### 2f. Departure and failure recovery
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** SS-007, SS-025, SS-042, PW-003.
+- **Work:** host ends the session with a reason on menu/quit; guest returns to the menu and sees the reason; guest leaving keeps the host playing; failed transfer/load returns the guest to a usable menu; save folder restored on the menu.
+- **Acceptance:** host to menu → guest at menu with reason; guest to menu → host keeps world and accepts a rejoin.
+- **Completion evidence:** Host leaving → guest on the menu with "The host ended the session." (S1–S3); guest leaving → host keeps hosting (S3 round 2); load failure reason reaches the host (loopback); save folder restored on the menu for both. In-game load failure/timeout exercised only through the network layer.
+
+#### 2g. Background and pause rule
+
+- **Status:** Complete.
+- **Outcome and audit IDs:** no shared pause; sync never stops (SS-029). `Application.runInBackground` is already True (R: P1); the mod keeps it on during a session.
+- **Acceptance:** host pause during the self test: markers and positions still flow both ways.
+- **Completion evidence:** `runInBackground` held on during a session; S3: 50 positions and all markers during a 3 s host pause.
+
+#### 2h. Phase validation
+
+- **Status:** Complete.
+- **Acceptance:** network suite passes; two-instance run: late join, changes during transfer, host save → guest copy, host pause, departure; capsule visible in a screenshot (carried from 1g); owner saves untouched.
+- **Completion evidence:** Network suite 142/142; runs S1–S3 passed on both peers; capsule visible in both S3 screenshots (closes the 1g carry-over); owner saves unchanged. Two-machine run remains recommended (phase 14 or the owner's own test). Next phase: 3, starting with its focused audit.
 
 ### 3. PCs, inventory, carrying and benches
 

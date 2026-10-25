@@ -19,6 +19,41 @@ public enum MessageType : byte
     Mutation = 5,
     /// <summary>Host → guest: a refused command, or the original outcome of a duplicate. Reliable ordered.</summary>
     CommandResult = 6,
+    /// <summary>
+    /// Host → guest: a world snapshot starts here. For a load snapshot it carries the world position (generation,
+    /// revision, change hash) and mod state at the moment the game save was taken; world changes after this message
+    /// come after the snapshot. Reliable ordered.
+    /// </summary>
+    SnapshotMark = 7,
+    /// <summary>Host → guest: the snapshot's file name, size and SHA-256. Chunks follow. Reliable ordered.</summary>
+    SnapshotFile = 8,
+    /// <summary>Host → guest: one piece of the snapshot file, in order. Reliable ordered.</summary>
+    SnapshotChunk = 9,
+    /// <summary>Host → guest: the snapshot can't be completed (for example the save failed). Reliable ordered.</summary>
+    SnapshotAbort = 10,
+    /// <summary>Guest → host: loading, in the world, or failed to load. Reliable ordered.</summary>
+    GuestStatus = 11,
+}
+
+/// <summary>Why a snapshot is sent.</summary>
+public enum SnapshotPurpose : byte
+{
+    /// <summary>The guest loads it and enters the world.</summary>
+    Load = 1,
+    /// <summary>The guest only stores it (its copy of the co-op world after a host save).</summary>
+    Copy = 2,
+}
+
+public enum GuestState : byte
+{
+    /// <summary>Connected; no world loaded yet.</summary>
+    Connected = 0,
+    /// <summary>Received a snapshot and is loading it.</summary>
+    Loading = 1,
+    /// <summary>Loaded the host's world and applying its changes.</summary>
+    InWorld = 2,
+    /// <summary>Could not receive or load the world.</summary>
+    Failed = 3,
 }
 
 /// <summary>Command type numbers. 1–99 are reserved for the mod's own diagnostics/system commands.</summary>
@@ -70,22 +105,39 @@ public static class Protocol
 {
     public const int DefaultPort = 7777;
 
-    /// <summary>Bump when message layouts change. Peers with different values are refused.</summary>
-    public const int Version = 2;
-
-    /// <summary>Largest command/mutation payload. Larger transfers (snapshots, images) need chunking (later phases).</summary>
+    /// <summary>Largest command/mutation payload. Larger data goes through snapshots (chunked).</summary>
     public const int MaxPayloadBytes = 16 * 1024;
+    /// <summary>Largest snapshot file. The game's Free Build saves are a few MB.</summary>
+    public const int MaxSnapshotBytes = 64 * 1024 * 1024;
+    /// <summary>Size of one snapshot chunk.</summary>
+    public const int SnapshotChunkBytes = 32 * 1024;
+    /// <summary>Largest mod-side world state carried with a load snapshot.</summary>
+    public const int MaxModStateBytes = 1024 * 1024;
     public const int MaxShortString = 256;
     public const int MaxDlcEntries = 32;
     public const int MaxWarnings = 16;
 
     /// <summary>
-    /// Connection key. The first string of a connect request. Mismatched mod versions are refused with a readable reason.
+    /// Connection key: the first string of a connect request. It carries the mod version, which is the only version
+    /// (message layouts change only with it). Mismatched mod versions are refused with a readable reason.
     /// </summary>
     public static string ConnectionKey => KeyPrefix + ModVersion.Value;
     public const string KeyPrefix = "PCBS2Coop/";
 
     internal static string ReadString(NetDataReader r) => r.GetString(MaxShortString);
+
+    /// <summary>
+    /// Snapshot file names the guest accepts: the game's save file names, e.g. "coopworld.binary.zip". No paths.
+    /// </summary>
+    public static bool IsValidSnapshotName(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return false;
+        string stem;
+        if (name.EndsWith(".binary.zip", StringComparison.Ordinal)) stem = name[..^".binary.zip".Length];
+        else if (name.EndsWith(".binary", StringComparison.Ordinal)) stem = name[..^".binary".Length];
+        else return false;
+        return stem.Length is >= 1 and <= 48 && stem.All(c => c is (>= 'a' and <= 'z') or (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '_' or '-');
+    }
 
     /// <summary>Writes an int length followed by the raw bytes.</summary>
     internal static void WriteBlob(NetDataWriter w, byte[] data)

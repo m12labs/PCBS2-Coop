@@ -56,8 +56,6 @@ internal static class IdentityTests
             t.Check(Compatibility.Check(host, Ids.Make()) is { Compatible: true, Warnings.Count: 0 }, "identical installs: compatible, no warnings");
             var build = Compatibility.Check(host, Ids.Make(build: "ffff"));
             t.Check(!build.Compatible && build.Problems[0].Contains("game builds"), "different game build refused");
-            var proto = Compatibility.Check(host, host with { ProtocolVersion = 1, Player = PlayerId.New() });
-            t.Check(!proto.Compatible, "different protocol refused");
             var mod = Compatibility.Check(host, host with { ModVersion = "0.0.1", Player = PlayerId.New() });
             t.Check(!mod.Compatible && mod.Problems[0].Contains("mod versions"), "different mod version refused");
             var dlc = Compatibility.Check(host, Ids.Make(dlcs: new[] { "DLCPack_PCBS1DecoratorTheme" }));

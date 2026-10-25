@@ -12,17 +12,24 @@ namespace PCBS2Coop;
 /// Opt-in self test for two local instances. Off unless PCBS2COOP_AUTOTEST is "host" or "join".
 /// <list type="number">
 /// <item>Redirects the game's save folder to a disposable BepInEx/PCBS2Coop-diag/saves-&lt;role&gt; folder, so the
-/// owner's solo saves are never read or overwritten. Overwrite prompts are accepted only once that redirect is confirmed.</item>
-/// <item>Clicks Host/Join with real pointer events and loads Free Build; the client walks a circle.</item>
-/// <item>Once joined, each side submits five diagnostic markers (the guest also one invalid marker that must be refused),
-/// then logs "AUTOTEST: world summary …" for comparing both peers.</item>
-/// <item>Writes runtime census files and screenshots to BepInEx/PCBS2Coop-diag.</item>
+/// owner's solo saves are never read or overwritten. Overwrite prompts are accepted only inside that folder.</item>
+/// <item>Host: Host → New world (co-op folder inside the disposable one); once its world is ready it submits three
+/// markers before the guest is in, so the guest must receive them through the snapshot.</item>
+/// <item>Guest: Join → Connect later, receives and loads the host's world, then walks a circle.</item>
+/// <item>Both: aim the camera at the other player's capsule for a screenshot; five markers each (the guest also one
+/// invalid marker that must be refused). The host pauses its game while markers flow and saves once (the guest must
+/// receive the copy). Both log "AUTOTEST: world summary …" and PASSED/FAILED.</item>
+/// <item>Departure: the host returns to the main menu; the guest must follow with the reason and both must get
+/// their save folder back.</item>
 /// </list>
-/// Normal play never runs this.
+/// Census files and screenshots go to BepInEx/PCBS2Coop-diag. Normal play never runs this.
 /// </summary>
 internal sealed class AutoTest
 {
     private const int MarkersPerSide = 5;
+    private const int HostPreMarkers = 3;
+    /// <summary>Host markers before the guest is in, one while it loads, then five from each side.</summary>
+    private const int ExpectedMarkers = HostPreMarkers + 1 + 2 * MarkersPerSide;
 
     private readonly string _role;
     private readonly string _dir;
@@ -32,6 +39,8 @@ internal sealed class AutoTest
     private Vector3 _center;
     private bool _walking;
     private bool _invalidRefused;
+    private bool _passed;
+    private long _statesAtPause;
     private WorldSync _hookedWorld;
 
     public static bool IsEnabled => Role is "host" or "join";
@@ -39,6 +48,9 @@ internal sealed class AutoTest
 
     /// <summary>The disposable save folder, set once the redirect is confirmed. Null means saves are not isolated.</summary>
     internal static string IsolatedSaveDir { get; private set; }
+
+    /// <summary>Move the isolation to another disposable folder (probe use only).</summary>
+    internal static void SetIsolatedSaveDir(string dir) => IsolatedSaveDir = dir;
 
     private AutoTest(string role)
     {
@@ -61,65 +73,304 @@ internal sealed class AutoTest
         if (_walking && _role == "join") Walk(now);
         HookWorld(r);
         if (now < _at) return;
+        if (_role == "host") HostSteps(r, now);
+        else JoinSteps(r, now);
+    }
+
+    private void CommonSteps(CoopRunner r, float now, float startDelay)
+    {
         switch (_step)
         {
             case 0 when r.Scene == CoopRunner.MenuScene && r.Menu != null:
                 if (!IsolateSaves()) { Fail("could not redirect saves to a disposable folder; stopping before any game is started."); break; }
                 Census("menu");
-                Next(now + (_role == "host" ? 6 : 12)); // the client waits so the host is listening first
+                Next(now + startDelay);
                 break;
             case 1:
                 Shot(r, "menu");
                 Next(now + 1);
                 break;
             case 2:
-                // Real pointer events, the same path as a mouse click.
                 var target = _role == "host" ? r.Menu.HostButton : r.Menu.JoinButton;
                 Plugin.Logger.LogInfo($"AUTOTEST: clicking '{target.name}' with pointer events.");
                 Click(target);
                 Next(now + 1.5f);
                 break;
             case 3:
-                Plugin.Logger.LogInfo($"AUTOTEST: dialog open = {r.Menu.Dialog.IsOpen}, scene = {r.Scene}.");
+                Plugin.Logger.LogInfo($"AUTOTEST: dialog open = {r.Menu.Dialog.IsOpen}, continue enabled = {r.Menu.Dialog.ContinueButton.GetComponent<UnityEngine.UI.Button>().interactable}, scene = {r.Scene}.");
                 Shot(r, "dialog");
                 Next(now + 1.5f);
                 break;
             case 4:
                 if (!r.Menu.Dialog.IsOpen) { Fail("the dialog did not open from the button click."); break; }
-                Plugin.Logger.LogInfo("AUTOTEST: clicking the dialog's apply button with pointer events.");
+                Plugin.Logger.LogInfo($"AUTOTEST: clicking the dialog's '{(_role == "host" ? "New world" : "Connect")}' button with pointer events.");
                 Click(r.Menu.Dialog.ApplyButton);
+                _deadline = now + 240;
                 Next(now);
                 break;
-            case 5 when r.Scene == CoopRunner.WorkshopScene && LocalPlayer.Find() != null:
-                Next(now + 8);
-                break;
-            case 6:
+        }
+    }
+
+    private void HostSteps(CoopRunner r, float now)
+    {
+        var s = r.Coop.Session;
+        if (_step <= 4) { CommonSteps(r, now, 6); return; }
+        switch (_step)
+        {
+            // ---- round 1: new world, late join, changes, pause, save, host leaves ----
+            case 5 when r.Scene == CoopRunner.WorkshopScene && r.Coop.WorldReady && s.World is { Generation: > 0 }:
+                Plugin.Logger.LogInfo($"AUTOTEST: host world ready: save folder '{SaveLoadSystem.s_saveDir}', {Counts()}.");
                 Census("workshop");
-                _center = LocalPlayer.Root.position + LocalPlayer.Root.forward * 3f;
-                _walking = true;
-                Next(now + 6);
+                for (var i = 0; i < HostPreMarkers; i++) Submit(s.World, $"host-pre-{i}");
+                _deadline = now + 240;
+                Next(now);
                 break;
-            case 7 when r.Coop.Session.IsJoined && r.Coop.Session.World is { Generation: > 0 } && r.Coop.HasRemoteView:
-                Plugin.Logger.LogInfo("AUTOTEST: " + r.Coop.RemoteViewReport);
-                Shot(r, "workshop");
-                SubmitMarkers(r.Coop.Session.World);
-                _deadline = now + 30;
-                Next(now + 3);
+            case 5 when now > _deadline:
+                Fail($"host world not ready (scene {r.Scene}, waiting for: {r.Coop.WorldWaiting}).");
+                break;
+            case 6 when s.SendingSnapshot || s.GuestState == GuestState.Loading:
+                // A change made after the snapshot was taken: the guest must hold it and apply it after loading.
+                Submit(s.World, "host-during-load");
+                Next(now);
+                break;
+            case 6 when now > _deadline:
+                Fail($"no guest started loading the world (guest state {s.GuestState}).");
+                break;
+            case 7 when s.GuestState == GuestState.InWorld && r.Coop.HasRemoteView && RemoteDistance(r) > 2f:
+                AimAtRemote(r);
+                Next(now + 1);
+                break;
+            case 7 when now > _deadline:
+                Fail($"the guest never appeared away from the host (guest state {s.GuestState}, view {r.Coop.HasRemoteView}).");
                 break;
             case 8:
                 Plugin.Logger.LogInfo("AUTOTEST: " + r.Coop.RemoteViewReport);
-                Shot(r, "workshop-2");
+                Shot(r, "workshop");
+                var gc = UnityEngine.Object.FindObjectOfType<GameController>();
+                gc?.PauseGame();
+                Plugin.Logger.LogInfo($"AUTOTEST: host paused its game (paused={gc?.GetPaused()}, timeScale={Time.timeScale}); markers keep flowing.");
+                _statesAtPause = s.Stats.PlayerStatesReceived;
+                for (var i = 0; i < MarkersPerSide; i++) Submit(s.World, $"host-{i}");
+                Next(now + 3);
+                break;
+            case 9:
+            {
+                var gc2 = UnityEngine.Object.FindObjectOfType<GameController>();
+                Plugin.Logger.LogInfo($"AUTOTEST: during 3 s of host pause: {s.Stats.PlayerStatesReceived - _statesAtPause} positions received, markers now {r.Coop.Markers.Applied.Count}.");
+                gc2?.UnpauseGame();
+                var saves = UnityEngine.Object.FindObjectOfType<SaveLoadSystem>();
+                Plugin.Logger.LogInfo("AUTOTEST: host saves its world (SaveCurrentGame); the guest should receive a copy.");
+                saves?.SaveCurrentGame();
+                _deadline = now + 60;
                 Next(now + 1);
                 break;
-            case 9 when r.Coop.Markers.Applied.Count >= 2 * MarkersPerSide || now > _deadline:
-                var ok = r.Coop.Markers.Applied.Count == 2 * MarkersPerSide && r.Coop.Session.World?.Divergence == null && (_role == "host" || _invalidRefused);
-                Plugin.Logger.LogInfo($"AUTOTEST: world summary ({_role}) {Diagnostics.WorldSummary(r.Coop)}");
-                Plugin.Logger.LogInfo($"AUTOTEST: {(ok ? "PASSED" : "FAILED")} - markers {r.Coop.Markers.Applied.Count}/{2 * MarkersPerSide}" +
-                                      (_role == "join" ? $", invalid marker refused: {_invalidRefused}" : "") + ". Compare both world summaries.");
+            }
+            case 10 when r.Coop.Markers.Applied.Count >= ExpectedMarkers || now > _deadline:
+                Summary(r, r.Coop.Markers.Applied.Count == ExpectedMarkers && s.World?.Divergence == null, "");
+                Census("shared");
+                Next(now + 15); // let the guest finish its own checks
+                break;
+            case 11:
+                Plugin.Logger.LogInfo("AUTOTEST: host leaving the world (departure test).");
+                UnityEngine.Object.FindObjectOfType<NewLoadingScreen>().LoadScene(CoopRunner.MenuScene, false);
+                _deadline = now + 60;
+                Next(now);
+                break;
+            case 12 when r.Scene == CoopRunner.MenuScene && r.Menu != null:
+            {
+                var restored = SaveLoadSystem.s_saveDir == IsolatedSaveDir;
+                Plugin.Logger.LogInfo($"AUTOTEST: host back on the main menu; session running={s.IsRunning}; save folder '{SaveLoadSystem.s_saveDir}' restored={restored}.");
+                Plugin.Logger.LogInfo($"AUTOTEST: departure {(restored && !s.IsRunning ? "OK" : "FAILED")} (host).");
+                Next(now + 3);
+                break;
+            }
+
+            // ---- round 2: host continues the co-op world, guest rejoins, guest leaves first ----
+            case 13:
+                Plugin.Logger.LogInfo("AUTOTEST: round 2 - host continues the co-op world.");
+                Click(r.Menu.HostButton);
+                Next(now + 1.5f);
+                break;
+            case 14:
+            {
+                var canContinue = r.Menu.Dialog.ContinueButton.GetComponent<UnityEngine.UI.Button>().interactable;
+                Plugin.Logger.LogInfo($"AUTOTEST: dialog open = {r.Menu.Dialog.IsOpen}, continue enabled = {canContinue}.");
+                Shot(r, "dialog-2");
+                if (!canContinue) { Fail("Continue is not offered after a co-op save."); break; }
+                Click(r.Menu.Dialog.ContinueButton);
+                _deadline = now + 240;
+                Next(now);
+                break;
+            }
+            case 15 when r.Scene == CoopRunner.WorkshopScene && r.Coop.WorldReady && s.World is { Generation: > 0 }:
+            {
+                var level = UnityEngine.Object.FindObjectOfType<LevelLoadPersistency>();
+                var saves = UnityEngine.Object.FindObjectOfType<SaveLoadSystem>();
+                Plugin.Logger.LogInfo($"AUTOTEST: continued world ready: loaded from save={saves?.WasLoadedFromSave()}, save name '{level?.SaveName}', save folder '{SaveLoadSystem.s_saveDir}', markers {r.Coop.Markers.Applied.Count}, {Counts()}.");
+                Next(now);
+                break;
+            }
+            case 15 when now > _deadline:
+                Fail($"continued world not ready (scene {r.Scene}, waiting for: {r.Coop.WorldWaiting}).");
+                break;
+            case 16 when s.GuestState == GuestState.InWorld:
+                Plugin.Logger.LogInfo("AUTOTEST: the guest rejoined the continued world.");
+                Next(now);
+                break;
+            case 16 when now > _deadline:
+                Fail("the guest did not rejoin.");
+                break;
+            case 17 when !s.IsJoined:
+            {
+                var ok = s.IsRunning && r.Scene == CoopRunner.WorkshopScene && s.World is { Generation: > 0 } && s.GuestState == GuestState.Connected;
+                Plugin.Logger.LogInfo($"AUTOTEST: the guest left; host still hosting={s.IsRunning} in {r.Scene}, generation {s.World?.Generation}.");
+                Plugin.Logger.LogInfo($"AUTOTEST: round 2 {(ok ? "OK" : "FAILED")} (host).");
                 Plugin.Logger.LogInfo("AUTOTEST: finished.");
                 Next(float.MaxValue);
                 break;
+            }
+            case 17 when now > _deadline + 120:
+                Fail("the guest never left.");
+                break;
         }
+    }
+
+    private void JoinSteps(CoopRunner r, float now)
+    {
+        var s = r.Coop.Session;
+        if (_step <= 4) { CommonSteps(r, now, 30); return; }
+        switch (_step)
+        {
+            // ---- round 1 ----
+            case 5 when r.Scene == CoopRunner.WorkshopScene && s.GuestState == GuestState.InWorld:
+                Plugin.Logger.LogInfo($"AUTOTEST: guest is in the host's world: save folder '{SaveLoadSystem.s_saveDir}', held changes {s.World?.Stats.Held}, markers so far [{string.Join(",", r.Coop.Markers.Applied)}], {Counts()}.");
+                Census("workshop");
+                // Walk away from the shared spawn point so each player can see the other.
+                _center = LocalPlayer.Root.position + LocalPlayer.Root.forward * 3f;
+                _walking = true;
+                _deadline = now + 60;
+                Next(now + 4);
+                break;
+            case 5 when now > _deadline:
+                Fail($"did not enter the host's world (guest state {s.GuestState}, scene {r.Scene}, last failure '{r.Coop.LastFailure}').");
+                break;
+            case 6 when r.Coop.HasRemoteView:
+                _walking = false;
+                AimAtRemote(r);
+                Next(now + 1);
+                break;
+            case 6 when now > _deadline:
+                Fail("the host's capsule never appeared.");
+                break;
+            case 7:
+                Plugin.Logger.LogInfo("AUTOTEST: " + r.Coop.RemoteViewReport);
+                Shot(r, "workshop");
+                _walking = true;
+                for (var i = 0; i < MarkersPerSide; i++) Submit(s.World, $"join-{i}");
+                s.World.Submit(CommandTypes.DiagnosticMarker, new DiagnosticMarker("").ToBytes(), out _); // must be refused by the host
+                _deadline = now + 60;
+                Next(now + 1);
+                break;
+            case 8 when (r.Coop.Markers.Applied.Count >= ExpectedMarkers && r.Coop.CopiesReceived >= 1) || now > _deadline:
+                Plugin.Logger.LogInfo($"AUTOTEST: copies of the host's world received: {r.Coop.CopiesReceived}; joined folder: {string.Join(", ", Directory.Exists(CoopSaves.JoinedDir) ? Directory.GetFiles(CoopSaves.JoinedDir).Select(Path.GetFileName) : Array.Empty<string>())}.");
+                Summary(r, r.Coop.Markers.Applied.Count == ExpectedMarkers && s.World?.Divergence == null && _invalidRefused && r.Coop.CopiesReceived >= 1 && s.World.Stats.Held >= 1,
+                    $", invalid marker refused: {_invalidRefused}, copies received: {r.Coop.CopiesReceived}, held during load: {s.World?.Stats.Held}");
+                Census("shared");
+                _walking = false;
+                _deadline = now + 120;
+                Next(now);
+                break;
+            case 9 when r.Scene == CoopRunner.MenuScene && r.Menu != null:
+                Next(now + 2);
+                break;
+            case 9 when now > _deadline:
+                Fail("the guest did not return to the main menu after the host left.");
+                break;
+            case 10:
+            {
+                var restored = SaveLoadSystem.s_saveDir == IsolatedSaveDir;
+                var shown = r.Menu?.Dialog?.IsOpen == true;
+                Plugin.Logger.LogInfo($"AUTOTEST: guest back on the main menu; message shown={shown} ('{r.Coop.LastFailure}'); save folder '{SaveLoadSystem.s_saveDir}' restored={restored}.");
+                Shot(r, "departure");
+                Plugin.Logger.LogInfo($"AUTOTEST: departure {(restored && shown && !s.IsRunning ? "OK" : "FAILED")} (guest).");
+                Next(now + 20); // the host continues its world meanwhile
+                break;
+            }
+
+            // ---- round 2: rejoin the continued world, then leave first ----
+            case 11:
+                if (!r.Menu.Dialog.IsOpen) { Click(r.Menu.JoinButton); _at = now + 1.5f; break; }
+                Plugin.Logger.LogInfo("AUTOTEST: round 2 - guest rejoins.");
+                Click(r.Menu.Dialog.ApplyButton);
+                _deadline = now + 240;
+                Next(now);
+                break;
+            case 12 when r.Scene == CoopRunner.WorkshopScene && s.GuestState == GuestState.InWorld:
+                Plugin.Logger.LogInfo($"AUTOTEST: guest rejoined: generation {s.World?.Generation}, markers [{string.Join(",", r.Coop.Markers.Applied)}], {Counts()}.");
+                Next(now + 3);
+                break;
+            case 12 when now > _deadline:
+                Fail($"did not rejoin (guest state {s.GuestState}, last failure '{r.Coop.LastFailure}').");
+                break;
+            case 13:
+                Plugin.Logger.LogInfo("AUTOTEST: guest leaving the world.");
+                UnityEngine.Object.FindObjectOfType<NewLoadingScreen>().LoadScene(CoopRunner.MenuScene, false);
+                _deadline = now + 60;
+                Next(now);
+                break;
+            case 14 when r.Scene == CoopRunner.MenuScene && r.Menu != null:
+            {
+                var restored = SaveLoadSystem.s_saveDir == IsolatedSaveDir;
+                Plugin.Logger.LogInfo($"AUTOTEST: round 2 {(restored && !s.IsRunning ? "OK" : "FAILED")} (guest): back on the menu, save folder '{SaveLoadSystem.s_saveDir}'.");
+                Plugin.Logger.LogInfo("AUTOTEST: finished.");
+                Next(float.MaxValue);
+                break;
+            }
+        }
+    }
+
+    private static float RemoteDistance(CoopRunner r)
+    {
+        var cam = Camera.main;
+        var pos = r.Coop.RemoteViewPosition;
+        return cam == null || pos == null ? 0 : Vector3.Distance(cam.transform.position, pos.Value);
+    }
+
+    private void Summary(CoopRunner r, bool ok, string extra)
+    {
+        _passed = ok;
+        Plugin.Logger.LogInfo($"AUTOTEST: world summary ({_role}) {Diagnostics.WorldSummary(r.Coop)}");
+        Plugin.Logger.LogInfo($"AUTOTEST: {(ok ? "PASSED" : "FAILED")} - markers {r.Coop.Markers.Applied.Count}/{ExpectedMarkers}{extra}. Compare both world summaries.");
+    }
+
+    private static string Counts() =>
+        $"cases {UnityEngine.Object.FindObjectsOfType<Case>().Length}, occupied bench slots {UnityEngine.Object.FindObjectsOfType<BenchSlot>().Count(b => b.GetComponentInChildren<Case>() != null)}";
+
+    private static void Submit(WorldSync world, string text)
+    {
+        if (!world.Submit(CommandTypes.DiagnosticMarker, new DiagnosticMarker(text).ToBytes(), out var op))
+            Plugin.Logger.LogError($"AUTOTEST: could not submit marker {text}.");
+        else Plugin.Logger.LogInfo($"AUTOTEST: submitted marker {text} as {op}.");
+    }
+
+    /// <summary>Turn the local camera towards the other player's capsule so the screenshot shows it.</summary>
+    private static void AimAtRemote(CoopRunner r)
+    {
+        var target = r.Coop.RemoteViewPosition;
+        var root = LocalPlayer.Root;
+        var cam = Camera.main;
+        if (target == null || root == null || cam == null) return;
+        var dir = target.Value + Vector3.up * 0.9f - cam.transform.position;
+        var yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+        var pitch = -Mathf.Atan2(dir.y, new Vector2(dir.x, dir.z).magnitude) * Mathf.Rad2Deg;
+        foreach (var look in root.GetComponentsInChildren<MouseLook>(true))
+        {
+            var parentYaw = look.transform.parent != null ? look.transform.parent.eulerAngles.y : 0;
+            look.rotationX = look.transform == root ? yaw : yaw - parentYaw;
+            look.rotationY = -pitch;
+        }
+        cam.transform.rotation = Quaternion.Euler(pitch, yaw, 0);
+        Plugin.Logger.LogInfo($"AUTOTEST: aimed camera at the other player (yaw {yaw:F0}, pitch {pitch:F0}).");
     }
 
     private void Next(float at) { _step++; _at = at; }
@@ -139,16 +390,6 @@ internal sealed class AutoTest
         {
             if (reason == RejectReason.Invalid && text.Contains("marker")) { _invalidRefused = true; Plugin.Logger.LogInfo($"AUTOTEST: invalid marker {op} refused as expected."); }
         };
-    }
-
-    private void SubmitMarkers(WorldSync world)
-    {
-        for (var i = 0; i < MarkersPerSide; i++)
-            if (!world.Submit(CommandTypes.DiagnosticMarker, new DiagnosticMarker($"{_role}-{i}").ToBytes(), out var op))
-                Plugin.Logger.LogError($"AUTOTEST: could not submit marker {i}.");
-            else Plugin.Logger.LogInfo($"AUTOTEST: submitted marker {_role}-{i} as {op}.");
-        if (_role == "join")
-            world.Submit(CommandTypes.DiagnosticMarker, new DiagnosticMarker("").ToBytes(), out _); // must be refused by the host
     }
 
     /// <summary>Point the game's save folder at a fresh disposable folder and confirm the game sees it.</summary>
@@ -225,7 +466,7 @@ internal sealed class AutoTest
         {
             // Accepting "New Game" overwrites the Free Build save in the current save folder. Only do that when the
             // folder is the disposable one and the game still points at it.
-            if (IsolatedSaveDir == null || SaveLoadSystem.s_saveDir != IsolatedSaveDir)
+            if (IsolatedSaveDir == null || SaveLoadSystem.s_saveDir == null || !SaveLoadSystem.s_saveDir.StartsWith(IsolatedSaveDir, StringComparison.Ordinal))
             {
                 Plugin.Logger.LogError($"AUTOTEST: FAILED - message box '{title}' appeared while saves are not isolated; refusing to accept it.");
                 return true; // show it normally and leave the decision to a person

@@ -4,8 +4,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <Deterministic>true</Deterministic>
-    <!-- Single version for the plugin, network assembly and handshake. -->
-    <Version>0.1.0</Version>
+    <!--
+      The mod's one and only version: plugin, network assembly and join handshake. Players can join each other only
+      when this matches exactly. Each bump adds one: 0.1, 0.2, 0.3, 0.4... See AGENTS.md "Versioning".
+    -->
+    <Version>0.3</Version>
     <GameDir Condition="'$(GameDir)' == ''">$(PCBS2_GAME_DIR)</GameDir>
   </PropertyGroup>
 </Project>

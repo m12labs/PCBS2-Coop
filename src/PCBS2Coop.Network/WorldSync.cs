@@ -45,11 +45,26 @@ public interface ICommandHandler
     void Apply(in MutationContext ctx, NetDataReader payload);
 }
 
+/// <summary>
+/// Mod-side world state that a joining guest needs and that isn't in the game's save (for example object IDs).
+/// It travels with a load snapshot. <see cref="Reset"/> runs when a world generation starts.
+/// </summary>
+public interface IWorldState
+{
+    string Name { get; }
+    void Reset();
+    void Write(NetDataWriter w);
+    void Read(NetDataReader r);
+}
+
+/// <summary>Where a load snapshot sits in the host's change stream, plus the mod state at that point.</summary>
+public sealed record SnapshotPosition(uint Generation, ulong Revision, ulong ChainHash, byte[] State);
+
 public sealed class WorldStats
 {
-    public long Submitted, Accepted, Rejected, Applied, Duplicates, StaleDropped, Malformed, UnexpectedResults;
+    public long Submitted, Accepted, Rejected, Applied, Duplicates, StaleDropped, Malformed, UnexpectedResults, Held;
     public override string ToString() =>
-        $"submitted {Submitted}, accepted {Accepted}, rejected {Rejected}, applied {Applied}, duplicates {Duplicates}, stale dropped {StaleDropped}, malformed {Malformed}";
+        $"submitted {Submitted}, accepted {Accepted}, rejected {Rejected}, applied {Applied}, duplicates {Duplicates}, stale dropped {StaleDropped}, malformed {Malformed}, held {Held}";
 }
 
 /// <summary>
@@ -61,6 +76,8 @@ public sealed class WorldStats
 /// <item>A world generation is one incarnation of the world. Starting a new one (load/reset) makes every older
 /// request and change stale.</item>
 /// <item>Each change carries a running hash of all changes so far, so a peer that applied something different notices.</item>
+/// <item>A guest enters the world only from a host snapshot (<see cref="Admitted"/>). Changes after the snapshot's
+/// position are held while it loads and applied afterwards, so each change applies exactly once.</item>
 /// </list>
 /// Not thread-safe; call everything from the main thread (CoopSession.Poll delivers messages there).
 /// </summary>
@@ -69,7 +86,14 @@ public sealed class WorldSync
     private const int OutcomeMemory = 256;
     private const int MaxPending = 256;
 
+    private const int MaxHeldMessages = 10_000;
+    private const long MaxHeldBytes = 32L * 1024 * 1024;
+
     private readonly Dictionary<ushort, ICommandHandler> _handlers = new();
+    private readonly List<IWorldState> _states = new();
+    private readonly List<(MessageType Type, byte[] Body)> _held = new();
+    private long _heldBytes;
+    private SnapshotPosition? _holdFor;
     private readonly Action<NetDataWriter> _send;
     private readonly Action<string>? _log;
     private readonly NetDataWriter _w = new();
@@ -104,6 +128,11 @@ public sealed class WorldSync
     public string? Divergence { get; private set; }
     /// <summary>False until a guest learns the host's world (Welcome). Always true on the host.</summary>
     public bool Synchronized { get; private set; }
+    /// <summary>Guest: it loaded a host snapshot of the current generation. Host: it has a world (generation > 0).</summary>
+    public bool Admitted => IsAuthority ? Generation > 0 : _admitted;
+    private bool _admitted;
+    /// <summary>Guest: world changes are being held while a snapshot loads.</summary>
+    public bool Holding => _holdFor != null;
     public int PendingCount => _pending.Count;
     public WorldStats Stats { get; } = new();
 
@@ -117,6 +146,16 @@ public sealed class WorldSync
     public event Action<uint, string>? GenerationStarted;
     /// <summary>This peer's view of the world stopped matching the host's change stream.</summary>
     public event Action<string>? Diverged;
+    /// <summary>Guest: the host started a different world after this guest was admitted. The guest is no longer in the world.</summary>
+    public event Action<string>? WorldReplaced;
+
+    /// <summary>Add mod state that travels with load snapshots. Names must be unique.</summary>
+    public void RegisterState(IWorldState state)
+    {
+        if (state == null) throw new ArgumentNullException(nameof(state));
+        if (_states.Any(x => x.Name == state.Name)) throw new InvalidOperationException($"World state '{state.Name}' is already registered.");
+        _states.Add(state);
+    }
 
     public void Register(ushort type, ICommandHandler handler)
     {
@@ -177,23 +216,105 @@ public sealed class WorldSync
         w.Put(ChainHash);
     }
 
-    /// <summary>
-    /// Guest: adopt the host's world position from Welcome. Changes made before joining are not replayed;
-    /// a world snapshot is phase 2 work.
-    /// </summary>
+    /// <summary>Guest: read the host's world position from Welcome. Informational; the guest enters the world from a snapshot.</summary>
     internal void ReadWorldPosition(NetDataReader r)
     {
         var gen = r.GetUInt();
         var rev = r.GetULong();
-        var hash = r.GetULong();
-        AbandonPending("joined a world");
-        Generation = gen;
-        Revision = rev;
-        ChainHash = hash;
+        r.GetULong();
+        _log?.Invoke(gen == 0 ? "Host has no world loaded yet." : $"Host world is at generation {gen}, revision {rev}; waiting for its snapshot.");
+    }
+
+    /// <summary>Host: the current world position and mod state, captured at the moment the game save is taken.</summary>
+    public SnapshotPosition CapturePosition()
+    {
+        if (!IsAuthority) throw new InvalidOperationException("Only the host captures snapshots.");
+        if (_processing) throw new InvalidOperationException("Capture a snapshot outside command handling.");
+        var w = new NetDataWriter();
+        w.Put(_states.Count);
+        foreach (var st in _states)
+        {
+            var sw = new NetDataWriter();
+            st.Write(sw);
+            w.Put(st.Name, Protocol.MaxShortString);
+            Protocol.WriteBlob(w, sw.CopyData());
+        }
+        var state = w.CopyData();
+        if (state.Length > Protocol.MaxModStateBytes) throw new InvalidOperationException($"Mod world state is {state.Length} bytes; the limit is {Protocol.MaxModStateBytes}.");
+        return new SnapshotPosition(Generation, Revision, ChainHash, state);
+    }
+
+    /// <summary>
+    /// Guest: a load snapshot starts at <paramref name="position"/>. From now on world messages are held until
+    /// <see cref="Adopt"/> (snapshot loaded) or <see cref="CancelHold"/> (snapshot failed).
+    /// </summary>
+    internal void BeginHold(SnapshotPosition position)
+    {
+        if (IsAuthority) throw new InvalidOperationException("Only a guest holds world changes.");
+        AbandonPending("loading the host's world");
+        _admitted = false;
+        Synchronized = false;
+        _held.Clear();
+        _heldBytes = 0;
+        _holdFor = position;
+        _log?.Invoke($"Snapshot at generation {position.Generation}, revision {position.Revision}: holding world changes until it is loaded.");
+    }
+
+    internal void CancelHold()
+    {
+        _holdFor = null;
+        _held.Clear();
+        _heldBytes = 0;
+    }
+
+    /// <summary>
+    /// Guest: the snapshot's game world is loaded. Adopt its position and mod state, then apply the held changes in
+    /// order. Returns false (and stays outside the world) if the mod state can't be read.
+    /// </summary>
+    public bool Adopt(out string error)
+    {
+        error = "";
+        if (_holdFor is not { } p) { error = "No snapshot is waiting to be adopted."; return false; }
+        _holdFor = null;
+        try { ReadStates(p.State); }
+        catch (Exception e) when (Protocol.IsReadError(e) || e is InvalidDataException)
+        {
+            error = "The host's world state could not be read: " + e.Message;
+            CancelHold();
+            return false;
+        }
+        Generation = p.Generation;
+        Revision = p.Revision;
+        ChainHash = p.ChainHash;
         Divergence = null;
         Synchronized = true;
-        _log?.Invoke($"World joined at generation {gen}, revision {rev}.");
-        GenerationStarted?.Invoke(gen, "joined");
+        _admitted = true;
+        _log?.Invoke($"Entered the host's world at generation {p.Generation}, revision {p.Revision}; applying {_held.Count} held message(s).");
+        GenerationStarted?.Invoke(p.Generation, "joined");
+        var held = _held.ToList();
+        _held.Clear();
+        _heldBytes = 0;
+        foreach (var (type, body) in held) Handle(type, new NetDataReader(body));
+        return true;
+    }
+
+    private void ReadStates(byte[] data)
+    {
+        var r = new NetDataReader(data);
+        var n = r.GetInt();
+        if (n < 0 || n > 256) throw new InvalidDataException($"bad state count {n}");
+        var seen = new HashSet<string>();
+        foreach (var st in _states) st.Reset();
+        for (var i = 0; i < n; i++)
+        {
+            var name = Protocol.ReadString(r);
+            var blob = Protocol.ReadBlob(r, Protocol.MaxModStateBytes, out _) ?? throw new InvalidDataException($"bad state blob for '{name}'");
+            var st = _states.FirstOrDefault(x => x.Name == name) ?? throw new InvalidDataException($"unknown world state '{name}'");
+            if (!seen.Add(name)) throw new InvalidDataException($"world state '{name}' sent twice");
+            st.Read(new NetDataReader(blob));
+        }
+        var missing = _states.Where(x => !seen.Contains(x.Name)).Select(x => x.Name).ToList();
+        if (missing.Count > 0) throw new InvalidDataException("missing world state: " + string.Join(", ", missing));
     }
 
     /// <summary>Session ended or the guest dropped: forget per-link state. Host keeps its world generation.</summary>
@@ -209,13 +330,29 @@ public sealed class WorldSync
         else
         {
             AbandonPending("disconnected");
+            CancelHold();
             Synchronized = false;
+            _admitted = false;
         }
     }
 
     /// <summary>Handle one reliable world message. Returns false if the type isn't a world message.</summary>
     internal bool Handle(MessageType type, NetDataReader r)
     {
+        if (_holdFor != null && type is MessageType.Mutation or MessageType.WorldReset or MessageType.CommandResult)
+        {
+            var body = new byte[r.AvailableBytes];
+            r.GetBytes(body, body.Length);
+            _held.Add((type, body));
+            _heldBytes += body.Length;
+            Stats.Held++;
+            if (_held.Count > MaxHeldMessages || _heldBytes > MaxHeldBytes)
+            {
+                CancelHold();
+                Diverge("Too many world changes arrived while loading the host's world.");
+            }
+            return true;
+        }
         switch (type)
         {
             case MessageType.Command when IsAuthority: OnCommand(r); return true;
@@ -398,7 +535,12 @@ public sealed class WorldSync
             _log?.Invoke($"Ignored world reset to generation {gen} (already at {Generation}).");
             return;
         }
+        var wasAdmitted = _admitted;
         StartGeneration(gen, reason);
+        // The guest's game still shows the old world. It needs a new snapshot before it is in the world again.
+        _admitted = false;
+        Synchronized = false;
+        if (wasAdmitted) WorldReplaced?.Invoke(reason);
     }
 
     private void OnMutation(NetDataReader r)
@@ -425,8 +567,9 @@ public sealed class WorldSync
             return;
         }
 
-        if (gen != Generation) { Stats.StaleDropped++; return; }
+        if (!_admitted || gen != Generation) { Stats.StaleDropped++; return; }
         if (Divergence != null) return; // wait for a new generation (resync is phase 2)
+        if (revision <= Revision) { Stats.StaleDropped++; return; } // already part of the snapshot
         if (revision != Revision + 1) { Diverge($"Missing world changes: expected revision {Revision + 1}, got {revision}."); return; }
         if (actor is not (ActorSlot.Host or ActorSlot.Guest)) { Diverge($"World change from unknown actor {(byte)actor}."); return; }
         if (!_handlers.TryGetValue(type, out var handler)) { Diverge($"World change of unknown type {type}; cannot apply."); return; }
@@ -465,6 +608,7 @@ public sealed class WorldSync
         ChainHash = ChainSeed;
         Divergence = null;
         Synchronized = true;
+        foreach (var st in _states) st.Reset();
         // Requests made for the old world can't succeed any more. The host also rejects them if they're in flight.
         AbandonPending($"world generation changed to {gen}");
         _log?.Invoke($"World generation {gen} started ({reason}).");

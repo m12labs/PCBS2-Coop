@@ -19,6 +19,9 @@ public sealed class SessionStats
 /// <see cref="PeerJoined"/> fires on both sides once that handshake is complete.</para>
 /// <para>World changes go through <see cref="World"/> on one reliable ordered stream; player positions use a
 /// separate sequenced stream that may drop stale packets.</para>
+/// <para>Admission: a joined guest is not in the world until it loads a host snapshot. The host sends one when
+/// <see cref="GuestNeedsWorld"/> (<see cref="BeginSnapshot"/>, then <see cref="SetSnapshotFile"/>); the guest gets
+/// <see cref="SnapshotReceived"/>, loads it and calls <see cref="CompleteAdmission"/> or <see cref="FailAdmission"/>.</para>
 /// Not thread-safe; call every member, including <see cref="Poll"/>, from one thread. Events are raised from inside <see cref="Poll"/>.
 /// </summary>
 public sealed class CoopSession : IDisposable
@@ -29,6 +32,12 @@ public sealed class CoopSession : IDisposable
     private NetPeer? _peer;
     private bool _joined;
     private string? _refusal;
+    private SnapshotSender _sender;
+    private readonly SnapshotReceiver _receiver = new();
+    private uint _loadingTransfer;
+
+    /// <summary>Snapshot bytes sent per <see cref="Poll"/> (about 15 MB/s at 60 frames per second).</summary>
+    public int SnapshotBytesPerPoll { get; set; } = 256 * 1024;
 
     public Role Role { get; private set; }
     public int Port { get; private set; }
@@ -46,6 +55,14 @@ public sealed class CoopSession : IDisposable
     /// <summary>World change pipeline for the running session; null when stopped.</summary>
     public WorldSync? World { get; private set; }
     public SessionStats Stats { get; private set; } = new();
+    /// <summary>The guest's admission state (the host's view of its guest, or the guest's own).</summary>
+    public GuestState GuestState { get; private set; }
+    /// <summary>Host: the guest is connected but has no world, and no load snapshot is on its way.</summary>
+    public bool GuestNeedsWorld => Role == Role.Host && IsJoined && World is { Admitted: true } && GuestState == GuestState.Connected && !_sender.LoadInProgress;
+    /// <summary>Host: a snapshot transfer is queued or being sent.</summary>
+    public bool SendingSnapshot => _sender.Queued > 0;
+    /// <summary>Guest: progress of the snapshot being received (0..1), or -1.</summary>
+    public float SnapshotProgress => _receiver.Active ? Math.Max(0, _receiver.Progress) : -1;
 
     /// <summary>Raised on both sides once the handshake completes.</summary>
     public event Action? PeerJoined;
@@ -55,10 +72,15 @@ public sealed class CoopSession : IDisposable
     public event Action<string>? Log;
     /// <summary>Raised when a new <see cref="World"/> is created (on Host/Join) so handlers can be registered.</summary>
     public event Action<WorldSync>? WorldCreated;
+    /// <summary>Guest: a complete, verified snapshot arrived. For a load snapshot, load it and call CompleteAdmission/FailAdmission.</summary>
+    public event Action<Snapshot>? SnapshotReceived;
+    /// <summary>Raised when <see cref="GuestState"/> changes (both sides).</summary>
+    public event Action<GuestState>? GuestStateChanged;
 
     public CoopSession()
     {
         _net = new NetManager(_listener) { DisconnectTimeout = 5000, UnconnectedMessagesEnabled = false };
+        _sender = new SnapshotSender(SendReliable);
         _listener.ConnectionRequestEvent += OnConnectionRequest;
         _listener.PeerConnectedEvent += OnPeerConnected;
         _listener.PeerDisconnectedEvent += OnPeerDisconnected;
@@ -105,7 +127,148 @@ public sealed class CoopSession : IDisposable
         return true;
     }
 
-    public void Poll() => _net.PollEvents();
+    public void Poll()
+    {
+        _net.PollEvents();
+        if (Role == Role.Host && HasPeer) _sender.Pump(SnapshotBytesPerPoll);
+    }
+
+    // ---------------- snapshots ----------------
+
+    /// <summary>
+    /// Host: mark a snapshot at the current point of the change stream. Call it in the same frame as the game save
+    /// that produces the file, then <see cref="SetSnapshotFile"/> once the file is written.
+    /// </summary>
+    public uint BeginSnapshot(SnapshotPurpose purpose)
+    {
+        if (Role != Role.Host || World == null) throw new InvalidOperationException("Only a running host sends snapshots.");
+        if (!IsJoined) throw new InvalidOperationException("No guest to send a snapshot to.");
+        var position = purpose == SnapshotPurpose.Load ? World.CapturePosition() : null;
+        var id = _sender.Mark(purpose, position);
+        Log?.Invoke(position != null
+            ? $"Snapshot {id} marked at generation {position.Generation}, revision {position.Revision}."
+            : $"Snapshot {id} (copy) marked.");
+        return id;
+    }
+
+    public void SetSnapshotFile(uint id, string fileName, byte[] file)
+    {
+        _sender.SetFile(id, fileName, file);
+        Log?.Invoke($"Snapshot {id}: sending '{fileName}' ({file.Length} bytes).");
+    }
+
+    public void AbortSnapshot(uint id, string reason)
+    {
+        _sender.Abort(id, reason);
+        Log?.Invoke($"Snapshot {id} aborted: {reason}");
+    }
+
+    /// <summary>Guest: the load snapshot's game world is ready. Enters the world and applies the held changes.</summary>
+    public bool CompleteAdmission(out string error)
+    {
+        error = "";
+        if (Role != Role.Client || World == null || !IsJoined) { error = "Not connected to a host."; return false; }
+        if (!World.Adopt(out error)) return false;
+        SetGuestState(GuestState.InWorld);
+        SendGuestStatus(GuestState.InWorld);
+        return true;
+    }
+
+    /// <summary>Guest: the world couldn't be received or loaded. Leaves the session with the reason (the host sees it too).</summary>
+    public void FailAdmission(string reason)
+    {
+        if (Role != Role.Client) return;
+        Log?.Invoke("Could not enter the host's world: " + reason);
+        World?.CancelHold();
+        _receiver.Reset();
+        SetGuestState(GuestState.Failed);
+        _refusal = reason;
+        if (_peer != null) _net.DisconnectPeer(_peer, ReasonBytes("The guest could not load the world: " + reason));
+    }
+
+    private void SendGuestStatus(GuestState state)
+    {
+        _writer.Reset();
+        _writer.Put((byte)MessageType.GuestStatus);
+        _writer.Put((byte)state);
+        _writer.Put(World?.Generation ?? 0);
+        SendReliable(_writer);
+    }
+
+    private void SetGuestState(GuestState state)
+    {
+        if (GuestState == state) return;
+        GuestState = state;
+        GuestStateChanged?.Invoke(state);
+    }
+
+    private void OnSnapshotMessage(MessageType type, NetDataReader r)
+    {
+        if (Role != Role.Client) { Stats.MalformedMessages++; return; }
+        string? error = null;
+        switch (type)
+        {
+            case MessageType.SnapshotMark:
+            {
+                if (_receiver.Active && _receiver.Purpose == SnapshotPurpose.Load) World!.CancelHold();
+                var position = _receiver.OnMark(r, out var id, out var purpose);
+                if (position != null)
+                {
+                    _loadingTransfer = id;
+                    World!.BeginHold(position);
+                    if (GuestState == GuestState.InWorld) SetGuestState(GuestState.Connected);
+                }
+                Log?.Invoke($"Receiving snapshot {id} ({purpose}).");
+                break;
+            }
+            case MessageType.SnapshotFile:
+                error = _receiver.OnFile(r);
+                break;
+            case MessageType.SnapshotChunk:
+                error = _receiver.OnChunk(r, out var done);
+                if (done != null)
+                {
+                    Log?.Invoke($"Snapshot {done.TransferId} complete: '{done.FileName}', {done.File.Length} bytes, checksum OK.");
+                    if (done.Purpose == SnapshotPurpose.Load)
+                    {
+                        SetGuestState(GuestState.Loading);
+                        SendGuestStatus(GuestState.Loading);
+                    }
+                    SnapshotReceived?.Invoke(done);
+                }
+                break;
+            case MessageType.SnapshotAbort:
+            {
+                var id = r.GetUInt();
+                var reason = Protocol.ReadString(r);
+                Log?.Invoke($"Host aborted snapshot {id}: {reason}");
+                if (id == _loadingTransfer) World!.CancelHold();
+                _receiver.Reset();
+                break;
+            }
+        }
+        if (error == null) return;
+        var wasLoad = _receiver.Purpose == SnapshotPurpose.Load;
+        _receiver.Reset();
+        if (wasLoad) FailAdmission(error);
+        else Log?.Invoke("Dropped a copy snapshot: " + error);
+    }
+
+    private void OnGuestStatus(NetDataReader r)
+    {
+        if (Role != Role.Host) { Stats.MalformedMessages++; return; }
+        var state = (GuestState)r.GetByte();
+        var gen = r.GetUInt();
+        if (state is not (GuestState.Loading or GuestState.InWorld)) { Stats.MalformedMessages++; return; }
+        if (state == GuestState.InWorld && gen != World?.Generation)
+        {
+            Log?.Invoke($"Guest entered generation {gen}, but the world is at {World?.Generation}; it needs a new snapshot.");
+            SetGuestState(GuestState.Connected);
+            return;
+        }
+        Log?.Invoke(state == GuestState.InWorld ? $"Guest is in the world (generation {gen})." : "Guest is loading the world.");
+        SetGuestState(state);
+    }
 
     public void SendState(in PlayerState state)
     {
@@ -116,12 +279,18 @@ public sealed class CoopSession : IDisposable
         Stats.PlayerStatesSent++;
     }
 
-    public void Stop()
+    /// <summary>End the session. <paramref name="reason"/> is shown to the other player.</summary>
+    public void Stop(string? reason = null)
     {
         if (Role == Role.None) return;
+        if (reason != null && _peer != null && _peer.ConnectionState == ConnectionState.Connected)
+            _net.DisconnectPeer(_peer, ReasonBytes(reason));
         _net.Stop(sendDisconnectMessages: true);
         _peer = null;
         _joined = false;
+        _sender.Clear();
+        _receiver.Reset();
+        SetGuestState(GuestState.Connected);
         World?.OnLinkLost();
         World = null;
         Log?.Invoke($"Session stopped ({Role}). {Stats}");
@@ -142,6 +311,9 @@ public sealed class CoopSession : IDisposable
         Stats = new SessionStats();
         _joined = false;
         _refusal = null;
+        _sender.Clear();
+        _receiver.Reset();
+        GuestState = GuestState.Connected;
         World = new WorldSync(role == Role.Host ? ActorSlot.Host : ActorSlot.Guest, SendReliable, m => Log?.Invoke("[world] " + m));
         WorldCreated?.Invoke(World);
     }
@@ -276,6 +448,9 @@ public sealed class CoopSession : IDisposable
         _peer = null;
         var wasJoined = _joined;
         _joined = false;
+        _sender.Clear();
+        _receiver.Reset();
+        SetGuestState(GuestState.Connected);
         World?.OnLinkLost();
 
         string? hostReason = null;
@@ -321,6 +496,12 @@ public sealed class CoopSession : IDisposable
             }
 
             if (method != DeliveryMethod.ReliableOrdered) { Stats.MalformedMessages++; return; }
+            if (type is MessageType.SnapshotMark or MessageType.SnapshotFile or MessageType.SnapshotChunk or MessageType.SnapshotAbort)
+            {
+                OnSnapshotMessage(type, reader);
+                return;
+            }
+            if (type == MessageType.GuestStatus) { OnGuestStatus(reader); return; }
             if (World == null || !World.Handle(type, reader))
             {
                 Stats.UnknownMessages++;

@@ -21,12 +21,14 @@ public sealed class CoopRunner : MonoBehaviour
 
     private TextMeshProUGUI _status;
     private AutoTest _autoTest;
+    private Probe _probe;
 
     private void Awake()
     {
         Instance = this;
         Coop = new CoopController();
         _autoTest = AutoTest.FromEnvironment();
+        if (Probe.Enabled) _probe = new Probe();
     }
 
     private void Update()
@@ -41,11 +43,10 @@ public sealed class CoopRunner : MonoBehaviour
         if (scene != Scene)
         {
             Plugin.Logger.LogInfo($"Active scene: '{Scene}' -> '{scene}'");
-            // Going back to the main menu ends the session.
-            if (scene == MenuScene && Scene != "" && Scene != "Logos") Coop.Stop("Returned to the main menu.");
             Scene = scene;
             Menu = null;
-            if (scene == WorkshopScene) Coop.OnHostWorldEntered(scene);
+            // Back on the main menu: any session ends and the solo save folder is restored.
+            if (scene == MenuScene) Coop.OnMainMenu();
         }
 
         if (scene == MenuScene && (Menu == null || !Menu.IsAlive)) Menu = MultiplayerMenu.TryBuild(Coop);
@@ -54,9 +55,10 @@ public sealed class CoopRunner : MonoBehaviour
         Coop.Update(scene == WorkshopScene);
         UpdateStatus(scene == WorkshopScene);
         _autoTest?.Update(this);
+        _probe?.Update(this);
     }
 
-    private void OnApplicationQuit() => Coop?.Stop("Game closing.");
+    private void OnApplicationQuit() => Coop?.OnQuit();
 
     /// <summary>One line at the top-left of the workshop showing the session state.</summary>
     private void UpdateStatus(bool inWorkshop)
@@ -66,10 +68,7 @@ public sealed class CoopRunner : MonoBehaviour
         if (_status == null) return;
         _status.gameObject.SetActive(show);
         if (!show) return;
-        var s = Coop.Session;
-        _status.text = (s.Role == Role.Host
-            ? (s.IsJoined ? $"Co-op host · port {s.Port} · Client connected ({s.PingMs} ms)" : $"Co-op host · port {s.Port} · waiting for Client")
-            : (s.IsJoined ? $"Co-op client · connected to Host ({s.PingMs} ms)" : "Co-op client · disconnected")) + Coop.ProblemSummary;
+        _status.text = Coop.StatusLine + Coop.ProblemSummary;
     }
 
     private TextMeshProUGUI CreateStatus()

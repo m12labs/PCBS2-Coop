@@ -40,7 +40,7 @@ internal static class GameInfo
 
     public static PeerIdentity Build()
     {
-        var id = new PeerIdentity(Player, ModVersion.Value, Protocol.Version, ReadGame(), ReadContent());
+        var id = new PeerIdentity(Player, ModVersion.Value, ReadGame(), ReadContent());
         Plugin.Logger.LogInfo($"Local identity: {id}");
         return id;
     }

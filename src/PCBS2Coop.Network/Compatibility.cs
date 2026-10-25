@@ -23,13 +23,12 @@ public sealed record ContentIdentity(IReadOnlyList<string> Dlcs, string CatalogH
 }
 
 /// <summary>Everything a peer tells the other when connecting.</summary>
-public sealed record PeerIdentity(PlayerId Player, string ModVersion, int ProtocolVersion, GameIdentity Game, ContentIdentity Content)
+public sealed record PeerIdentity(PlayerId Player, string ModVersion, GameIdentity Game, ContentIdentity Content)
 {
     public void Write(NetDataWriter w)
     {
         Player.Write(w);
         w.Put(ModVersion, Protocol.MaxShortString);
-        w.Put(ProtocolVersion);
         w.Put(Game.Version, Protocol.MaxShortString);
         w.Put(Game.BuildGuid, Protocol.MaxShortString);
         w.Put((byte)Math.Min(Content.Dlcs.Count, Protocol.MaxDlcEntries));
@@ -43,7 +42,6 @@ public sealed record PeerIdentity(PlayerId Player, string ModVersion, int Protoc
     {
         var player = PlayerId.Read(r);
         var mod = Protocol.ReadString(r);
-        var proto = r.GetInt();
         var game = new GameIdentity(Protocol.ReadString(r), Protocol.ReadString(r));
         var n = r.GetByte();
         if (n > Protocol.MaxDlcEntries) throw new FormatException("Too many DLC entries.");
@@ -52,15 +50,15 @@ public sealed record PeerIdentity(PlayerId Player, string ModVersion, int Protoc
         var hash = Protocol.ReadString(r);
         var count = r.GetInt();
         if (count < -1) throw new FormatException("Bad catalog count.");
-        return new PeerIdentity(player, mod, proto, game, new ContentIdentity(dlcs, hash, count));
+        return new PeerIdentity(player, mod, game, new ContentIdentity(dlcs, hash, count));
     }
 
-    public override string ToString() => $"player {Player}, mod {ModVersion}, protocol {ProtocolVersion}, game {Game}, {Content}";
+    public override string ToString() => $"player {Player}, mod {ModVersion}, game {Game}, {Content}";
 }
 
 /// <summary>
 /// Outcome of comparing two peers. <see cref="Problems"/> refuse the join; <see cref="Warnings"/> allow it.
-/// Owner decision (Oct 25, 2026): refuse a different mod/protocol/game build; warn on DLC or part catalog differences.
+/// Owner decision (Oct 25, 2026): refuse a different mod version or game build; warn on DLC or part catalog differences.
 /// </summary>
 public sealed record CompatibilityResult(IReadOnlyList<string> Problems, IReadOnlyList<string> Warnings)
 {
@@ -76,8 +74,6 @@ public static class Compatibility
 
         if (host.ModVersion != guest.ModVersion)
             problems.Add($"Different mod versions (host {host.ModVersion}, you {guest.ModVersion}).");
-        if (host.ProtocolVersion != guest.ProtocolVersion)
-            problems.Add($"Different network protocol (host {host.ProtocolVersion}, you {guest.ProtocolVersion}).");
 
         if (!host.Game.IsKnown || !guest.Game.IsKnown)
             warnings.Add("The game build could not be read on one side, so it was not compared.");

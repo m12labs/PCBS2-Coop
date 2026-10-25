@@ -13,6 +13,7 @@ internal sealed class FakeLink
     public readonly List<(OperationId Op, ulong Rev)> HostAccepted = new(), GuestAccepted = new();
     public readonly List<(OperationId Op, RejectReason Reason, string Text)> HostRejected = new(), GuestRejected = new();
     public readonly List<string> Divergences = new();
+    public readonly List<string> Replaced = new();
 
     public FakeLink(bool withCascade = false)
     {
@@ -20,6 +21,9 @@ internal sealed class FakeLink
         Guest = new WorldSync(ActorSlot.Guest, w => ToHost.Add(w.CopyData()));
         Host.Register(CommandTypes.DiagnosticMarker, HostMarkers);
         Guest.Register(CommandTypes.DiagnosticMarker, GuestMarkers);
+        Host.RegisterState(HostMarkers);
+        Guest.RegisterState(GuestMarkers);
+        Guest.WorldReplaced += r => Replaced.Add(r);
         if (withCascade)
         {
             Host.Register(2, new CascadeHandler { World = Host });
@@ -33,12 +37,29 @@ internal sealed class FakeLink
         Host.Linked = Guest.Linked = true;
     }
 
-    /// <summary>What the session does on join: the guest adopts the host's world position.</summary>
+    /// <summary>
+    /// What a join does: everything already on the wire reaches the guest first (before the snapshot mark), then the
+    /// guest loads a snapshot of the host's current world and enters it.
+    /// </summary>
     public void Join()
     {
-        var w = new NetDataWriter();
-        Host.WriteWorldPosition(w);
-        Guest.ReadWorldPosition(new NetDataReader(w.CopyData()));
+        DeliverToGuest();
+        MarkSnapshot();
+        if (!Guest.Adopt(out var error)) throw new InvalidOperationException(error);
+    }
+
+    /// <summary>The host marks a snapshot; the guest starts holding world changes (it is "loading").</summary>
+    public SnapshotPosition MarkSnapshot()
+    {
+        DeliverToGuest();
+        var p = Host.CapturePosition();
+        Guest.BeginHold(p);
+        return p;
+    }
+
+    public void DeliverToGuest()
+    {
+        while (ToGuest.Count > 0) { var m = ToGuest[0]; ToGuest.RemoveAt(0); Deliver(Guest, m); }
     }
 
     public static void Deliver(WorldSync to, byte[] msg)
@@ -200,6 +221,9 @@ internal static class WorldSyncTests
             t.Check(l.GuestRejected.Count(x => x.Op == stale) == 1 && l.GuestRejected.First(x => x.Op == stale).Reason == RejectReason.Abandoned,
                 "guest learns once that its old-world request failed");
             t.Check(l.Guest.Generation == 2 && l.Guest.Revision == 0 && l.Host.Revision == 0, "guest moved to generation 2 at revision 0");
+            t.Check(!l.Guest.Admitted && l.Replaced.Count == 1, "after the host's reset the guest is out of the world (WorldReplaced) until it loads a new snapshot");
+            t.Check(!l.Guest.Submit(CommandTypes.DiagnosticMarker, new DiagnosticMarker("x").ToBytes(), out _), "guest can't submit while out of the world");
+            l.Join();
 
             // A change from the old world arriving after the reset is dropped.
             l.Mark(l.Host, "gen2-a");
@@ -233,6 +257,7 @@ internal static class WorldSyncTests
             l.Host.BeginGeneration("resync");
             l.Flush();
             t.Check(l.Guest.Divergence == null && l.Guest.Generation == 2, "a new generation clears the divergence flag");
+            l.Join();
 
             l.Mark(l.Host, "4");
             var msg = l.ToGuest[0];
@@ -263,9 +288,10 @@ internal static class WorldSyncTests
             var rejoin = new WorldSync(ActorSlot.Guest, w => l.ToHost.Add(w.CopyData()));
             var rejoinMarkers = new MarkerHandler();
             rejoin.Register(CommandTypes.DiagnosticMarker, rejoinMarkers);
-            var pos = new NetDataWriter(); l.Host.WriteWorldPosition(pos);
+            rejoin.RegisterState(rejoinMarkers);
             l.Host.Linked = rejoin.Linked = true;
-            rejoin.ReadWorldPosition(new NetDataReader(pos.CopyData()));
+            rejoin.BeginHold(l.Host.CapturePosition());
+            rejoin.Adopt(out _);
             rejoin.Submit(CommandTypes.DiagnosticMarker, new DiagnosticMarker("after-rejoin").ToBytes(), out var op);
             t.Check(op.Sequence == 1, "a rejoined guest starts numbering at 1 again");
             foreach (var m in l.ToHost.ToList()) FakeLink.Deliver(l.Host, m);

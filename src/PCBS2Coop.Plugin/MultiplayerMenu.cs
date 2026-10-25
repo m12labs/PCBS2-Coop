@@ -70,11 +70,12 @@ internal sealed class MultiplayerMenu
         var result = new MultiplayerMenu(menu, freeBuild, panel, dialog);
         Ui.HookMenuButton(host.gameObject, result.OpenHost);
         Ui.HookMenuButton(join.gameObject, result.OpenJoin);
-        dialog.StartFreeBuild = result.StartNewFreeBuild;
         result.HostButton = host.gameObject;
         result.JoinButton = join.gameObject;
         LogWiring(p);
         Plugin.Logger.LogInfo("Multiplayer panel added to main menu.");
+        var message = coop.TakeMenuMessage();
+        if (message != null) dialog.OpenMessage(message);
         return result;
     }
 
@@ -93,13 +94,6 @@ internal sealed class MultiplayerMenu
             _panelGroup.blocksRaycasts = _sourceGroup.blocksRaycasts;
         }
         _dialog.Update();
-    }
-
-    /// <summary>Same as Free Build > New Game: the game's PlayFree, including its overwrite prompt.</summary>
-    private void StartNewFreeBuild()
-    {
-        Plugin.Logger.LogInfo("Starting a new Free Build (NewMainMenu.PlayFree).");
-        _menu.PlayFree();
     }
 
     /// <summary>Log how the cloned panel's click handling is wired, to confirm no game action is left on it.</summary>
@@ -131,7 +125,10 @@ internal sealed class MultiplayerMenu
     }
 }
 
-/// <summary>Host / Join popup built from the game's "NewConfirm" message box.</summary>
+/// <summary>
+/// Host / Join popup built from the game's "NewConfirm" message box.
+/// Host: "New world" and "Continue" (the one co-op Free Build world). Join: connect, then wait for the host's world.
+/// </summary>
 internal sealed class CoopDialog
 {
     public enum Mode { Host, Join }
@@ -144,12 +141,15 @@ internal sealed class CoopDialog
     private readonly GameObject _ipRow;
     private readonly TMP_Text _applyText;
     private readonly Button _apply;
+    private readonly Button _continue;
     private readonly CoopController _coop;
     private Mode _mode;
     private bool _waiting;
+    private bool _confirmNew;
+    private readonly Color _normalColor;
 
-    public Action StartFreeBuild { get; set; } = () => { };
     public bool IsOpen => _root != null && _root.activeSelf;
+    public GameObject ContinueButton => _continue.gameObject;
 
     private CoopDialog(GameObject root, CoopController coop)
     {
@@ -160,6 +160,7 @@ internal sealed class CoopDialog
         var body = Ui.Child(box, "Body").GetComponent<TMP_Text>();
         Ui.Child(box, "SubTitle").GetComponent<TMP_Text>().text = "";
         _status = body;
+        _normalColor = body.color;
         _status.text = "";
 
         var fieldStyle = body;
@@ -187,8 +188,16 @@ internal sealed class CoopDialog
 
         var apply = Ui.Child(box, "ApplyButton");
         var back = Ui.Child(box, "BackButton");
+        // Continue sits on the far side of Apply from Back, on the same row.
+        var cont = Object.Instantiate(apply.gameObject, apply.parent);
+        cont.name = "ContinueButton";
+        var applyRt = apply.GetComponent<RectTransform>();
+        var backRt = back.GetComponent<RectTransform>();
+        cont.GetComponent<RectTransform>().anchoredPosition = applyRt.anchoredPosition + (applyRt.anchoredPosition - backRt.anchoredPosition);
         _applyText = apply.GetComponentInChildren<TMP_Text>(true);
         _apply = Ui.MakeButton(apply.gameObject, OnApply);
+        _continue = Ui.MakeButton(cont, OnContinue);
+        cont.GetComponentInChildren<TMP_Text>(true).text = "Continue";
         Ui.MakeButton(back.gameObject, OnBack);
         Ui.SetText(back, "Back");
     }
@@ -211,12 +220,16 @@ internal sealed class CoopDialog
     {
         _mode = mode;
         _waiting = false;
-        _coop.Stop("Opening the co-op dialog.");
+        _confirmNew = false;
+        _coop.Stop(null, "Opening the co-op dialog.");
         _title.text = mode == Mode.Host ? "Host Game" : "Join Game";
-        _applyText.text = mode == Mode.Host ? "Host" : "Connect";
+        _applyText.text = mode == Mode.Host ? "New world" : "Connect";
         _ipRow.SetActive(mode == Mode.Join);
+        var hasWorld = mode == Mode.Host && CoopSaves.HasCoopWorld();
+        _continue.gameObject.SetActive(mode == Mode.Host);
+        _continue.interactable = hasWorld;
         SetStatus(mode == Mode.Host
-            ? "Players join with this PC's IP address and the port below."
+            ? "Players join with this PC's IP address and the port below." + (hasWorld ? "" : "\nNo co-op world yet: start a new one.")
             : "Enter the host's IP address and port.", false);
         _apply.interactable = true;
         _root.SetActive(true);
@@ -232,19 +245,32 @@ internal sealed class CoopDialog
 
     public GameObject ApplyButton => _apply.gameObject;
 
+    /// <summary>Show a message on the main menu (for example why the guest left the host's world).</summary>
+    public void OpenMessage(string text)
+    {
+        Open(Mode.Join);
+        SetStatus(text, true);
+    }
+
     public void Update()
     {
         if (!IsOpen || !_waiting) return;
-        if (_coop.Session.IsJoined)
+        var s = _coop.Session;
+        if (_coop.GuestLoadStarted)
         {
             Close();
-            StartFreeBuild();
+            return;
+        }
+        if (s.IsJoined)
+        {
+            var p = s.SnapshotProgress;
+            SetStatus(p >= 0 ? $"Receiving the host's world… {p * 100:F0}%" : "Connected. Waiting for the host's world…", false);
         }
         else if (_coop.LastFailure != null)
         {
             _waiting = false;
             _apply.interactable = true;
-            SetStatus("Could not connect: " + _coop.LastFailure, true);
+            SetStatus("Could not join: " + _coop.LastFailure, true);
         }
     }
 
@@ -257,9 +283,13 @@ internal sealed class CoopDialog
         }
         if (_mode == Mode.Host)
         {
-            if (!_coop.Host(port, out var error)) { SetStatus(error, true); return; }
-            Close();
-            StartFreeBuild();
+            if (CoopSaves.HasCoopWorld() && !_confirmNew)
+            {
+                _confirmNew = true;
+                SetStatus("This replaces your co-op world with a new one. Press New world again to confirm, or Continue to keep it.", true);
+                return;
+            }
+            StartHost(port, continueWorld: false);
             return;
         }
         if (!_coop.Join(_ip.text, port, out var joinError)) { SetStatus(joinError, true); return; }
@@ -268,15 +298,32 @@ internal sealed class CoopDialog
         SetStatus($"Connecting to {_ip.text.Trim()}:{port}…", false);
     }
 
+    private void OnContinue()
+    {
+        if (!int.TryParse(_port.text, out var port) || port < 1 || port > 65535)
+        {
+            SetStatus("Port must be a number from 1 to 65535.", true);
+            return;
+        }
+        StartHost(port, continueWorld: true);
+    }
+
+    private void StartHost(int port, bool continueWorld)
+    {
+        if (!_coop.HostWorld(port, continueWorld, out var error)) { SetStatus(error, true); return; }
+        Close();
+    }
+
     private void OnBack()
     {
-        _coop.Stop("Co-op dialog closed.");
+        _coop.Stop(null, "Co-op dialog closed.");
         Close();
     }
 
     private void SetStatus(string text, bool error)
     {
         _status.text = text;
-        _status.color = error ? new Color(1f, 0.45f, 0.4f) : Color.white;
+        // The message box is white; keep the game's own body text colour for normal text.
+        _status.color = error ? new Color(0.85f, 0.2f, 0.15f) : _normalColor;
     }
 }
