@@ -1,5 +1,7 @@
 # PCBS2 Co-op synchronization progress
 
+**October 26, 2026 — task 3g complete, version 0.10.** [Workstation peripherals](audit/phase-3.md#task-3g-workstation-peripherals-packages-and-physical-notes): replacing a workbench's monitor, keyboard, mouse, mouse pad or headset now asks the host, which applies it once on both games. Two swaps of one slot can't both land, and a swap where the other player is working is refused with a notice. A world that contains a package or a physical note is refused instead of being half shared (Free Build can't create either). 0.8/0.9 co-op saves still load. **309/309** model/network checks; Release build clean. Owned game checks G1–G7 passed: ordinary-input monitor, keyboard, mouse and mouse pad swaps from both players show on both games (G2), the busy refusal shows its notice while a swap at another workstation lands (G3), plus races, a swap during a guest's load, save/Continue/rejoin, a genuine 0.9 save and package refusal. G2 first exposed a host crash when it showed a guest's keyboard swap and a too-large mouse pad being accepted; both are fixed. See the audit for evidence and limits.
+
 **October 26, 2026 — experimental Steam connection, version 0.9.** Steam/LAN selection, private Steam lobby invites, P2P/relay transport and an in-game friends picker are implemented. Single-PC Steam initialization, hosting and UI have running-game evidence; two-PC invitation acceptance and actual relayed gameplay remain pending. Gameplay synchronization scope is unchanged. See the [implementation evidence and manual checklist](../steamworks.md#implementation-status).
 
 **October 25, 2026 — task 3f complete, version 0.8.** [Atomic carry, bench and storage transfers](audit/phase-3.md#task-3f-atomic-carry-bench-and-storage-transfers) now persist correctly after rapid transfers. F11–F16 found the last two causes of failed saves:
@@ -97,7 +99,7 @@ Detailed evidence: [PW-001–075](audit/player-workshop-and-presentation.md).
 | Workshop presence/remote visibility | | ✅ | | Flag/freshness gate; no scene identity/readiness or explicit exit snapshot. |
 | Capsule/visor and Host/Client label | | | ✅ | No animation rig or player collision. |
 | Look pitch, gait, remote activity/tool/target/pose | | ✅ | | Phase 3d shares actor work targets and resource claims. Head/body/tool animation, gait, pitch and visible activity poses remain later work. |
-| PC/package/post-it pickup/carry/drop/store/spawn/despawn | | ✅ | | Phase 3e: catalog case spawn/switch, in-world carried-case delete and confirmed storage delete are host-approved changes applied once on both peers (E3–E5). Phase 3f adds host-approved pickup/drop/swap/store/retrieve, matching peer placement, a remote package box, races, departure recovery and stale-load suppression (F2/F5/F7, 0.8); packages/notes 3g. |
+| PC/package/post-it pickup/carry/drop/store/spawn/despawn | | ✅ | | Phase 3e: catalog case spawn/switch, in-world carried-case delete and confirmed storage delete are host-approved changes applied once on both peers (E3–E5). Phase 3f adds host-approved pickup/drop/swap/store/retrieve, matching peer placement, a remote package box, races, departure recovery and stale-load suppression (F2/F5/F7, 0.8); packages and physical notes are refused (3g, 0.10): a world containing one can't be hosted. |
 | Bench/tool/workstation assignment and independent activities | | ✅ | | Phase 3d verifies independent native work benches/cameras, shared-PC activity and part-claim conflicts. Remote activity stays outside native singleton fields. Live transfers/workstation associations are 3f/3g; specialist tools follow their own phase. |
 | Job notes, package visuals, status/sale placards and ghost meshes | ✅ | | | Must follow underlying PC/job/location. |
 | Doors, workshop travel/upgrade and room customization | ✅ | | | Furniture/material/prefab/collision/AR-preview-versus-commit. |
@@ -123,7 +125,7 @@ Detailed evidence: [HW-001–078](audit/hardware-and-building.md).
 | Water loops/pipes/fittings/coolant/fill/drain/pump/run/direction | ✅ | | | Save graph and visible flow; no invented leak mechanic. |
 | Case themes/paint/material/stickers/brush strokes/transforms | ✅ | | | Saved primitives, asset keys, DLC and customization IDs. |
 | LEDs/RGB/strip nodes and fan curves/direction/flipping/spin/blur | ✅ | | | Config, simulation and visual phase differ. |
-| Peripheral/desk/monitor/LCD assignment, plugs and power | ✅ | | | Correct PC/bench/component binding. |
+| Peripheral/desk/monitor/LCD assignment, plugs and power | | ✅ | | Phase 3g (0.10): workbench peripheral swaps (monitor, keyboard, mouse, mouse pad, headset) are host-approved and applied once on both games, verified in owned two-instance runs (G1–G7). Desk/LCD assignment, LED config, plugs and power remain (phases 5, 6, 11). |
 | Condition/breakage/repair and powered/damage presentation | ✅ | | | Logical consequences versus visual damage evidence. |
 
 ## Computer screens, software and simulation

@@ -52,6 +52,7 @@ internal sealed class CoopController
     private NativeActivity _nativeActivity;
     public NativePcLifecycle Lifecycle { get; private set; }
     public NativePcTransfers Transfers { get; private set; }
+    public NativeWorkstations Workstations { get; private set; }
     private string _notice;
     private float _noticeUntil;
     public string ActiveNotice => _notice != null && Time.realtimeSinceStartup < _noticeUntil ? _notice : null;
@@ -242,7 +243,7 @@ internal sealed class CoopController
         Session.Stop(toPeer);
         SteamBootstrap.Service?.Cancel();
         Objects.Reset();
-        Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; _notice = null; NativeProjection.Reset();
+        Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; Workstations = null; _notice = null; NativeProjection.Reset();
         DestroyView();
         _lastRemoteAt = -1;
         _hostWorldStarted = false;
@@ -283,7 +284,7 @@ internal sealed class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); NativeProjection.Update(); }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); NativeProjection.Update(); }
 
         UpdateRemoteView(inWorkshop);
     }
@@ -292,6 +293,12 @@ internal sealed class CoopController
     {
         if (!_hostWorldStarted && _readiness.Ready && CoopSaves.Current == CoopSaves.Mode.Host)
         {
+            // Owner decision (3g): a world with packages or physical notes is refused rather than half shared.
+            if (NativeWorkstations.Unsupported() is { } unsupported)
+            {
+                LeaveToMenu($"Co-op can't host this world: it contains {unsupported}. Packages and physical notes aren't shared in co-op yet.", false);
+                return;
+            }
             try
             {
                 Session.World!.BeginGeneration(_hostWorldKind ?? "co-op world");
@@ -302,6 +309,7 @@ internal sealed class CoopController
                     _loadingPair = null;
                 }
                 Objects.CaptureHost(Session.LocalIdentity.Player);
+                Workstations.CaptureHost();
                 // Saved work/reservations belong to the previous session. Preserve committed objects only.
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, default), out _);
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Host, Session.LocalIdentity.Player), out _);
@@ -315,7 +323,7 @@ internal sealed class CoopController
             Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, Session.RemoteIdentity.Player), out _);
         if (_pairWrites.Count > 0 && !SaveLoadSystem.WaitingOnThread()) FinishPairWrites();
         if (_pendingFile is { } p) PollSnapshotFile(p);
-        else if (Session.GuestNeedsWorld && _hostWorldStarted && _readiness.Ready) TakeSnapshot();
+        else if (Session.GuestNeedsWorld && _hostWorldStarted && _readiness.Ready && Workstations?.Settled != false) TakeSnapshot();
         else if (_copiesToSend.Count > 0 && Session.GuestState == GuestState.InWorld && !SaveLoadSystem.WaitingOnThread()) SendCopy(_copiesToSend.Dequeue());
     }
 
@@ -326,6 +334,12 @@ internal sealed class CoopController
         if (inWorkshop && _readiness.Ready)
         {
             _guestLoading = false;
+            // The host refuses such worlds; never enter one that got through anyway.
+            if (NativeWorkstations.Unsupported() is { } unsupported)
+            {
+                LeaveToMenu($"The host's world contains {unsupported}, which co-op doesn't share yet.", failAdmission: true);
+                return;
+            }
             if (Session.CompleteAdmission(out var error))
             {
                 Objects.FinishGuestRestore(); _loadingPair = null;
@@ -351,6 +365,7 @@ internal sealed class CoopController
         {
             Lifecycle?.ExtendHost(); Lifecycle?.ObserveHost(force: true);
             Objects.CaptureHost(Session.LocalIdentity.Player);
+            Workstations?.CheckNative();
             _saveCapture = (Session.World.CapturePosition(), Objects.CaptureCarriers());
         }
         catch (Exception e) { LeaveToMenu("Could not capture co-op identities: " + e.Message, false); return; }
@@ -434,6 +449,7 @@ internal sealed class CoopController
                 throw new InvalidOperationException("Objects are still loading; wait before saving.");
             Lifecycle?.ExtendHost(); Lifecycle?.ObserveHost(force: true);
             Objects.CaptureHost(Session.LocalIdentity.Player);
+            Workstations?.CheckNative();
             _saveCapture = (Session.World.CapturePosition(), Objects.CaptureCarriers());
             return true;
         }
@@ -571,6 +587,7 @@ internal sealed class CoopController
         _nativeActivity = new NativeActivity(this, world);
         Lifecycle = new NativePcLifecycle(this, world);
         Transfers = new NativePcTransfers(this, world);
+        Workstations = new NativeWorkstations(this, world);
         world.Register(CommandTypes.DiagnosticMarker, Markers);
         world.RegisterState(Markers);
         world.RegisterState(Objects);
@@ -578,6 +595,9 @@ internal sealed class CoopController
         world.RegisterState(Activity);
         world.Register(CommandTypes.PcLifecycle, Lifecycle.Handler);
         world.Register(CommandTypes.PcTransfer, Transfers.Handler);
+        world.Register(CommandTypes.PeripheralSwap, Workstations.Model);
+        // Optional: saves from before 0.10 have no workstation state; the host binds it from its loaded world.
+        world.RegisterState(Workstations, optional: true);
         world.Rejected += (OperationId op, RejectReason reason, string text) => Plugin.Logger.LogWarning($"[world] {op} refused: {reason} {text}");
         world.Diverged += (string why) => Plugin.Logger.LogError($"[world] OUT OF SYNC: {why}");
         world.GenerationStarted += (uint gen, string why) => Plugin.Logger.LogInfo($"[world] generation {gen}: {why}");

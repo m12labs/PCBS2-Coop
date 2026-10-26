@@ -98,6 +98,7 @@ public sealed class WorldSync
 
     private readonly Dictionary<ushort, ICommandHandler> _handlers = new();
     private readonly List<IWorldState> _states = new();
+    private readonly HashSet<string> _optionalStates = new();
     private readonly List<(MessageType Type, byte[] Body)> _held = new();
     private long _heldBytes;
     private SnapshotPosition? _holdFor;
@@ -156,12 +157,14 @@ public sealed class WorldSync
     /// <summary>Guest: the host started a different world after this guest was admitted. The guest is no longer in the world.</summary>
     public event Action<string>? WorldReplaced;
 
-    /// <summary>Add mod state that travels with load snapshots. Names must be unique.</summary>
-    public void RegisterState(IWorldState state)
+    /// <summary>Add mod state that travels with load snapshots. Names must be unique. An <paramref name="optional"/>
+    /// state may be absent from older saves: it is then left reset, and its owner rebuilds it from the game.</summary>
+    public void RegisterState(IWorldState state, bool optional = false)
     {
         if (state == null) throw new ArgumentNullException(nameof(state));
         if (_states.Any(x => x.Name == state.Name)) throw new InvalidOperationException($"World state '{state.Name}' is already registered.");
         _states.Add(state);
+        if (optional) _optionalStates.Add(state.Name);
     }
 
     public void Register(ushort type, ICommandHandler handler)
@@ -330,7 +333,7 @@ public sealed class WorldSync
             st.Read(sr);
             if (sr.AvailableBytes != 0) throw new InvalidDataException($"trailing state bytes for '{name}'");
         }
-        var missing = _states.Where(x => !seen.Contains(x.Name)).Select(x => x.Name).ToList();
+        var missing = _states.Where(x => !seen.Contains(x.Name) && !_optionalStates.Contains(x.Name)).Select(x => x.Name).ToList();
         if (missing.Count > 0) throw new InvalidDataException("missing world state: " + string.Join(", ", missing));
         if (r.AvailableBytes != 0) throw new InvalidDataException("Trailing world state bytes.");
     }

@@ -30,10 +30,33 @@ internal static class GamePatches
             transfers.PatchAll(typeof(NativePcTransfers.StoreIntercept));
             transfers.PatchAll(typeof(NativePcTransfers.RetrieveIntercept));
             transfers.PatchAll(typeof(NativeProjection.AutosaveDeferral));
+            new Harmony(Plugin.Guid + ".workstations").PatchAll(typeof(NativeWorkstations.SwapIntercept));
+            foreach (var method in Harmony.GetAllPatchedMethods())
+                if (FoldedWith(method) is { } other)
+                    Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");
             Ready = true;
-            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers).");
+            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers, peripherals).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
+    }
+
+    /// <summary>The native code a generated IL2CPP method runs, or zero for a managed method. The game's linker merges
+    /// identical method bodies into one function (the keyboard, mouse, mouse pad and headset <c>SwapPerif</c> are one).
+    /// A second hook on the same code crashes the game in the runtime when the original runs (3g, G2), so hook each
+    /// native function through one method only.</summary>
+    internal static IntPtr NativeCode(System.Reflection.MethodBase method)
+    {
+        var field = Il2CppInterop.Common.Il2CppInteropUtils.GetIl2CppMethodInfoPointerFieldForGeneratedMethod(method);
+        var info = field?.GetValue(null) is IntPtr p ? p : IntPtr.Zero;
+        // Il2CppMethodInfo starts with its methodPointer.
+        return info == IntPtr.Zero ? IntPtr.Zero : System.Runtime.InteropServices.Marshal.ReadIntPtr(info);
+    }
+
+    /// <summary>Another already patched method that runs the same native code, or null.</summary>
+    internal static System.Reflection.MethodBase FoldedWith(System.Reflection.MethodBase method)
+    {
+        var code = NativeCode(method);
+        return code == IntPtr.Zero ? null : Harmony.GetAllPatchedMethods().FirstOrDefault(m => m != method && NativeCode(m) == code);
     }
 
     [HarmonyPatch(typeof(WorkshopController), nameof(WorkshopController.PickUpCase))]

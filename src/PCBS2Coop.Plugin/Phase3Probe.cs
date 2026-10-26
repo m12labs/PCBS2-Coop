@@ -99,6 +99,14 @@ internal sealed class Phase3Probe
         if (command.Length == 0) return;
         Event("operator-command", command);
         if (command == "capture") Capture("operator");
+        else if (command == "package-fixture-save")
+        {
+            // G7 setup only: native package creation/save outside a session, followed by a hash-matched
+            // sidecar retaining the pre-fixture PC facts. Continue must refuse before admitting this world.
+            if (!Safe || !runner.Coop.WorldReady || runner.Coop.Session.Role != Network.Role.Host || runner.Coop.Session.HasPeer)
+                throw new InvalidOperationException("Package fixture requires an isolated ready host without a guest.");
+            runner.StartCoroutine(PackageFixture(runner).WrapToIl2Cpp());
+        }
         else if (command.StartsWith("activity-reserve "))
         {
             var coop = runner.Coop; var actor = coop.Activity.Get(coop.Session.World.Local);
@@ -178,6 +186,41 @@ internal sealed class Phase3Probe
             var result = new { passed = error == null && unchanged, count, unchanged, error, revision = coop.Session.World.Revision };
             File.WriteAllText(Path.Combine(_dir, "objects-check.json"), JsonSerializer.Serialize(result));
             Event("objects-check", result);
+        }
+        else if (command == "peripherals-report")
+        {
+            // Task 3g: shared slot facts (hash to compare across peers) and what this game shows in each slot.
+            var coop = runner.Coop; var ws = coop.Workstations; var state = new LiteNetLib.Utils.NetDataWriter(); ws.Model.Write(state);
+            string check = null;
+            try { ws.CheckNative(); } catch (Exception e) { check = e.Message; }
+            var result = new { revision = coop.Session.World.Revision, hash = Convert.ToHexString(SHA256.HashData(state.CopyData())),
+                slots = ws.Model.Slots.Select(s => $"{s.Bench}/{s.Slot}={s.Path}"), native = ws.Report(), settled = ws.Settled, check,
+                unsupported = NativeWorkstations.Unsupported(), inventory = CareerStatus.Get()?.GetPeripheralInventory()?.Count };
+            File.WriteAllText(Path.Combine(_dir, "peripherals-report.json"), JsonSerializer.Serialize(result)); Event("peripherals-report", result);
+        }
+        else if (command.StartsWith("perif-request:", StringComparison.Ordinal))
+        {
+            // Pinned intent (optionally naming a stale "from" path) for race checks; bypasses the gesture deliberately.
+            var coop = runner.Coop; var world = coop.Session.World; var bits = command.Split(':', 5);
+            if (bits.Length < 4) throw new ArgumentException("perif-request:<bench>:<slot>:<part>[:from path]");
+            int bench = int.Parse(bits[1]), slot = int.Parse(bits[2]);
+            var from = bits.Length == 5 ? bits[4] : coop.Workstations.Model.Get(bench, slot)?.Path ?? "";
+            world.Submit(Network.CommandTypes.PeripheralSwap, Network.WorkstationWorld.Swap(coop.Activity.Get(world.Local)!.Epoch, bench, slot, from, bits[3]), out var op);
+            Event("direct-request", new { purpose = "pinned peripheral intent for race validation, not gesture evidence", command, op = op.ToString() });
+        }
+        else if (command.StartsWith("perif-swap:", StringComparison.Ordinal))
+        {
+            // The native SwapPerif call the inventory's install button makes, so the production intercept handles it.
+            var bits = command.Split(':');
+            if (bits.Length != 4) throw new ArgumentException("perif-swap:<bench>:<slot>:<part>");
+            var table = Object.FindObjectOfType<SaveLoadSystem>().GetBenchPerifSlots();
+            PeripheralSlot target = null;
+            foreach (var entry in table) if ((int)entry.Key == int.Parse(bits[1])) target = entry.Value[int.Parse(bits[2])];
+            PartInstance part = null;
+            foreach (var p in CareerStatus.Get().GetPeripheralInventory()) if (p != null && p.GetPartId() == bits[3]) { part = p; break; }
+            if (target == null || part == null) throw new ArgumentException("unknown slot or peripheral part");
+            target.SwapPerif(part);
+            Event("direct-call", new { purpose = "native SwapPerif through the co-op intercept, not UI evidence", command });
         }
         else if (command.StartsWith("diag-template-store:", StringComparison.Ordinal))
         {
@@ -428,6 +471,8 @@ internal sealed class Phase3Probe
                 {
                     try
                     {
+                        // A second hook on code another hooked method already runs crashes the game (GamePatches.NativeCode).
+                        if (GamePatches.FoldedWith(method) is { } folded) { Event("hook-skipped", new { method = method.ToString(), sharesCodeWith = folded.DeclaringType?.Name + "." + folded.Name }); continue; }
                         harmony.Patch(method, prefix: new HarmonyMethod(typeof(Phase3Probe), nameof(Before)),
                             postfix: new HarmonyMethod(typeof(Phase3Probe), method.ReturnType == typeof(void) ? nameof(AfterVoid) : nameof(AfterValue)));
                         Event("hook", method.ToString());
@@ -579,6 +624,31 @@ internal sealed class Phase3Probe
             }
         }
         finally { _sampling = false; }
+    }
+
+    private IEnumerator PackageFixture(CoopRunner runner)
+    {
+        var coop = runner.Coop;
+        var position = coop.Session.World.CapturePosition();
+        var carriers = coop.Objects.CaptureCarriers();
+        var wc = Object.FindObjectOfType<WorkshopController>();
+        if (!wc.CarryingEmpty()) throw new InvalidOperationException("Package fixture needs empty hands.");
+        coop.Session.Stop("G7 disposable package fixture setup");
+        var item = CareerStatus.Get().GetInventory().ToArray().First(p => p != null);
+        if (!wc.TrySpawnPackageInHands(out var package, item) || package == null)
+            throw new InvalidOperationException("Native package fixture creation failed.");
+        var path = Object.FindObjectOfType<SaveLoadSystem>().CreateSaveGame(SaveLoadSystem.s_autoFreeBuildSaveName, false, "");
+        var deadline = Time.realtimeSinceStartup + 30;
+        while (SaveLoadSystem.WaitingOnThread() && Time.realtimeSinceStartup < deadline) yield return null;
+        if (SaveLoadSystem.WaitingOnThread()) throw new IOException("Package fixture save timed out.");
+        var file = File.Exists(path + ".zip") ? path + ".zip" : path;
+        var bytes = File.ReadAllBytes(file);
+        Network.CoopSavePair.WriteSidecar(file, bytes, Network.CoopSavePair.Create(bytes, position, carriers));
+        var target = Path.Combine(AutoTest.IsolatedSaveDir, "ReloadFixture", "autofreebuild.binary.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(target));
+        File.Copy(file, target, true); File.Copy(file + ".coop", target + ".coop", true);
+        Event("package-fixture-saved", new { file = Path.GetFileName(target), unsupported = NativeWorkstations.Unsupported() });
+        Object.FindObjectOfType<NewLoadingScreen>().LoadScene(CoopRunner.MenuScene, false);
     }
 
     private static IEnumerator Screenshot(string path)

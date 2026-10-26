@@ -88,7 +88,7 @@ internal sealed class NativePcTransfers : IPcTransferNative
     private bool Ready(string what)
     {
         if (!Active) { Refuse(what, "The shared world isn't ready on this game yet."); return false; }
-        if (!_world.IsAuthority && (HasPending || _coop.Lifecycle?.HasPending == true)) { Refuse(what, "Still waiting for the host to answer the previous request."); return false; }
+        if (!_world.IsAuthority && (HasPending || _coop.Lifecycle?.HasPending == true || _coop.Workstations?.HasPending == true)) { Refuse(what, "Still waiting for the host to answer the previous request."); return false; }
         return true;
     }
 

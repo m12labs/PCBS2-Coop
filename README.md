@@ -2,7 +2,7 @@
 
 Build PCs together in **PC Building Simulator 2**. PCBS2 Co-op is an unofficial two-player mod that puts you and a friend in the same Free Build workshop over LAN or Steamworks when available.
 
-Built for BepInEx 6 IL2CPP. **Current version: 0.9** (early development). Both players need the same mod version; a different version is refused when joining.
+Built for BepInEx 6 IL2CPP. **Current version: 0.10** (early development). Both players need the same mod version; a different version is refused when joining.
 
 > **Early development.** You share one workshop, and whole PCs are shared: creating and deleting PCs and moving them between benches, your hands and the storage cupboard show up for both players. Building inside a PC isn't shared yet: installing or removing parts only changes your own screen. That is the next milestone. See [what works](#sync-progress).
 
@@ -83,7 +83,7 @@ To remove the loader again, run `.\scripts\Uninstall-Loader.ps1`. It restores or
 Start the game, then open `<GameDir>\BepInEx\LogOutput.log` and look for:
 
 ```text
-[Info   :PCBS2 Coop] PCBS2 Coop 0.9 loaded.
+[Info   :PCBS2 Coop] PCBS2 Coop 0.10 loaded.
 ```
 
 The main menu also gains a **Multiplayer** panel below Free Build.

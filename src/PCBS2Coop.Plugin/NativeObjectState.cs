@@ -425,8 +425,9 @@ internal sealed class NativeObjectState : IWorldState
     public void CaptureHost(PlayerId host)
     {
         if (_spawnTickets.Count > 0) throw new InvalidDataException("A native PC projection has not completed.");
-        if (Workshop.GetCarriedPackage() != null || Workshop.GetCarriedPostIt() != null)
-            throw new InvalidDataException("Carried packages/physical notes need the phase 3g adapter; this state cannot be saved/joined as synchronized yet.");
+        // Owner decision (3g): packages and physical notes aren't shared; never save or send a world holding them.
+        if (NativeWorkstations.Unsupported() is { } unsupported)
+            throw new InvalidDataException($"This world contains {unsupported}, which co-op doesn't share yet.");
         var observations = Observe(ActorSlot.Host, host);
         var allocator = new NetObjectIdAllocator { Next = Model.NextId };
         var locations = Model.Locations.ToList();

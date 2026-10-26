@@ -10,6 +10,7 @@ ObjectWorldTests.Run(t);
 ActivityTests.Run(t);
 PcLifecycleTests.Run(t);
 PcTransferTests.Run(t);
+WorkstationTests.Run(t);
 WorldSyncTests.Run(t);
 SnapshotTests.Run(t);
 TransportTests.Run(t);

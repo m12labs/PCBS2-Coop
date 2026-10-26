@@ -66,6 +66,8 @@ public static class CommandTypes
     public const ushort PcLifecycle = 3;
     /// <summary>Host-ordered atomic PC moves between benches, hands and the shared cupboard (<see cref="PcTransfers"/>).</summary>
     public const ushort PcTransfer = 4;
+    /// <summary>Host-ordered peripheral replacement at a workstation (<see cref="WorkstationWorld"/>).</summary>
+    public const ushort PeripheralSwap = 5;
 }
 
 /// <summary>World-space snapshot of one player. Position is the feet (bottom of the character controller).</summary>
