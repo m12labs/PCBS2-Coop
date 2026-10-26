@@ -1,0 +1,3 @@
+HumanCharacter.fbx: "Base Character" by Shyr, https://shyr.itch.io/base-character (file "HumanCharacter IK.fbx").
+License stated on that page: Creative Commons Zero v1.0 Universal (CC0). Free for personal and commercial use;
+the mesh and rig may be modified; attribution appreciated but not required.

@@ -116,3 +116,5 @@ Start with the [roadmap](plan.md), the [sync checklist](docs/sync-progress.md), 
 ## License and disclaimer
 
 [MIT](LICENSE). PC Building Simulator 2 and its assets belong to their respective owners. This project is unofficial and distributes no game files.
+
+The remote player character is the [Base Character](https://shyr.itch.io/base-character) by Shyr, animated with clips from the [Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html) by Quaternius; both are released under [CC0](https://creativecommons.org/publicdomain/zero/1.0/).

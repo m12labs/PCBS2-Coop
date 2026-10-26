@@ -1,0 +1,5 @@
+# Root speed per clip in normalized humanoid units, from UAL1_Standard_RM.fbx. Times the avatar's human scale = m/s.
+Idle 0
+Walk 0.9492
+Jog 4.8674
+Sprint 5.3541

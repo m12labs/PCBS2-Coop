@@ -28,3 +28,28 @@
 
 # Local session handoff notes.
 /HANDOFF.md
+
+# Unity player model project (docs/playermodel.md). Whitelist: commit only what rebuilding the
+# bundle needs; Unity regenerates every other folder and settings file with defaults.
+/unity/PCBS2CoopModels/*
+!/unity/PCBS2CoopModels/Assets/
+!/unity/PCBS2CoopModels/Packages/
+/unity/PCBS2CoopModels/Packages/*
+!/unity/PCBS2CoopModels/Packages/manifest.json
+!/unity/PCBS2CoopModels/Packages/packages-lock.json
+!/unity/PCBS2CoopModels/ProjectSettings/
+/unity/PCBS2CoopModels/ProjectSettings/*
+!/unity/PCBS2CoopModels/ProjectSettings/ProjectVersion.txt
+!/unity/PCBS2CoopModels/ProjectSettings/ProjectSettings.asset
+!/unity/PCBS2CoopModels/ProjectSettings/GraphicsSettings.asset
+!/unity/PCBS2CoopModels/ProjectSettings/QualitySettings.asset
+!/unity/PCBS2CoopModels/ProjectSettings/EditorSettings.asset
+!/unity/PCBS2CoopModels/ProjectSettings/VersionControlSettings.asset
+# Temporary files of the bundle build script.
+/unity/PCBS2CoopModels/Assets/PlayerModel/_Build/
+/unity/PCBS2CoopModels/Assets/PlayerModel/_Build.meta
+# Universal Animation Library source (24 MB): only the clips extracted into Assets/PlayerModel/Clips are committed.
+/unity/PCBS2CoopModels/Assets/ThirdParty/Quaternius/UniversalAnimationLibrary/UAL1_Standard.fbx
+/unity/PCBS2CoopModels/Assets/ThirdParty/Quaternius/UniversalAnimationLibrary/UAL1_Standard.fbx.meta
+/unity/PCBS2CoopModels/Assets/ThirdParty/Quaternius/UniversalAnimationLibrary/UAL1_Standard_RM.fbx
+/unity/PCBS2CoopModels/Assets/ThirdParty/Quaternius/UniversalAnimationLibrary/UAL1_Standard_RM.fbx.meta

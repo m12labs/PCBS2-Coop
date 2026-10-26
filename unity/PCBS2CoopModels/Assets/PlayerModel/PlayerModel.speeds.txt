@@ -1,0 +1,5 @@
+# Ground speed of each clip on this character (m/s): library root speed times the avatar human scale. The Speed thresholds.
+Idle 0
+Walk 0.831
+Jog 4.259
+Sprint 4.685

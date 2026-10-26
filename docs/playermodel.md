@@ -1,6 +1,6 @@
 # Player model plan
 
-Plan written October 25, 2026. Nothing here is implemented yet. It replaces the remote player's capsule with a rigged, animated character from Quaternius (CC0), shipped as a Unity AssetBundle next to the plugin DLL.
+Plan written October 25, 2026. Status (October 26, 2026): the Unity side is done (sections 3 to 5; the import results are in 4.4) and the first bundle is built. The plugin side (section 6) is written and builds, but hasn't been checked in game yet. The plan replaces the remote player's capsule with a rigged, animated character from Quaternius (CC0), shipped as a Unity AssetBundle next to the plugin DLL.
 
 Owner decisions (October 25, 2026):
 
@@ -52,39 +52,37 @@ Rules:
 
 ### 3.2 Project
 
-Create the project as `unity/PCBS2CoopModels` in the repo:
+**Done (October 25, 2026).** The project at `unity/PCBS2CoopModels` was created headless, with no template and no sample content:
 
-1. In Hub: *New project* → editor 6000.2.6f2 → template **Universal 3D or 3D (Built-In Render Pipeline)** (the empty one, not a sample). Location: `<repo>/unity`; name: `PCBS2CoopModels`.
-   - The HDRP sample template adds hundreds of MB of sample content, so start empty and add HDRP.
-2. *Window → Package Manager* → *Unity Registry* → install **High Definition RP 17.2.0** (`com.unity.render-pipelines.high-definition`). Remove URP if the template added it.
-3. Run *Window → Rendering → HDRP Wizard → Fix All*, then confirm `Packages/manifest.json` pins `"com.unity.render-pipelines.high-definition": "17.2.0"`.
-4. *Edit → Project Settings*:
-   - *Editor → Asset Serialization*: **Force Text**; *Version Control*: **Visible Meta Files** (both defaults; check them).
-   - *Player → Other Settings → Color Space*: **Linear** (HDRP requires it).
-5. Delete any sample scenes or assets the wizard created that the model doesn't need.
+1. `Unity.exe -batchmode -quit -createProject unity/PCBS2CoopModels` (an empty built-in pipeline project).
+2. `Packages/manifest.json`: added `"com.unity.render-pipelines.high-definition": "17.2.0"` and removed `com.unity.multiplayer.center`.
+3. `Unity.exe -batchmode -quit -projectPath unity/PCBS2CoopModels -executeMethod ProjectSetup.Apply`. [ProjectSetup.cs](../unity/PCBS2CoopModels/Assets/Editor/ProjectSetup.cs), also on the menu as *PCBS2Coop → Apply Project Settings*, sets:
+   - Linear color space, Force Text serialization and Visible Meta Files;
+   - creates `Assets/Settings/HDRPAsset.asset` and makes it the default render pipeline.
+
+   HDRP then created `Assets/HDRPDefaultResources/` (its global settings and default volume profiles) by itself.
+
+On a fresh clone, opening the project in 6000.2.6f2 is enough. Optional: when you first open it interactively, run *Window → Rendering → HDRP Wizard* and use *Fix All* if it lists anything. Commit only changes to the whitelisted files (section 3.3).
 
 HDRP is mainly so the model previews close to how it looks in game. The plugin replaces every material at runtime anyway (section 6).
 
 ### 3.3 Git
 
-Commit `Assets/`, `Packages/manifest.json`, `Packages/packages-lock.json` and `ProjectSettings/`. Add these to the root `.gitignore` when the project is created:
+The root `.gitignore` **whitelists** the project, so the committed project stays as small as possible. Everything under `unity/PCBS2CoopModels/` is ignored except:
 
-```gitignore
-# Unity model project: generated folders.
-/unity/*/Library/
-/unity/*/Temp/
-/unity/*/Logs/
-/unity/*/UserSettings/
-/unity/*/Build/
-/unity/*/*.csproj
-/unity/*/*.sln
-```
+- `Assets/` (all of it, with `.meta` files), apart from the build script's temporary `Assets/PlayerModel/_Build/`;
+- `Packages/manifest.json` and `Packages/packages-lock.json`;
+- six settings files: `ProjectSettings/ProjectVersion.txt`, `ProjectSettings.asset`, `GraphicsSettings.asset`, `QualitySettings.asset`, `EditorSettings.asset` and `VersionControlSettings.asset`.
 
-The existing `*.log` and `**/obj/` rules already cover Unity logs and `obj/`. Git LFS isn't needed: one low-poly FBX and the bundle are a few MB.
+Unity regenerates the other ProjectSettings files (audio, physics, input, tags, …) with defaults, which the bundle doesn't depend on. If a later step genuinely needs another settings file (for example tags or layers), add a `!` line for it in `.gitignore`.
+
+`Library/` (about 2 GB after the HDRP import), `Temp/`, `Logs/`, `UserSettings/`, `Build/` and the generated `.csproj`/`.sln` stay local. Git LFS isn't needed: one low-poly FBX and the bundle are a few MB.
 
 ### 3.4 Unity MCP
 
-The owner drives the editor through an MCP bridge. Install **MCP for Unity** (CoplayDev) in this project only: *Package Manager → + → Add package from git URL* → `https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity`. Then follow its README (it needs Python and `uv`) to start the bridge and register it with the client. The package lands in `Packages/manifest.json`; that is fine to commit.
+The owner drives the editor through **AnkleBreaker Unity MCP** ([server](https://github.com/AnkleBreaker-Studio/unity-mcp-server), [plugin](https://github.com/AnkleBreaker-Studio/unity-mcp-plugin)):
+- **Unity side**: the plugin package `com.anklebreaker.unity-mcp` (git URL `https://github.com/AnkleBreaker-Studio/unity-mcp-plugin.git#main`) is in `Packages/manifest.json`, which is fine to commit.
+- **Client side**: a local checkout of the Node server, registered with Claude Code at local scope so no machine path enters the repo: `claude mcp add unity --scope local -- node <checkout>/src/index.js`. The client starts the server itself (stdio). The server finds open editors automatically; with several open, select this project with `unity_list_instances` / `unity_select_instance`.
 
 Ground rules for an agent working through the MCP:
 - Work only inside `unity/PCBS2CoopModels`. Don't edit `src/`, `tests/` or root docs from the Unity side. The plugin code changes in section 7 are a separate task.
@@ -120,17 +118,40 @@ Ground rules for an agent working through the MCP:
 
 Only with a Humanoid character. Import the UAL FBX into `Assets/ThirdParty/Quaternius/UniversalAnimationLibrary/` with *Rig → Humanoid*, *Avatar Definition → Create From This Model*. Use its idle, walk, jog, sprint and any carry or hold clips in place of the pack's. Keep only the clips you use, by importing a trimmed FBX or extracting the clips (*Ctrl+D* on a clip) and deleting the source.
 
+### 4.4 Result (October 26, 2026): Shyr base character
+
+The first try, Quaternius `Casual_Male`, worked in game but has chibi proportions (head a third of the body). The owner chose the [Shyr base character](https://shyr.itch.io/base-character) (CC0) instead, a segmented wooden-mannequin figure with normal proportions. Animations come from Quaternius's [Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html) (Standard, CC0). A first try with an owner-supplied "Simple Character Animations" download was dropped: its FBX metadata shows Mixamo (Adobe) clips, whose raw files may not be published in a repo.
+
+Pipeline ([PlayerModelSetup.cs](../unity/PCBS2CoopModels/Assets/Editor/PlayerModelSetup.cs)):
+
+1. Copy `Unity/UAL1_Standard.fbx` and `Unity/UAL1_Standard_RM.fbx` from the library download into `Assets/ThirdParty/Quaternius/UniversalAnimationLibrary/` (24 MB each, git-ignored).
+2. **`PCBS2Coop → Extract Animation Clips`**: imports the library as Humanoid and writes the clips we use to `Assets/PlayerModel/Clips/UAL.*.anim` plus their root speeds to `UAL.speeds.txt` (committed). Only needed when the clip choice changes.
+3. **`PCBS2Coop → Rebuild Player Model`**: character, avatar, carry pose, controller and prefab.
+4. **`PCBS2Coop → Build Player Bundle`**.
+
+| Item | Value |
+| --- | --- |
+| Files | `Assets/ThirdParty/Shyr/BaseCharacter/HumanCharacter.fbx` (the itch file "HumanCharacter IK.fbx"); clips in `Assets/PlayerModel/Clips/` |
+| Scale factor | `1.8 / 1.734` (1.734 m at factor 1, file scale 0.01). Measured height 1.81 m, facing +Z |
+| Cleanup | The FBX also holds a test weapon, horns, teeth, pointy ears and Blender bone-widget meshes (`WGT-*`); the setup deletes them. The body (`BaseCorpo`) and its torso piece (`Torso`) are merged into one mesh, `PlayerModel.mesh.asset`, with two submeshes |
+| Rig | **Humanoid**, built by the setup from the cleaned prefab (the FBX itself can't: two objects are named `Torso`, and its rest pose has the arms down, so the setup computes a T-pose first). 19 mapped bones: `Body` hips, `Torso`/`Chest`/`Neck`/`Head`, arms to `Hand L/R`, legs to `Heel` (foot) and `Feet` (toes). The T-pose arms point 30° forward of straight out: the mannequin has no collarbones, so the library's shoulder motion is lost, and measured against the library's own figure this halves the arm error (mean 30° → 16° over idle, walk, jog, sprint) |
+| Clips | Library `Idle_Loop`, `Walk_Loop`, `Jog_Fwd_Loop`, `Sprint_Loop` → `UAL.Idle/Walk/Jog/Sprint.anim`, in place (from the file without root motion). Root rotation baked on body orientation, as the library's Unity guide says; "original" turned the character around |
+| Carry | `PlayerModel.Carry.anim`: arm, hand and torso muscles, solved with two-bone IK on the idle's first frame so the hands sit at (±0.17, 0.95, 0.32), under the box's back edge. `CarryAnchor` hangs on the `Chest` bone, so the box follows the upper body; checked in Play Mode, the hands stay on the box (0 cm drift) and the box bobs about 6 cm at 2 m/s |
+| Clip ground speed | Walk 0.83, jog 4.26, sprint 4.69 m/s: the root speed of each clip in the library's root-motion file (normalized humanoid units) times this avatar's human scale (0.875), written to `PlayerModel.speeds.txt`. Foot-tracking estimates were too noisy. The game's walk speed is 2.0 m/s (logged in game), a walk/jog blend |
+| Material slots (palette order) | 0 `Skin` (the wood color), 1 `Shirt` (the torso piece, tinted per player) |
+| Bundle | 187 KB. GameObject, Transform, Mesh, SkinnedMeshRenderer, Animator, AnimatorController, Avatar, AnimationClip and TextAsset; no shader, material or texture |
+
+Unity notes: generated humanoid clips keep the original body height (feet-based grounding needs foot goal curves they don't have); rebuilding the controller in place leaves the loaded prefab with a stale null controller until both are reimported (the setup does this and checks); in this editor a `PlayableGraph` preview stopped writing poses, so Play Mode was used to check the controller.
+
 ## 5. Build the prefab and bundle
 
 All under `Assets/PlayerModel/`.
 
 ### 5.1 Animator controller: `PlayerModel.controller`
 
-- Parameters: `Speed` (float, m/s, ground speed) and `Carrying` (bool).
-- **Base layer**: a 1D blend tree on `Speed` with idle at 0, walk at the game's walk speed and run at about 2× walk.
-  - The game's speed is `Walk.walkSpeed` on the local `Player`. Log it once from the plugin to set the thresholds; don't guess.
-- **Carry layer** (override, weight 1): an **Avatar Mask** with just the arms (and upper spine if needed). It holds a "hands forward holding a box" pose while `Carrying` is true and an empty state otherwise.
-  - If neither pack has a carry clip, make one in the Animation window: a one-frame clip with the arm bones rotated forward. On a Humanoid rig, record it on the muscle curves.
+- Parameters: `Speed` (float, ground speed in m/s) and `Carrying` (bool).
+- **Base layer**: state `Locomotion`, a 1D blend tree on `Speed`: `Idle` at 0, then `Walk`, `Jog` and `Sprint` at their speeds on this character (4.4). Thresholds equal clip speeds, so the feet match the ground at any blend; nothing depends on the game's walk speed.
+- **Carry layer** (override, weight 1, humanoid mask `PlayerModel.CarryMask.mask`: body (torso), arms and fingers): state `Empty` (default), and `Carry` playing `PlayerModel.Carry`. Transitions take 0.15 s each way on `Carrying`, with no exit time.
 - No root motion; no animation events (there are no scripts to receive them).
 
 ### 5.2 Prefab: `PlayerModel.prefab`
@@ -138,11 +159,12 @@ All under `Assets/PlayerModel/`.
 ```
 PlayerModel            Animator (PlayerModel.controller, the model's Avatar, Apply Root Motion off,
  │                              Culling Mode = Cull Update Transforms, Update Mode = Normal)
- ├─ <model mesh>       SkinnedMeshRenderer (Cast Shadows on, Update When Offscreen off)
- ├─ <armature>
- │   └─ …/Hand_R …
- └─ CarryAnchor        empty, about 1.05 m up and 0.45 m forward, where the carried-PC box sits
+ ├─ Armature           the bones (FullBody/Body/…; the Blender IK control bones stay but nothing animates them)
+ │   └─ …/Chest/CarryAnchor   empty placed at (0, 1.15, 0.46) in the carry pose: the carried-PC box center, on the hands
+ └─ Mannequin          SkinnedMeshRenderer, PlayerModel.mesh (Cast Shadows on, Update When Offscreen off)
 ```
+
+The prefab is a plain prefab (unpacked from the FBX, because the setup deletes objects from it) and is rebuilt by the setup script; don't edit it by hand.
 
 - Pivot at the feet, facing **+Z**, standing at the origin, 1.8 m tall.
 - **No** colliders, rigidbodies, lights, cameras, audio sources or MonoBehaviours.
@@ -159,7 +181,7 @@ Because the plugin replaces materials at runtime (section 6), colors travel as d
 2 Pants  0.18 0.18 0.22 0.20 0
 ```
 
-Exactly one row has `tint` 1. The build script reads these values from the imported materials (`_BaseColor`, or `_Color`/`_MainTex` average if needed), so nobody edits the file by hand.
+Exactly one row has `tint` 1. The build script reads these values from the imported materials (`_BaseColor`, else `_Color`; a texture on a slot only logs a warning), so nobody edits the palette by hand. The tint slot is named in **`Assets/PlayerModel/PlayerModel.tint.txt`**: one line holding the material name, e.g. `Shirt`. The build fails unless that name matches exactly one slot.
 
 ### 5.4 Why no scripts or materials go in the bundle
 
@@ -168,7 +190,7 @@ Exactly one row has `tint` 1. The build script reads these values from the impor
 
 ### 5.5 Build script: `Assets/Editor/BuildPlayerBundle.cs`
 
-Menu item **PCBS2Coop → Build Player Bundle**, also runnable headless. It must:
+**Done** ([BuildPlayerBundle.cs](../unity/PCBS2CoopModels/Assets/Editor/BuildPlayerBundle.cs)); first bundle built October 26, 2026 (see 4.4). Menu item **PCBS2Coop → Build Player Bundle**, also runnable headless. It checks the prefab (one `SkinnedMeshRenderer`, an `Animator` on the root, no MonoBehaviours), then:
 
 1. Load `PlayerModel.prefab`, write `PlayerModel.palette` from its renderer's materials, and save a temporary copy of the prefab whose renderer `sharedMaterials` are all `null` (same slot count).
 2. Call `BuildPipeline.BuildAssetBundles` with one explicit `AssetBundleBuild`:
@@ -202,17 +224,18 @@ Rebuild and commit the bundle whenever the model, clips, controller or palette c
 
 **Animating** (`RemotePlayerView.Update`):
 - Ground speed = horizontal distance the smoothed root moved this frame ÷ `Time.deltaTime`, damped (e.g. the same `1 - exp(-k·dt)` factor) so network jitter doesn't flicker between idle and walk.
-- `animator.SetFloat("Speed", speed)`. `SetCarrying` also calls `animator.SetBool("Carrying", carrying)`.
+- `animator.SetFloat("Speed", speed)` in m/s; the controller's thresholds do the rest (5.1). `SetCarrying` also calls `animator.SetBool("Carrying", carrying)`.
+- The received position is the bottom of the other player's CharacterController, which hovers above the floor by its skin width. The view casts a short ray down (0.5 m above to 0.6 m below) and lowers its `Visual` child onto the highest floor at or below the feet, ignoring the local player's collider. The gap is logged once (`[model] floor is … m below …`).
 - No network or save changes: speed is derived from positions already received, and carrying from accepted facts. No version bump is needed for the swap itself.
 
 **Deploying**: add `Assets/pcbs2coop-player.bundle` to `DeployFiles` in [PCBS2Coop.Plugin.csproj](../src/PCBS2Coop.Plugin/PCBS2Coop.Plugin.csproj). It then lands in `<GameDir>\BepInEx\plugins\PCBS2Coop\` with the DLLs. Release zips carry the same folder.
 
 ## 7. Implementation tasks (in order)
 
-1. **Unity project**: section 3. Commit the empty HDRP project plus the `.gitignore` lines.
-2. **Character import**: section 4. Record the chosen file, scale factor, rig type (Humanoid or Generic) and palette slots in this doc.
-3. **Controller, prefab, palette, build script**: section 5. Commit the sources and the first bundle.
-4. **Plugin loader and view**: section 6, with the capsule as fallback. Build against the real interop.
+1. **Unity project**: section 3. Commit the empty HDRP project plus the `.gitignore` lines. *Done, not yet committed.*
+2. **Character import**: section 4. Record the chosen file, scale factor, rig type (Humanoid or Generic) and palette slots in this doc. *Done (4.4).*
+3. **Controller, prefab, palette, build script**: section 5. Commit the sources and the first bundle. *Done, not yet committed.*
+4. **Plugin loader and view**: section 6, with the capsule as fallback. Build against the real interop. *Written ([PlayerModelAssets.cs](../src/PCBS2Coop.Plugin/PlayerModelAssets.cs), [RemotePlayerView.cs](../src/PCBS2Coop.Plugin/RemotePlayerView.cs)); the build deploys the bundle. Not checked in game yet.* The AutoTest `RemoteViewReport` line now ends with `body model|capsule, ground speed … m/s`.
 5. **Check in game**: section 8.
 6. **Record evidence** in `docs/audit/phase-13.md` (or the active phase's audit) and update [plan.md](../plan.md) / [sync-progress.md](sync-progress.md).
 
@@ -231,8 +254,9 @@ Rebuild and commit the bundle whenever the model, clips, controller or palette c
 
 | Risk | Handling |
 | --- | --- |
-| The pack's rig may not map cleanly to Humanoid | Fall back to Generic with the pack's own clips; skip the Universal Animation Library. |
-| The pack may not include a carry pose | Author a one-frame arm pose clip (section 5.1). |
+| The rig may not map cleanly to Humanoid | Resolved for the Shyr character: the setup builds the avatar from a computed T-pose (4.4). |
+| No carry clip | Resolved: the setup solves a carry pose with two-bone IK (4.4). |
+| Third-party licenses | Resolved: the character (Shyr) and the animations (Quaternius UAL) are CC0; the Mixamo-derived files were removed before any commit. |
 | The AssetBundle API through Il2CppInterop is untested in this mod | The module is present in the interop. Verify `LoadFromFile`/`LoadAsset` in the first in-game check before building more on it. |
 | Editor version drift | Keep 6000.2.6f2. Re-check the game's Unity/HDRP version after game updates (`PCBS2_Data/resources.assets` lists `render-pipelines.high-definition@17.2.0`). |
 | Clip names differ between pack versions | Pick clips in Unity and record the names chosen here; code refers only to the `Speed`/`Carrying` parameters, not to clip names. |

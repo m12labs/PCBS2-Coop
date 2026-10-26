@@ -1,0 +1,16 @@
+-------------------------------------------------------
+License:
+CC0 1.0 Universal (CC0 1.0) 
+Public Domain Dedication
+https://creativecommons.org/publicdomain/zero/1.0/
+
+------------------------------------------------------
+Models by @Quaternius
+Consider supporting me on Patreon!
+
+https://www.patreon.com/quaternius
+
+
+Source: Universal Animation Library (Standard) by Quaternius, https://quaternius.com/packs/universalanimationlibrary.html
+(itch: https://quaternius.itch.io/universal-animation-library). Only UAL1_Standard.fbx and UAL1_Standard_RM.fbx from
+its Unity folder are used locally (git-ignored); the clips extracted from them live in Assets/PlayerModel/Clips.

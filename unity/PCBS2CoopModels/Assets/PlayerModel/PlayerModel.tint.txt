@@ -1,0 +1,2 @@
+# Material slot that takes the per-player color (docs/playermodel.md 5.3).
+Shirt
