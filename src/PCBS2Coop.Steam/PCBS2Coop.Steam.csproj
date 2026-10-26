@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <SteamworksDir>$(MSBuildThisFileDirectory)..\..\.local\steamworks\2.5.2\Release\net6.0</SteamworksDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PCBS2Coop.Network\PCBS2Coop.Network.csproj" />
+    <Reference Include="Facepunch.Steamworks.Win64"><HintPath>$(SteamworksDir)\Facepunch.Steamworks.Win64.dll</HintPath><Private>true</Private></Reference>
+    <None Include="$(SteamworksDir)\steam_api64.dll" Link="steam_api64.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\third-party\Facepunch.Steamworks.LICENSE" Link="Facepunch.Steamworks.LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\third-party\Steamworks.md" Link="Steamworks.NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="CheckSteamworksDependency" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(SteamworksDir)\Facepunch.Steamworks.Win64.dll')" Text="Run scripts/Get-Steamworks.ps1 to fetch the pinned Steamworks dependency." />
+  </Target>
+</Project>

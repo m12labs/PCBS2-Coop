@@ -12,6 +12,7 @@ PcLifecycleTests.Run(t);
 PcTransferTests.Run(t);
 WorldSyncTests.Run(t);
 SnapshotTests.Run(t);
+TransportTests.Run(t);
 LoopbackTests.Run(t);
 return t.Finish();
 

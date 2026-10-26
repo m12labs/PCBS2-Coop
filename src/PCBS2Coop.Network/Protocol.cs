@@ -165,6 +165,6 @@ public static class Protocol
     }
 
     /// <summary>Exceptions LiteNetLib and our readers throw for short or corrupt messages.</summary>
-    internal static bool IsReadError(Exception e) =>
+    public static bool IsReadError(Exception e) =>
         e is IndexOutOfRangeException or ArgumentException or FormatException or InvalidOperationException or OverflowException;
 }

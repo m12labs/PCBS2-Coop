@@ -22,7 +22,7 @@ internal static class GameInfo
         get
         {
             if (_player != null) return _player.Value;
-            if (AutoTest.IsEnabled)
+            if (AutoTest.IsEnabled || SteamProbe.Enabled)
             {
                 _player = PlayerId.New();
                 Plugin.Logger.LogInfo($"AUTOTEST: using a temporary player ID {_player}.");

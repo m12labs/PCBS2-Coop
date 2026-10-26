@@ -19,6 +19,7 @@ public sealed class Plugin : BasePlugin
     {
         Logger = Log;
         GameInfo.Init(Config);
+        SteamBootstrap.Init(Config);
         GamePatches.Apply();
         ClassInjector.RegisterTypeInIl2Cpp<CoopRunner>();
         var host = new GameObject("PCBS2Coop");

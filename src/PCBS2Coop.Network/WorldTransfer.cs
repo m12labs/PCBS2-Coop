@@ -27,11 +27,16 @@ internal sealed class SnapshotSender
     }
 
     private readonly Action<NetDataWriter> _send;
+    private readonly Func<NetDataWriter, bool> _sendBulk;
     private readonly NetDataWriter _w = new();
     private readonly Queue<Outgoing> _queue = new();
     private uint _nextId;
 
-    public SnapshotSender(Action<NetDataWriter> send) => _send = send;
+    public SnapshotSender(Action<NetDataWriter> send, Func<NetDataWriter, bool>? sendBulk = null)
+    {
+        _send = send;
+        _sendBulk = sendBulk ?? (w => { send(w); return true; });
+    }
 
     /// <summary>A load transfer is marked and not yet fully sent.</summary>
     public bool LoadInProgress => _queue.Any(o => o.Purpose == SnapshotPurpose.Load);
@@ -113,7 +118,7 @@ internal sealed class SnapshotSender
                 _w.Put(o.File.Length);
                 var hash = SHA256.HashData(o.File);
                 _w.Put(hash, 0, hash.Length);
-                _send(_w);
+                if (!_sendBulk(_w)) return;
                 o.HeaderSent = true;
             }
             while (budget > 0 && o.Sent < o.File.Length)
@@ -125,7 +130,7 @@ internal sealed class SnapshotSender
                 _w.Put(o.Sent);
                 _w.Put(n);
                 _w.Put(o.File, o.Sent, n);
-                _send(_w);
+                if (!_sendBulk(_w)) return;
                 o.Sent += n;
                 budget -= n;
             }

@@ -1,8 +1,8 @@
 # PCBS2 Co-op
 
-Build PCs together in **PC Building Simulator 2**. PCBS2 Co-op is an unofficial two-player mod that puts you and a friend in the same Free Build workshop over your LAN.
+Build PCs together in **PC Building Simulator 2**. PCBS2 Co-op is an unofficial two-player mod that puts you and a friend in the same Free Build workshop over LAN or Steamworks when available.
 
-Built for BepInEx 6 IL2CPP. **Current version: 0.8** (early development). Both players need the same mod version; a different version is refused when joining.
+Built for BepInEx 6 IL2CPP. **Current version: 0.9** (early development). Both players need the same mod version; a different version is refused when joining.
 
 > **Early development.** You share one workshop, and whole PCs are shared: creating and deleting PCs and moving them between benches, your hands and the storage cupboard show up for both players. Building inside a PC isn't shared yet: installing or removing parts only changes your own screen. That is the next milestone. See [what works](#sync-progress).
 
@@ -15,7 +15,7 @@ A quick look at what's ready and what's next. See the [full sync checklist](docs
 | Feature | Planned | Partially synced | Synced | Comments |
 | --- | :---: | :---: | :---: | --- |
 | LAN Host / Join | | | ✅ | Direct IP and port from the main menu. |
-| Steam Invite / Join | ✅ | | | Not started. |
+| Steam Invite / Join | | ✅ | | Steamworks when available. |
 | Join check | | | ✅ | A different mod version or game build is refused with the reason; DLC or part catalog differences join with a warning. |
 | Shared Free Build world | | | ✅ | Host picks **New world** or **Continue**; both players load the same workshop. |
 | Joining an active session | | | ✅ | Join or rejoin any time; you get the host's current world, including changes made while you load. |
@@ -65,6 +65,9 @@ Set-Location '<RepoDir>'
 
 # Launch the game once and quit, so BepInEx generates BepInEx\interop.
 
+# Fetch and verify the pinned Steamworks Win64 dependency into the ignored local cache.
+.\scripts\Get-Steamworks.ps1
+
 # Build; the plugin is copied into <GameDir>\BepInEx\plugins\PCBS2Coop.
 dotnet build PCBS2Coop.sln -c Release
 ```
@@ -80,7 +83,7 @@ To remove the loader again, run `.\scripts\Uninstall-Loader.ps1`. It restores or
 Start the game, then open `<GameDir>\BepInEx\LogOutput.log` and look for:
 
 ```text
-[Info   :PCBS2 Coop] PCBS2 Coop 0.8 loaded.
+[Info   :PCBS2 Coop] PCBS2 Coop 0.9 loaded.
 ```
 
 The main menu also gains a **Multiplayer** panel below Free Build.
@@ -89,10 +92,12 @@ The main menu also gains a **Multiplayer** panel below Free Build.
 
 Both players install the same version. On the main menu, open **Multiplayer**:
 
-- **Host**, then **New world** starts a fresh co-op workshop with the game's default PCs, or **Continue** loads your co-op world. New world asks before replacing an existing one.
-- **Join**, enter the host's IPv4 address (`ipconfig` on the host's PC) and port (default `7777`), then **Connect**. You receive the host's current world and load straight into it.
+- **LAN:** select LAN inside Host or Join. Host → **New world** starts a fresh co-op workshop, or **Continue** loads your co-op world. Join → enter the host's IPv4 address (`ipconfig` on the host's PC) and port (default `7777`) → **Connect**.
+- **Steamworks (experimental):** both players open Steam and launch PCBS2. The host selects Steam → **New world** / **Continue**, then Esc → **Invite Friends**. The guest accepts the invite with PCBS2 open on its main menu. Use the in-game friends list if the overlay doesn't open.
 
-The guest can join at any time while the host is in the workshop, and can leave and rejoin. `127.0.0.1` only reaches the same PC. Allow the game through Windows Firewall on your private network if prompted, or forward the UDP port for play outside your LAN.
+LAN remains available when Steamworks isn't. See the [Steamworks notes](steamworks.md) for setup and pending two-PC testing.
+
+The guest can join at any time while the host is in the workshop, and can leave and rejoin. New world asks before replacing an existing co-op world. For LAN, `127.0.0.1` only reaches the same PC; allow the game through Windows Firewall on your private network if prompted, or forward the UDP port for direct-IP play outside your LAN.
 
 **Saves.** The host's co-op world is saved in `<GameDir>\Saves\Coop`, separate from solo Free Build saves. The guest plays from a temporary folder and keeps a copy of the host's latest save in `Saves\Coop\Joined`. Neither player's solo saves are read or written during a session.
 

@@ -23,6 +23,8 @@ public sealed class CoopRunner : MonoBehaviour
     private AutoTest _autoTest;
     private Probe _probe;
     private Phase3Probe _phase3Probe;
+    private SteamInviteMenu _steamMenu;
+    private SteamProbe _steamProbe;
 
     private void Awake()
     {
@@ -31,6 +33,7 @@ public sealed class CoopRunner : MonoBehaviour
         _autoTest = AutoTest.FromEnvironment();
         if (Probe.Enabled) _probe = new Probe();
         if (Phase3Probe.Enabled) _phase3Probe = new Phase3Probe();
+        if (SteamProbe.Enabled) _steamProbe = new SteamProbe();
     }
 
     private void Update()
@@ -52,26 +55,34 @@ public sealed class CoopRunner : MonoBehaviour
         }
 
         if (scene == MenuScene && (Menu == null || !Menu.IsAlive)) Menu = MultiplayerMenu.TryBuild(Coop);
+        SteamBootstrap.Service?.Poll();
         Menu?.Update();
 
         Coop.Update(scene == WorkshopScene);
+        _steamMenu ??= new SteamInviteMenu(Coop);
+        _steamMenu.Update(scene == WorkshopScene);
         UpdateStatus(scene == WorkshopScene);
         _autoTest?.Update(this);
         _probe?.Update(this);
         _phase3Probe?.Update(this);
+        _steamProbe?.Update(this);
     }
 
-    private void OnApplicationQuit() => Coop?.OnQuit();
+    private void OnApplicationQuit()
+    {
+        try { Coop?.OnQuit(); }
+        finally { SteamBootstrap.Service?.Dispose(); }
+    }
 
     /// <summary>One line at the top-left of the workshop showing the session state.</summary>
     private void UpdateStatus(bool inWorkshop)
     {
-        var show = inWorkshop && Coop.Session.IsRunning;
+        var show = (inWorkshop && Coop.Session.IsRunning) || Coop.ActiveNotice != null;
         if (show && _status == null) _status = CreateStatus();
         if (_status == null) return;
         _status.gameObject.SetActive(show);
         if (!show) return;
-        _status.text = Coop.StatusLine + Coop.ProblemSummary;
+        _status.text = Coop.Session.IsRunning ? Coop.StatusLine + Coop.ProblemSummary : Coop.ActiveNotice;
     }
 
     private TextMeshProUGUI CreateStatus()
@@ -92,6 +103,7 @@ public sealed class CoopRunner : MonoBehaviour
         rt.anchoredPosition = new Vector2(16, -12);
         rt.sizeDelta = new Vector2(1600, 40);
         text.color = Color.white;
+        text.richText = false;
         text.outlineWidth = 0.2f;
         text.outlineColor = Color.black;
         return text;

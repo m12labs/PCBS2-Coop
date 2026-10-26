@@ -50,7 +50,7 @@ internal sealed class MultiplayerMenu
         panel.transform.SetSiblingIndex(freeBuild.GetSiblingIndex() + 1);
         var p = panel.transform;
         Ui.SetText(Ui.Child(p, "Header"), "Multiplayer");
-        Ui.SetText(Ui.Child(p, "Text"), "Local co-op (proof of concept)");
+        Ui.SetText(Ui.Child(p, "Text"), "Steam or LAN co-op");
         Ui.DestroyChild(p, "Leaderboard");
 
         var continueSlot = Ui.Child(p, "ContinueFreebuild");
@@ -139,6 +139,8 @@ internal sealed class CoopDialog
     private readonly TMP_InputField _ip;
     private readonly TMP_InputField _port;
     private readonly GameObject _ipRow;
+    private readonly GameObject _portRow;
+    private readonly Button _steamButton, _lanButton;
     private readonly TMP_Text _applyText;
     private readonly Button _apply;
     private readonly Button _continue;
@@ -146,6 +148,7 @@ internal sealed class CoopDialog
     private Mode _mode;
     private bool _waiting;
     private bool _confirmNew;
+    private bool _steam;
     private readonly Color _normalColor;
 
     public bool IsOpen => _root != null && _root.activeSelf;
@@ -177,6 +180,7 @@ internal sealed class CoopDialog
         _ipRow = ipRow.gameObject;
 
         var portRow = Ui.NewRect("PortRow", box);
+        _portRow = portRow.gameObject;
         Ui.Place(portRow, new Vector2(590, 10), new Vector2(560, 90));
         var portLabel = Ui.NewText("Label", portRow, fieldStyle, "Port", labelSize, TextAlignmentOptions.MidlineRight);
         Ui.Place(portLabel.rectTransform, new Vector2(-170, 0), new Vector2(200, 90));
@@ -200,6 +204,21 @@ internal sealed class CoopDialog
         cont.GetComponentInChildren<TMP_Text>(true).text = "Continue";
         Ui.MakeButton(back.gameObject, OnBack);
         Ui.SetText(back, "Back");
+        _steamButton = MethodButton("Steam", new Vector2(-260, 130), true);
+        _lanButton = MethodButton("LAN", new Vector2(260, 130), false);
+
+        Button MethodButton(string name, Vector2 position, bool steam)
+        {
+            var go = Object.Instantiate(apply.gameObject, apply.parent);
+            go.name = name + "Method";
+            Ui.Place(go.GetComponent<RectTransform>(), position, new Vector2(420, 80));
+            return Ui.MakeButton(go, () =>
+            {
+                if (_waiting) return;
+                _steam = steam; SteamBootstrap.PreferSteam = steam; _confirmNew = false;
+                UpdateMethod();
+            });
+        }
     }
 
     public static CoopDialog Build(Transform canvas, Transform template, CoopController coop)
@@ -221,20 +240,43 @@ internal sealed class CoopDialog
         _mode = mode;
         _waiting = false;
         _confirmNew = false;
+        _steam = SteamBootstrap.PreferSteam;
         _coop.Stop(null, "Opening the co-op dialog.");
         _title.text = mode == Mode.Host ? "Host Game" : "Join Game";
         _applyText.text = mode == Mode.Host ? "New world" : "Connect";
-        _ipRow.SetActive(mode == Mode.Join);
         var hasWorld = mode == Mode.Host && CoopSaves.HasCoopWorld();
         _continue.gameObject.SetActive(mode == Mode.Host);
         _continue.interactable = hasWorld;
-        SetStatus(mode == Mode.Host
-            ? "Players join with this PC's IP address and the port below." + (hasWorld ? "" : "\nNo co-op world yet: start a new one.")
-            : "Enter the host's IP address and port.", false);
-        _apply.interactable = true;
+        UpdateMethod();
         _root.SetActive(true);
         _root.transform.SetAsLastSibling();
-        EventSystem.current?.SetSelectedGameObject((mode == Mode.Join ? _ip : _port).gameObject);
+        EventSystem.current?.SetSelectedGameObject(_steam ? _steamButton.gameObject : (mode == Mode.Join ? _ip : _port).gameObject);
+    }
+
+    private void UpdateMethod()
+    {
+        _ipRow.SetActive(!_steam && _mode == Mode.Join);
+        _portRow.SetActive(!_steam);
+        _steamButton.GetComponentInChildren<TMP_Text>(true).text = _steam ? "Steam (selected)" : "Steam";
+        _lanButton.GetComponentInChildren<TMP_Text>(true).text = !_steam ? "LAN (selected)" : "LAN";
+        _steamButton.interactable = !_waiting;
+        _lanButton.interactable = !_waiting;
+        var available = !_steam || SteamBootstrap.Service?.Available == true;
+        _apply.interactable = available && !_waiting && (_mode == Mode.Host || !_steam);
+        _continue.interactable = available && !_waiting && CoopSaves.HasCoopWorld();
+        _applyText.text = _mode == Mode.Host ? "New world" : _steam ? "Accept an invite" : "Connect";
+        var text = _steam
+            ? _mode == Mode.Host ? "Host through Steam. Invite a friend from the in-game pause menu once the world is ready."
+                : "Open PCBS2 on both PCs with Steam running, then accept the host's Steam invite. Keep this game open."
+            : _mode == Mode.Host ? "Players join with this PC's IP address and the port below." : "Enter the host's IP address and port.";
+        if (!available) text = SteamBootstrap.Service?.UnavailableReason ?? SteamBootstrap.Reason;
+        SetStatus(text, !available);
+    }
+
+    public void OpenSteamWaiting()
+    {
+        Open(Mode.Join); _steam = true; _waiting = true; UpdateMethod();
+        SetStatus("Joining the Steam lobby…", false);
     }
 
     public void Close()
@@ -256,6 +298,8 @@ internal sealed class CoopDialog
     {
         if (!IsOpen || !_waiting) return;
         var s = _coop.Session;
+        if (_mode == Mode.Host && s.IsRunning) { Close(); return; }
+        if (_coop.SteamStarting) return;
         if (_coop.GuestLoadStarted)
         {
             Close();
@@ -269,14 +313,15 @@ internal sealed class CoopDialog
         else if (_coop.LastFailure != null)
         {
             _waiting = false;
-            _apply.interactable = true;
+            UpdateMethod();
             SetStatus("Could not join: " + _coop.LastFailure, true);
         }
     }
 
     private void OnApply()
     {
-        if (!int.TryParse(_port.text, out var port) || port < 1 || port > 65535)
+        var port = Protocol.DefaultPort;
+        if (!_steam && (!int.TryParse(_port.text, out port) || port < 1 || port > 65535))
         {
             SetStatus("Port must be a number from 1 to 65535.", true);
             return;
@@ -292,6 +337,7 @@ internal sealed class CoopDialog
             StartHost(port, continueWorld: false);
             return;
         }
+        if (_steam) return;
         if (!_coop.Join(_ip.text, port, out var joinError)) { SetStatus(joinError, true); return; }
         _waiting = true;
         _apply.interactable = false;
@@ -300,7 +346,8 @@ internal sealed class CoopDialog
 
     private void OnContinue()
     {
-        if (!int.TryParse(_port.text, out var port) || port < 1 || port > 65535)
+        var port = Protocol.DefaultPort;
+        if (!_steam && (!int.TryParse(_port.text, out port) || port < 1 || port > 65535))
         {
             SetStatus("Port must be a number from 1 to 65535.", true);
             return;
@@ -310,6 +357,13 @@ internal sealed class CoopDialog
 
     private void StartHost(int port, bool continueWorld)
     {
+        if (_steam)
+        {
+            if (!_coop.HostSteam(continueWorld, out var why)) { SetStatus(why, true); return; }
+            _waiting = true; UpdateMethod();
+            SetStatus("Creating a private Steam lobby…", false);
+            return;
+        }
         if (!_coop.HostWorld(port, continueWorld, out var error)) { SetStatus(error, true); return; }
         Close();
     }

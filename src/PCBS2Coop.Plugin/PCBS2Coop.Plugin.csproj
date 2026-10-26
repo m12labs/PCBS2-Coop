@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PCBS2Coop.Network\PCBS2Coop.Network.csproj" />
+    <ProjectReference Include="..\PCBS2Coop.Steam\PCBS2Coop.Steam.csproj" ReferenceOutputAssembly="false" Private="false" />
     <Reference Include="BepInEx.Core"><HintPath>$(GameDir)\BepInEx\core\BepInEx.Core.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(GameDir)\BepInEx\core\BepInEx.Unity.IL2CPP.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Il2CppInterop.Runtime"><HintPath>$(GameDir)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
@@ -25,7 +26,14 @@
     <Error Condition="!Exists('$(GameDir)\BepInEx\interop\Assembly-CSharp.dll')" Text="Install BepInEx (scripts/Install-Loader.ps1) and launch the game once to generate BepInEx/interop. Do not use decompilation dummy DLLs." />
   </Target>
   <!-- Copy the plugin into the game after each build. Skipped (with a warning) while the game is running. -->
-  <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(DeployToGame)' != 'false'">
+  <Target Name="StageSteam" AfterTargets="Build">
+    <ItemGroup>
+      <SteamFiles Include="..\PCBS2Coop.Steam\bin\$(Configuration)\net6.0\PCBS2Coop.Steam.dll;..\PCBS2Coop.Steam\bin\$(Configuration)\net6.0\Facepunch.Steamworks.Win64.dll;..\PCBS2Coop.Steam\bin\$(Configuration)\net6.0\steam_api64.dll;..\PCBS2Coop.Steam\bin\$(Configuration)\net6.0\Facepunch.Steamworks.LICENSE" />
+      <SteamFiles Include="..\PCBS2Coop.Steam\bin\$(Configuration)\net6.0\Steamworks.NOTICES.md" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SteamFiles)" DestinationFolder="$(OutDir)steam" />
+  </Target>
+  <Target Name="DeployToGame" AfterTargets="Build" DependsOnTargets="StageSteam" Condition="'$(DeployToGame)' != 'false'">
     <PropertyGroup><PluginDir>$(GameDir)\BepInEx\plugins\PCBS2Coop</PluginDir></PropertyGroup>
     <ItemGroup>
       <DeployFiles Include="$(OutDir)PCBS2Coop.dll;$(OutDir)PCBS2Coop.Network.dll;$(OutDir)LiteNetLib.dll" />
@@ -33,6 +41,7 @@
     </ItemGroup>
     <MakeDir Directories="$(PluginDir)" />
     <Copy SourceFiles="@(DeployFiles)" DestinationFolder="$(PluginDir)" Retries="0" ContinueOnError="WarnAndContinue" />
+    <Copy SourceFiles="@(SteamFiles)" DestinationFolder="$(PluginDir)\steam" Retries="0" ContinueOnError="WarnAndContinue" />
     <Message Importance="high" Text="Deployed to $(PluginDir)" />
   </Target>
 </Project>

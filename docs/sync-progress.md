@@ -1,5 +1,7 @@
 # PCBS2 Co-op synchronization progress
 
+**October 26, 2026 — experimental Steam connection, version 0.9.** Steam/LAN selection, private Steam lobby invites, P2P/relay transport and an in-game friends picker are implemented. Single-PC Steam initialization, hosting and UI have running-game evidence; two-PC invitation acceptance and actual relayed gameplay remain pending. Gameplay synchronization scope is unchanged. See the [implementation evidence and manual checklist](../steamworks.md#implementation-status).
+
 **October 25, 2026 — task 3f complete, version 0.8.** [Atomic carry, bench and storage transfers](audit/phase-3.md#task-3f-atomic-carry-bench-and-storage-transfers) now persist correctly after rapid transfers. F11–F16 found the last two causes of failed saves:
 - a load whose parts were all cached left its record in the game's load queue, which blocked the next save and resume;
 - the game hides a workbench slot on pickup and shows it again only in its own drop handler. A PC the mod placed there, including the other player's drop, was invisible and saved its water pipes without their parts. The game then refused to load that save.

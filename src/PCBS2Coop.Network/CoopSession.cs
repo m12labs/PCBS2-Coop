@@ -1,6 +1,3 @@
-using System.Net;
-using System.Net.Sockets;
-using LiteNetLib;
 using LiteNetLib.Utils;
 
 namespace PCBS2Coop.Network;
@@ -13,7 +10,7 @@ public sealed class SessionStats
 }
 
 /// <summary>
-/// A two-player session over LiteNetLib: one host and one guest.
+/// A two-player session over LAN or Steam: one host and one guest.
 /// <para>Joining: the guest's connect request carries its <see cref="PeerIdentity"/>. The host refuses an incompatible
 /// guest with a readable reason, otherwise accepts and sends Welcome (host identity, warnings, world position).
 /// <see cref="PeerJoined"/> fires on both sides once that handshake is complete.</para>
@@ -26,15 +23,16 @@ public sealed class SessionStats
 /// </summary>
 public sealed class CoopSession : IDisposable
 {
-    private readonly EventBasedNetListener _listener = new();
-    private readonly NetManager _net;
+    private ISessionTransport? _transport;
     private readonly NetDataWriter _writer = new();
-    private NetPeer? _peer;
     private bool _joined;
     private string? _refusal;
     private SnapshotSender _sender;
     private readonly SnapshotReceiver _receiver = new();
     private uint _loadingTransfer;
+    private readonly Func<long> _now;
+    private long _joinStarted;
+    private bool _handshakeExpired;
 
     /// <summary>Snapshot bytes sent per <see cref="Poll"/> (about 15 MB/s at 60 frames per second).</summary>
     public int SnapshotBytesPerPoll { get; set; } = 256 * 1024;
@@ -43,10 +41,10 @@ public sealed class CoopSession : IDisposable
     public int Port { get; private set; }
     public bool IsRunning => Role != Role.None;
     /// <summary>Transport connection exists (the handshake may still be in progress).</summary>
-    public bool HasPeer => _peer != null && _peer.ConnectionState == ConnectionState.Connected;
+    public bool HasPeer => _transport?.IsConnected == true;
     /// <summary>Handshake completed: identities exchanged and compatible.</summary>
     public bool IsJoined => HasPeer && _joined;
-    public int PingMs => _peer?.Ping ?? -1;
+    public int PingMs => _transport?.PingMs ?? -1;
 
     public PeerIdentity? LocalIdentity { get; private set; }
     public PeerIdentity? RemoteIdentity { get; private set; }
@@ -77,62 +75,54 @@ public sealed class CoopSession : IDisposable
     /// <summary>Raised when <see cref="GuestState"/> changes (both sides).</summary>
     public event Action<GuestState>? GuestStateChanged;
 
-    public CoopSession()
+    public string TransportName => _transport?.Name ?? "LAN";
+
+    public CoopSession() : this(() => Environment.TickCount64) { }
+    internal CoopSession(Func<long> now)
     {
-        _net = new NetManager(_listener) { DisconnectTimeout = 5000, UnconnectedMessagesEnabled = false };
-        _sender = new SnapshotSender(SendReliable);
-        _listener.ConnectionRequestEvent += OnConnectionRequest;
-        _listener.PeerConnectedEvent += OnPeerConnected;
-        _listener.PeerDisconnectedEvent += OnPeerDisconnected;
-        _listener.NetworkReceiveEvent += OnReceive;
-        _listener.NetworkErrorEvent += (ep, err) => Log?.Invoke($"Network error from {ep}: {err}");
+        _now = now;
+        _sender = new SnapshotSender(SendReliable, SendBulk);
     }
 
-    /// <summary>Start listening for one guest. Returns false with a reason if the port can't be bound.</summary>
-    public bool Host(int port, PeerIdentity local, out string error)
-    {
-        EnsureIdle();
-        if (!_net.Start(port))
-        {
-            error = $"Could not listen on UDP port {port} (already in use?).";
-            return false;
-        }
-        Begin(Role.Host, port, local);
-        error = "";
-        Log?.Invoke($"Hosting on UDP port {port} as {local}.");
-        return true;
-    }
+    public bool Host(int port, PeerIdentity local, out string error) => Start(new LanTransport(port), Role.Host, port, local, out error);
+    public bool Join(string address, int port, PeerIdentity local, out string error) => Start(new LanTransport(port, address), Role.Client, port, local, out error);
+    public bool Host(ISessionTransport transport, PeerIdentity local, out string error) => Start(transport, Role.Host, 0, local, out error);
+    public bool Join(ISessionTransport transport, PeerIdentity local, out string error) => Start(transport, Role.Client, 0, local, out error);
 
-    /// <summary>Begin connecting to a host. The outcome arrives as <see cref="PeerJoined"/> or <see cref="PeerDisconnected"/>.</summary>
-    public bool Join(string address, int port, PeerIdentity local, out string error)
+    private bool Start(ISessionTransport transport, Role role, int port, PeerIdentity local, out string error)
     {
         EnsureIdle();
-        if (!IPAddress.TryParse(address.Trim(), out var ip) || ip.AddressFamily != AddressFamily.InterNetwork)
-        {
-            error = $"'{address}' is not an IPv4 address.";
-            return false;
-        }
-        if (!_net.Start())
-        {
-            error = "Could not open a local UDP socket.";
-            return false;
-        }
-        Begin(Role.Client, port, local);
+        _transport = transport;
+        transport.ValidateHello = ValidateHello;
+        transport.Connected += OnPeerConnected;
+        transport.Disconnected += OnPeerDisconnected;
+        transport.Received += OnReceive;
+        transport.Log += TransportLog;
+        Begin(role, port, local);
         var hello = new NetDataWriter();
         hello.Put(Protocol.ConnectionKey);
         local.Write(hello);
-        _peer = _net.Connect(new IPEndPoint(ip, port), hello);
-        error = "";
-        Log?.Invoke($"Connecting to {ip}:{port} as {local}.");
+        if (!transport.Start(role, hello.CopyData(), out error))
+        {
+            Stop();
+            return false;
+        }
+        Log?.Invoke($"{role} started over {transport.Name} as {local}.");
         return true;
     }
 
+    private void TransportLog(string message) => Log?.Invoke(message);
+
     public void Poll()
     {
-        _net.PollEvents();
+        _transport?.Poll();
+        if (Role == Role.Client && !_joined && !_handshakeExpired && _now() - _joinStarted > 30_000)
+        {
+            _handshakeExpired = true;
+            _transport?.Disconnect("Compatibility handshake timed out after 30 seconds.");
+        }
         if (Role == Role.Host && HasPeer) _sender.Pump(SnapshotBytesPerPoll);
     }
-
     // ---------------- snapshots ----------------
 
     /// <summary>
@@ -183,7 +173,7 @@ public sealed class CoopSession : IDisposable
         _receiver.Reset();
         SetGuestState(GuestState.Failed);
         _refusal = reason;
-        if (_peer != null) _net.DisconnectPeer(_peer, ReasonBytes("The guest could not load the world: " + reason));
+        _transport?.Disconnect("The guest could not load the world: " + reason);
     }
 
     private void SendGuestStatus(GuestState state)
@@ -275,7 +265,7 @@ public sealed class CoopSession : IDisposable
         if (!IsJoined) return;
         _writer.Reset();
         state.Write(_writer);
-        _peer!.Send(_writer, DeliveryMethod.Sequenced);
+        _transport!.Send(_writer.CopyData(), SessionDelivery.LatestState);
         Stats.PlayerStatesSent++;
     }
 
@@ -283,10 +273,18 @@ public sealed class CoopSession : IDisposable
     public void Stop(string? reason = null)
     {
         if (Role == Role.None) return;
-        if (reason != null && _peer != null && _peer.ConnectionState == ConnectionState.Connected)
-            _net.DisconnectPeer(_peer, ReasonBytes(reason));
-        _net.Stop(sendDisconnectMessages: true);
-        _peer = null;
+        var transport = _transport;
+        _transport = null;
+        if (transport != null)
+        {
+            transport.Connected -= OnPeerConnected;
+            transport.Disconnected -= OnPeerDisconnected;
+            transport.Received -= OnReceive;
+            transport.Log -= TransportLog;
+            transport.ValidateHello = null;
+            if (reason != null) transport.Disconnect(reason);
+            transport.Dispose();
+        }
         _joined = false;
         _sender.Clear();
         _receiver.Reset();
@@ -311,6 +309,7 @@ public sealed class CoopSession : IDisposable
         Stats = new SessionStats();
         _joined = false;
         _refusal = null;
+        _joinStarted = _now(); _handshakeExpired = false;
         _sender.Clear();
         _receiver.Reset();
         GuestState = GuestState.Connected;
@@ -320,10 +319,10 @@ public sealed class CoopSession : IDisposable
 
     private void SendReliable(NetDataWriter w)
     {
-        if (_peer == null || _peer.ConnectionState != ConnectionState.Connected) return;
-        _peer.Send(w, DeliveryMethod.ReliableOrdered);
+        if (HasPeer) _transport!.Send(w.CopyData(), SessionDelivery.ReliableOrdered);
     }
 
+    private bool SendBulk(NetDataWriter w) => HasPeer && _transport!.Send(w.CopyData(), SessionDelivery.ReliableOrdered, bulk: true);
     private void EnsureIdle()
     {
         if (Role != Role.None) throw new InvalidOperationException($"Session already running as {Role}.");
@@ -331,72 +330,31 @@ public sealed class CoopSession : IDisposable
 
     // ---------------- handshake ----------------
 
-    private void OnConnectionRequest(ConnectionRequest request)
+    private string? ValidateHello(byte[] data)
     {
-        if (Role != Role.Host || _peer != null)
-        {
-            Log?.Invoke($"Rejected {request.RemoteEndPoint}: session is full.");
-            request.Reject(ReasonBytes("The host already has a player connected (two-player session)."));
-            return;
-        }
-
-        string key;
-        PeerIdentity guest;
+        string? error = null;
         try
         {
-            key = request.Data.GetString(Protocol.MaxShortString);
-            if (!key.StartsWith(Protocol.KeyPrefix, StringComparison.Ordinal))
+            var reader = new NetDataReader(data);
+            var key = reader.GetString(Protocol.MaxShortString);
+            if (!key.StartsWith(Protocol.KeyPrefix, StringComparison.Ordinal)) error = "Not a PCBS2 Coop client.";
+            else if (key != Protocol.ConnectionKey) error = $"Different mod versions (host {ModVersion.Value}, you {key[Protocol.KeyPrefix.Length..]}).";
+            else
             {
-                Log?.Invoke($"Rejected {request.RemoteEndPoint}: not a PCBS2 Coop client.");
-                request.RejectForce();
-                return;
+                var guest = PeerIdentity.Read(reader);
+                if (reader.AvailableBytes != 0) throw new FormatException("Trailing hello bytes.");
+                var result = Compatibility.Check(LocalIdentity!, guest);
+                if (!result.Compatible) error = string.Join(" ", result.Problems);
+                else { RemoteIdentity = guest; Warnings = result.Warnings; }
             }
-            if (key != Protocol.ConnectionKey)
-            {
-                Refuse(request, $"Different mod versions (host {ModVersion.Value}, you {key[Protocol.KeyPrefix.Length..]}).");
-                return;
-            }
-            guest = PeerIdentity.Read(request.Data);
         }
-        catch (Exception e) when (Protocol.IsReadError(e))
-        {
-            Refuse(request, "The join request could not be read.");
-            return;
-        }
-
-        var result = Compatibility.Check(LocalIdentity!, guest);
-        if (!result.Compatible)
-        {
-            Refuse(request, string.Join(" ", result.Problems));
-            Log?.Invoke($"Guest identity: {guest}");
-            return;
-        }
-
-        _peer = request.Accept();
-        RemoteIdentity = guest;
-        Warnings = result.Warnings;
-        Log?.Invoke($"Accepted {request.RemoteEndPoint}: {guest}.");
-        foreach (var w in result.Warnings) Log?.Invoke("Compatibility warning: " + w);
+        catch (Exception e) when (Protocol.IsReadError(e)) { error = "The join request could not be read."; }
+        if (error != null) { Stats.RefusedJoins++; Log?.Invoke("Refused guest: " + error); }
+        return error;
     }
-
-    private void Refuse(ConnectionRequest request, string reason)
+    private void OnPeerConnected()
     {
-        Stats.RefusedJoins++;
-        Log?.Invoke($"Refused {request.RemoteEndPoint}: {reason}");
-        request.Reject(ReasonBytes(reason));
-    }
-
-    private static byte[] ReasonBytes(string reason)
-    {
-        var w = new NetDataWriter();
-        w.Put(reason, Protocol.MaxShortString);
-        return w.CopyData();
-    }
-
-    private void OnPeerConnected(NetPeer peer)
-    {
-        _peer = peer;
-        Log?.Invoke($"Peer connected: {peer}.");
+        Log?.Invoke("Peer connected.");
         if (Role != Role.Host) return; // the guest waits for Welcome
 
         _writer.Reset();
@@ -406,7 +364,7 @@ public sealed class CoopSession : IDisposable
         _writer.Put((byte)warnings.Count);
         foreach (var w in warnings) _writer.Put(w, Protocol.MaxShortString);
         World!.WriteWorldPosition(_writer);
-        peer.Send(_writer, DeliveryMethod.ReliableOrdered);
+        SendReliable(_writer);
 
         _joined = true;
         World.Linked = true;
@@ -429,7 +387,7 @@ public sealed class CoopSession : IDisposable
         {
             _refusal = string.Join(" ", mine.Problems);
             Log?.Invoke($"Leaving: {_refusal} Host identity: {host}");
-            _net.DisconnectPeer(_peer!);
+            _transport?.Disconnect(_refusal);
             return;
         }
         Warnings = hostWarnings.Union(mine.Warnings).ToList();
@@ -442,52 +400,34 @@ public sealed class CoopSession : IDisposable
         PeerJoined?.Invoke();
     }
 
-    private void OnPeerDisconnected(NetPeer peer, DisconnectInfo info)
+    private void OnPeerDisconnected(string reason)
     {
-        if (_peer != null && _peer != peer) return;
-        _peer = null;
-        var wasJoined = _joined;
         _joined = false;
         _sender.Clear();
         _receiver.Reset();
         SetGuestState(GuestState.Connected);
         World?.OnLinkLost();
-
-        string? hostReason = null;
-        if (info.AdditionalData != null && info.AdditionalData.AvailableBytes > 0)
-        {
-            try { hostReason = info.AdditionalData.GetString(Protocol.MaxShortString); }
-            catch (Exception e) when (Protocol.IsReadError(e)) { }
-        }
-
-        var reason = _refusal ?? (info.Reason switch
-        {
-            DisconnectReason.ConnectionFailed => "No host answered at that address and port.",
-            DisconnectReason.ConnectionRejected => hostReason != null ? "The host refused the join: " + hostReason : "The host refused the join (full, or a different mod version).",
-            DisconnectReason.Timeout => "Connection timed out.",
-            DisconnectReason.RemoteConnectionClose => hostReason ?? "The other player left.",
-            DisconnectReason.DisconnectPeerCalled => "Disconnected.",
-            _ => info.Reason.ToString(),
-        });
+        RemoteIdentity = null;
+        reason = _refusal ?? reason;
         _refusal = null;
-        Log?.Invoke($"Peer disconnected: {info.Reason} (joined={wasJoined}). {reason}");
+        Log?.Invoke("Peer disconnected: " + reason);
         PeerDisconnected?.Invoke(reason);
     }
-
     // ---------------- messages ----------------
 
-    private void OnReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod method)
+    private void OnReceive(byte[] data, SessionDelivery method)
     {
+        var reader = new NetDataReader(data);
         try
         {
-            if (peer != _peer || reader.AvailableBytes < 1) return;
+            if (reader.AvailableBytes < 1) return;
             var type = (MessageType)reader.GetByte();
-            if (type == MessageType.Welcome) { OnWelcome(reader); return; }
+            if (type == MessageType.Welcome && method == SessionDelivery.ReliableOrdered) { OnWelcome(reader); return; }
             if (!_joined) { Stats.MalformedMessages++; return; } // nothing else is valid before the handshake
 
             if (type == MessageType.PlayerState)
             {
-                if (method != DeliveryMethod.Sequenced || reader.AvailableBytes < 17) { Stats.MalformedMessages++; return; }
+                if (method != SessionDelivery.LatestState || reader.AvailableBytes < 17) { Stats.MalformedMessages++; return; }
                 var s = PlayerState.Read(reader);
                 if (!s.IsValid) { Stats.InvalidPlayerStates++; return; }
                 Stats.PlayerStatesReceived++;
@@ -495,7 +435,7 @@ public sealed class CoopSession : IDisposable
                 return;
             }
 
-            if (method != DeliveryMethod.ReliableOrdered) { Stats.MalformedMessages++; return; }
+            if (method != SessionDelivery.ReliableOrdered) { Stats.MalformedMessages++; return; }
             if (type is MessageType.SnapshotMark or MessageType.SnapshotFile or MessageType.SnapshotChunk or MessageType.SnapshotAbort)
             {
                 OnSnapshotMessage(type, reader);
@@ -512,10 +452,6 @@ public sealed class CoopSession : IDisposable
         {
             Stats.MalformedMessages++;
             Log?.Invoke($"Dropped a malformed message: {e.GetType().Name}.");
-        }
-        finally
-        {
-            reader.Recycle();
         }
     }
 }

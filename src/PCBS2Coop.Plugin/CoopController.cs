@@ -54,6 +54,7 @@ internal sealed class CoopController
     public NativePcTransfers Transfers { get; private set; }
     private string _notice;
     private float _noticeUntil;
+    public string ActiveNotice => _notice != null && Time.realtimeSinceStartup < _noticeUntil ? _notice : null;
     /// <summary>Reason the last connection or world entry failed, or null. Shown on the main menu.</summary>
     public string LastFailure { get; private set; }
     /// <summary>A reason to show once the main menu is back (the guest left a world). Read with <see cref="TakeMenuMessage"/>.</summary>
@@ -86,19 +87,28 @@ internal sealed class CoopController
         Session.RemoteState += (PlayerState s) => { _remote = s; _lastRemoteAt = Time.realtimeSinceStartup; };
         Session.WorldCreated += OnWorldCreated;
         Session.SnapshotReceived += OnSnapshotReceived;
+        if (SteamBootstrap.Service != null)
+        {
+            SteamBootstrap.Service.InviteRequested += OnSteamInvite;
+            SteamBootstrap.Service.Failed += OnSteamFailure;
+        }
     }
 
     // ---------------- starting and stopping ----------------
 
     /// <summary>Host: start listening and load the co-op world (new or continued). Call on the main menu.</summary>
     public bool HostWorld(int port, bool continueWorld, out string error)
+        => HostWorld(port, continueWorld, null, out error);
+
+    private bool HostWorld(int port, bool continueWorld, ISessionTransport transport, out string error)
     {
-        Stop(null, "Starting a new host session.");
+        if (transport == null) Stop(null, "Starting a new host session.");
         LastFailure = null;
         if (!GamePatches.Ready) { error = "The co-op save/object hooks could not be installed. See the log."; return false; }
         var menu = Object.FindObjectOfType<NewMainMenu>();
         if (menu == null) { error = "The main menu isn't ready."; return false; }
-        if (!Session.Host(port, GameInfo.Build(), out error)) return false;
+        var local = GameInfo.Build();
+        if (!(transport == null ? Session.Host(port, local, out error) : Session.Host(transport, local, out error))) return false;
         BeginBackgroundRun();
         CoopSaves.EnterHost();
         _hostWorldKind = continueWorld ? "continued co-op world" : "new co-op world";
@@ -164,6 +174,65 @@ internal sealed class CoopController
         return true;
     }
 
+    public bool SteamStarting => SteamBootstrap.Service?.Busy == true;
+    public bool IsSteamHost => Session.Role == Role.Host && Session.TransportName == "Steam";
+
+    public bool HostSteam(bool continueWorld, out string error)
+    {
+        Stop(null, "Preparing a Steam host session.");
+        LastFailure = null;
+        var steam = SteamBootstrap.Service;
+        if (steam?.Available != true) { error = steam?.UnavailableReason ?? SteamBootstrap.Reason; return false; }
+        if (!GamePatches.Ready || Object.FindObjectOfType<NewMainMenu>() == null)
+        { error = "The main menu or co-op hooks are not ready."; return false; }
+        steam.BeginHost(GameInfo.Build(), (ISessionTransport transport, string failure) =>
+        {
+            if (failure != null) { LastFailure = failure; return; }
+            try
+            {
+                if (!IdleMainMenu) { transport?.Dispose(); steam.Cancel(); LastFailure = "Return to the main menu before hosting."; return; }
+                if (!HostWorld(0, continueWorld, transport, out var why)) { LastFailure = why; steam.Cancel(); }
+            }
+            catch (Exception e) { LastFailure = "Could not start the Steam world: " + e.Message; Stop(null, LastFailure); CoopSaves.Restore(LastFailure); }
+        });
+        error = LastFailure;
+        return error == null;
+    }
+
+    private bool IdleMainMenu => CoopRunner.Instance?.Scene == CoopRunner.MenuScene && !Session.IsRunning && !_guestLoading && !_leavingToMenu;
+    private void OnSteamInvite(ulong lobby)
+    {
+        var steam = SteamBootstrap.Service;
+        if (!IdleMainMenu || steam.Busy || steam.HasLobby)
+        { Notice("Return to the main menu, then accept the Steam invite again."); return; }
+        if (!GamePatches.Ready) { ShowSteamMessage("The co-op hooks are not ready. See the log."); return; }
+        LastFailure = null;
+        // Open first: opening an ordinary co-op dialog cancels previous attempts.
+        CoopRunner.Instance.Menu?.Dialog.OpenSteamWaiting();
+        steam.BeginJoin(lobby, GameInfo.Build(), (ISessionTransport transport, string failure) =>
+        {
+            if (failure != null) { LastFailure = failure; return; }
+            try
+            {
+                if (!IdleMainMenu) { transport?.Dispose(); steam.Cancel(); LastFailure = "Return to the main menu and accept again."; return; }
+                if (!Session.Join(transport, GameInfo.Build(), out var error)) { LastFailure = error; steam.Cancel(); return; }
+                BeginBackgroundRun();
+            }
+            catch (Exception e) { LastFailure = "Could not join Steam session: " + e.Message; Stop(null, LastFailure); }
+        });
+    }
+    private void ShowSteamMessage(string reason)
+    {
+        LastFailure = reason;
+        if (CoopRunner.Instance?.Menu != null) CoopRunner.Instance.Menu.Dialog.OpenMessage(reason);
+        else _menuMessage = reason;
+    }
+    private void OnSteamFailure(string reason)
+    {
+        if (Session.TransportName == "Steam" && Session.IsRunning) LeaveToMenu(reason, failAdmission: false);
+        else if (IdleMainMenu) ShowSteamMessage(reason);
+    }
+
     /// <summary>End the session. <paramref name="toPeer"/> is shown to the other player (null = generic).</summary>
     public void Stop(string toPeer, string why)
     {
@@ -171,6 +240,7 @@ internal sealed class CoopController
         if (_pairWrites.Count > 0 && !SaveLoadSystem.WaitingOnThread()) FinishPairWrites();
         if (Session.IsRunning) Plugin.Logger.LogInfo($"Stopping session: {why}");
         Session.Stop(toPeer);
+        SteamBootstrap.Service?.Cancel();
         Objects.Reset();
         Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; _notice = null; NativeProjection.Reset();
         DestroyView();
@@ -211,6 +281,7 @@ internal sealed class CoopController
 
         if (Session.Role == Role.Host) UpdateHost();
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
+        SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
         if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); NativeProjection.Update(); }
 
@@ -606,7 +677,7 @@ internal sealed class CoopController
             var s = Session;
             if (s.Role == Role.Host)
             {
-                var head = $"Co-op host · port {s.Port}";
+                var head = s.TransportName == "Steam" ? "Co-op host · Steam" : $"Co-op host · LAN port {s.Port}";
                 if (!_hostWorldStarted) return head + " · loading world";
                 if (!s.IsJoined) return head + " · waiting for Client";
                 return head + (s.GuestState switch

@@ -46,7 +46,11 @@ public static class CoopSavePair
         try
         {
             var r = new NetDataReader(data);
-            if (r.GetULong() != Magic || r.GetString(128) != ModVersion.Value) throw new InvalidDataException("Unsupported co-op save version.");
+            if (r.GetULong() != Magic) throw new InvalidDataException("Unsupported co-op save format.");
+            var version = r.GetString(128);
+            // 0.9 adds a transport only; the 0.8 world/identity/carrier layout is byte-for-byte unchanged.
+            // This is a specific compatible reader, not permission to load other historical formats.
+            if (version != ModVersion.Value && !(ModVersion.Value == "0.9" && version == "0.8")) throw new InvalidDataException("Unsupported co-op save version.");
             var size = r.GetInt(); var hash = new byte[32]; r.GetBytes(hash, hash.Length);
             var generation = r.GetUInt(); var revision = r.GetULong(); var chain = r.GetULong();
             var state = Protocol.ReadBlob(r, Protocol.MaxModStateBytes, out _) ?? throw new InvalidDataException("Invalid world state length.");
