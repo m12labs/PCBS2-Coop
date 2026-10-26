@@ -69,6 +69,9 @@ internal sealed class AutoTest
 
     public void Update(CoopRunner r)
     {
+        // Phase 3 audit uses the same isolated host/join setup, then leaves the controls to the operator.
+        // Do not run the marker/pause/departure sequence underneath the object-action probes.
+        if (Phase3Probe.Enabled && _step >= 5) return;
         var now = Time.realtimeSinceStartup;
         if (_walking && _role == "join") Walk(now);
         HookWorld(r);
@@ -397,14 +400,24 @@ internal sealed class AutoTest
     {
         try
         {
-            var dir = Path.Combine(_dir, $"saves-{_role}");
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            var dir = Phase3Probe.Enabled
+                ? Path.Combine(_dir, "phase3", Phase3Probe.RunId, $"saves-{_role}")
+                : Path.Combine(_dir, $"saves-{_role}");
+            // Audit runs use fresh, named folders and retain earlier evidence.
+            if (Phase3Probe.Enabled && Directory.Exists(dir)) throw new IOException("Use a fresh phase 3 run ID; its saves already exist.");
+            if (!Phase3Probe.Enabled && Directory.Exists(dir)) Directory.Delete(dir, true);
             Directory.CreateDirectory(dir);
             var original = SaveLoadSystem.s_saveDir;
             var target = dir.Replace('\\', '/');
             SaveLoadSystem.s_saveDir = target;
             if (SaveLoadSystem.s_saveDir != target) return false;
             IsolatedSaveDir = target;
+            if (Phase3Probe.Enabled)
+            {
+                // PC import/export is a separate game folder; isolate it as well as world saves.
+                SaveLoadSystem.s_pcSharingDefaultDir = target + "/PCs";
+                Directory.CreateDirectory(SaveLoadSystem.s_pcSharingDefaultDir);
+            }
             Plugin.Logger.LogInfo($"AUTOTEST: game save folder redirected from '{original}' to '{target}'.");
             return true;
         }
@@ -462,8 +475,9 @@ internal sealed class AutoTest
     {
         [HarmonyPatch(typeof(MessageBox), nameof(MessageBox.Show), typeof(string), typeof(string), typeof(Il2CppSystem.Action), typeof(bool), typeof(Il2CppSystem.Action), typeof(Rewired.ActionElementMap), typeof(bool), typeof(bool), typeof(MessageBox.ImmediateMessageBoxHolder), typeof(MessageBox.ImmediateMessageBoxHolder))]
         [HarmonyPrefix]
-        private static bool Prefix(string title, Il2CppSystem.Action yesAction)
+        private static bool Prefix(string title, string body, Il2CppSystem.Action yesAction)
         {
+            if (title == "Save Game Error") Plugin.Logger.LogError("AUTOTEST: native save error: " + body);
             // Accepting "New Game" overwrites the Free Build save in the current save folder. Only do that when the
             // folder is the disposable one and the game still points at it.
             if (IsolatedSaveDir == null || SaveLoadSystem.s_saveDir == null || !SaveLoadSystem.s_saveDir.StartsWith(IsolatedSaveDir, StringComparison.Ordinal))

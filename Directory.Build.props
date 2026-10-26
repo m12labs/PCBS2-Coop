@@ -10,7 +10,7 @@
       The mod's one and only version: plugin, network assembly and join handshake. Players can join each other only
       when this matches exactly. Each bump adds one: 0.1, 0.2, 0.3, 0.4... See AGENTS.md "Versioning".
     -->
-    <Version>0.3</Version>
+    <Version>0.8</Version>
     <!-- Game folder: -p:GameDir=..., else Directory.Build.local.props, else the PCBS2_GAME_DIR environment variable. -->
     <GameDir Condition="'$(GameDir)' == ''">$(PCBS2_GAME_DIR)</GameDir>
   </PropertyGroup>

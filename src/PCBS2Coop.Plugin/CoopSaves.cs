@@ -1,4 +1,5 @@
 using UnityEngine;
+using PCBS2Coop.Network;
 
 namespace PCBS2Coop;
 
@@ -67,18 +68,20 @@ internal static class CoopSaves
     }
 
     /// <summary>Guest: write a received load snapshot into the session folder. Returns the full path.</summary>
-    public static string WriteGuestWorld(string fileName, byte[] data)
+    public static string WriteGuestWorld(string fileName, byte[] data, SaveMetadata metadata)
     {
         var path = Path.Combine(GuestSessionDir, fileName);
         File.WriteAllBytes(path, data);
+        CoopSavePair.WriteSidecar(path, data, metadata);
         return path;
     }
 
     /// <summary>Guest: keep the latest copy of the host's world. Never touches the guest's own co-op world or solo saves.</summary>
-    public static void StoreJoinedCopy(string fileName, byte[] data)
+    public static void StoreJoinedCopy(string fileName, byte[] data, SaveMetadata metadata)
     {
         Recreate(JoinedDir);
         File.WriteAllBytes(Path.Combine(JoinedDir, fileName), data);
+        CoopSavePair.WriteSidecar(Path.Combine(JoinedDir, fileName), data, metadata);
         Plugin.Logger.LogInfo($"[saves] stored the host's world as '{JoinedDir}/{fileName}' ({data.Length} bytes).");
     }
 
@@ -86,6 +89,12 @@ internal static class CoopSaves
     {
         if (Directory.Exists(dir)) Directory.Delete(dir, true);
         Directory.CreateDirectory(dir);
+    }
+
+    public static string NativeFile(string dir, string name)
+    {
+        var path = Path.Combine(dir, name);
+        return File.Exists(path + ".zip") ? path + ".zip" : path;
     }
 
     private static void Enter(Mode mode, string dir)

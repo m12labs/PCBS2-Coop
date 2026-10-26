@@ -9,7 +9,7 @@ $auditOutput = Join-Path $auditWorkspace 'artiffacts/audit'
 $auditDocRoot = Join-Path $auditWorkspace 'docs/audit'
 $auditSources = Join-Path $auditWorkspace 'artiffacts/decompiled/metadata/csharp/DiffableCs/Assembly-CSharp'
 $auditDocs = @(Get-ChildItem $auditDocRoot -Filter '*.md' -File) + @(
-    Get-Item (Join-Path $auditWorkspace 'sync-progress.md'), (Join-Path $auditWorkspace 'plan.md')
+    Get-Item (Join-Path $auditWorkspace 'docs/sync-progress.md'), (Join-Path $auditWorkspace 'plan.md')
 )
 $auditGeneratedPaths = @(
     (Join-Path $auditOutput 'source-inventory.csv'),

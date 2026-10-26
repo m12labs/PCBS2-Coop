@@ -25,3 +25,6 @@
 *.dmp
 *.tmp
 *~
+
+# Local session handoff notes.
+/HANDOFF.md

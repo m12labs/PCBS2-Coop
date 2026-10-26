@@ -45,6 +45,13 @@ public interface ICommandHandler
     void Apply(in MutationContext ctx, NetDataReader payload);
 }
 
+/// <summary>Optional host construction of the accepted payload. Validation and canonicalization must not mutate
+/// world facts. Propose IDs from the allocator; commit them only in Apply. Duplicate requests skip this path.</summary>
+public interface ICanonicalCommandHandler : ICommandHandler
+{
+    byte[] Canonicalize(in CommandContext ctx, NetDataReader request);
+}
+
 /// <summary>
 /// Mod-side world state that a joining guest needs and that isn't in the game's save (for example object IDs).
 /// It travels with a load snapshot. <see cref="Reset"/> runs when a world generation starts.
@@ -298,6 +305,14 @@ public sealed class WorldSync
         return true;
     }
 
+    /// <summary>Restore a disk save at the start of a new host generation; its stream starts at revision 0.</summary>
+    public void RestoreState(byte[] state)
+    {
+        if (!IsAuthority || Generation == 0 || Revision != 0 || _processing)
+            throw new InvalidOperationException("Restore state only at the start of a host generation.");
+        ReadStates(state);
+    }
+
     private void ReadStates(byte[] data)
     {
         var r = new NetDataReader(data);
@@ -311,10 +326,13 @@ public sealed class WorldSync
             var blob = Protocol.ReadBlob(r, Protocol.MaxModStateBytes, out _) ?? throw new InvalidDataException($"bad state blob for '{name}'");
             var st = _states.FirstOrDefault(x => x.Name == name) ?? throw new InvalidDataException($"unknown world state '{name}'");
             if (!seen.Add(name)) throw new InvalidDataException($"world state '{name}' sent twice");
-            st.Read(new NetDataReader(blob));
+            var sr = new NetDataReader(blob);
+            st.Read(sr);
+            if (sr.AvailableBytes != 0) throw new InvalidDataException($"trailing state bytes for '{name}'");
         }
         var missing = _states.Where(x => !seen.Contains(x.Name)).Select(x => x.Name).ToList();
         if (missing.Count > 0) throw new InvalidDataException("missing world state: " + string.Join(", ", missing));
+        if (r.AvailableBytes != 0) throw new InvalidDataException("Trailing world state bytes.");
     }
 
     /// <summary>Session ended or the guest dropped: forget per-link state. Host keeps its world generation.</summary>
@@ -442,7 +460,20 @@ public sealed class WorldSync
         if (!_handlers.TryGetValue(type, out var handler)) { Finish(op, RejectReason.UnknownCommand, 0, $"Unknown command type {type}."); return; }
 
         CommandVerdict verdict;
-        try { verdict = handler.Validate(new CommandContext(op, Generation, Revision + 1), new NetDataReader(payload)); }
+        try
+        {
+            var context = new CommandContext(op, Generation, Revision + 1);
+            var request = new NetDataReader(payload);
+            verdict = handler.Validate(context, request);
+            if (request.AvailableBytes != 0) throw new FormatException("Trailing request bytes.");
+            if (verdict.Accepted && handler is ICanonicalCommandHandler canonical)
+                payload = canonical.Canonicalize(context, new NetDataReader(payload));
+            if (payload == null || payload.Length > Protocol.MaxPayloadBytes)
+            {
+                Finish(op, RejectReason.TooLarge, 0, "Canonical payload too large.");
+                return;
+            }
+        }
         catch (Exception e) when (Protocol.IsReadError(e))
         {
             Stats.Malformed++;

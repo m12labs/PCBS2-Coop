@@ -2,23 +2,58 @@ using HarmonyLib;
 
 namespace PCBS2Coop;
 
-/// <summary>Hooks into game methods. Each hook only observes; none changes what the game does.</summary>
+/// <summary>Co-op save barriers, paired-load preparation, and native object binding hooks. Solo paths pass through.</summary>
 internal static class GamePatches
 {
+    public static bool Ready { get; private set; }
     public static void Apply()
     {
         try
         {
             new Harmony(Plugin.Guid + ".game").PatchAll(typeof(SaveHook));
-            Plugin.Logger.LogInfo("Game hooks installed (save).");
+            new Harmony(Plugin.Guid + ".objects").PatchAll(typeof(NativeLoadHook));
+            new Harmony(Plugin.Guid + ".object-save").PatchAll(typeof(ComputerSaveHook));
+            new Harmony(Plugin.Guid + ".object-loading").PatchAll(typeof(ComputerLoadingHook));
+            new Harmony(Plugin.Guid + ".object-loaded").PatchAll(typeof(ComputerLoadedHook));
+            var activity = new Harmony(Plugin.Guid + ".activity");
+            activity.PatchAll(typeof(PickupGuard));
+            activity.PatchAll(typeof(DestroyGuard));
+            activity.PatchAll(typeof(RetrieveGuard));
+            var lifecycle = new Harmony(Plugin.Guid + ".lifecycle");
+            lifecycle.PatchAll(typeof(NativePcLifecycle.SpawnIntercept));
+            lifecycle.PatchAll(typeof(NativePcLifecycle.CarriedDeleteIntercept));
+            lifecycle.PatchAll(typeof(NativePcLifecycle.StoredDeleteIntercept));
+            var transfers = new Harmony(Plugin.Guid + ".transfers");
+            transfers.PatchAll(typeof(NativePcTransfers.BenchPickupIntercept));
+            transfers.PatchAll(typeof(NativePcTransfers.ToolPickupIntercept));
+            transfers.PatchAll(typeof(NativePcTransfers.DropIntercept));
+            transfers.PatchAll(typeof(NativePcTransfers.StoreIntercept));
+            transfers.PatchAll(typeof(NativePcTransfers.RetrieveIntercept));
+            transfers.PatchAll(typeof(NativeProjection.AutosaveDeferral));
+            Ready = true;
+            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
     }
 
+    [HarmonyPatch(typeof(WorkshopController), nameof(WorkshopController.PickUpCase))]
+    private static class PickupGuard
+    {
+        private static bool Prefix(Case caseC) => NativeActivity.Allow(CoopController.Instance?.Objects.IdOf(caseC) ?? default);
+    }
+    // Bench pickup (BenchSlot.OnPickupPC, outermost because it clears its slot even when PickUpCase is refused), drop/swap,
+    // store and retrieval are host-ordered transfers (NativePcTransfers) whose validation includes the movement check.
+    // The guards here remain for native paths outside those gestures.
+    [HarmonyPatch(typeof(WorkshopController), nameof(WorkshopController.DestroyCarriedCase))]
+    private static class DestroyGuard { private static bool Prefix() => NativeActivity.Allow(NativeActivity.Carried()); }
+    [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.PickupComputerFromStorage))]
+    private static class RetrieveGuard
+    { private static bool Prefix(ComputerSave computer) => NativeActivity.Allow(CoopController.Instance?.Objects.IdOf(computer) ?? default); }
     /// <summary>Every game save (manual, auto, Free Build) goes through CreateSaveGame. The host sends its saves to the guest as copies.</summary>
     [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.CreateSaveGame), typeof(string), typeof(bool), typeof(string))]
     private static class SaveHook
     {
+        private static bool Prefix() => CoopController.Instance?.BeforeHostSave() ?? true;
         private static void Postfix(string __result)
         {
             try
@@ -28,5 +63,34 @@ internal static class GamePatches
             }
             catch (Exception e) { Plugin.Logger.LogError(e); }
         }
+    }
+
+    [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.LoadGame), typeof(string), typeof(SaveGameHeader), typeof(SaveGame))]
+    private static class NativeLoadHook
+    {
+        private static bool Prefix(SaveGame s) => CoopController.Instance?.PrepareNativeLoad(s) ?? true;
+    }
+
+    [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.SaveComputer))]
+    private static class ComputerSaveHook
+    {
+        private static void Postfix(Case caseToSave, ComputerSave __result) => CoopController.Instance?.Objects.SavedComputer(caseToSave, __result);
+    }
+
+    [HarmonyPatch(typeof(PartsDatabase), nameof(PartsDatabase.InitComputerLoading))]
+    private static class ComputerLoadingHook
+    {
+        private static void Prefix(ComputerSave CompSave, ref UnityEngine.Events.UnityAction<bool, Case, BenchSlot> OnSpawned)
+        {
+            var objects = CoopController.Instance?.Objects;
+            if (objects != null) OnSpawned = objects.WrapSpawn(CompSave, OnSpawned);
+        }
+    }
+
+    [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.LoadComputerToSlotAsync))]
+    private static class ComputerLoadedHook
+    {
+        private static bool Prefix(Case Case, PartsDatabase.LoadComputerOperation LoadPC) => CoopController.Instance?.Objects.AllowLoadCompletion(Case, LoadPC) ?? true;
+        private static void Postfix(Case Case, PartsDatabase.LoadComputerOperation LoadPC) => CoopController.Instance?.Objects.CompletedLoad(Case, LoadPC);
     }
 }

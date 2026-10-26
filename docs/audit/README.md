@@ -2,12 +2,15 @@
 
 Audit date: **October 25, 2026**. This is a source-backed inventory of potential synchronization requirements across the game, including small visual and transient effects. It is not an implementation, approved feature scope, network design, or running-game certification.
 
-Start with [sync-progress.md](../../sync-progress.md) for implementation status and audit progress. The current mod synchronizes position/yaw/workshop presence for a remote capsule; it does not synchronize PCs, world objects, software, animation, inventory, economy or saves.
+Start with [sync-progress.md](../sync-progress.md) for implementation status and audit progress. Phases 1–2 now provide one shared Free Build snapshot, drop-in admission, host save copies and a remote capsule. Phase 3 adds host-approved PC creation/removal, per-player activity, and atomic carry/bench/storage transfers; component edits remain unsynchronized. The domain reports below retain their original broad-audit findings; focused phase reports record subsequent implementation and verification.
 
 ## Reports
 
 | Report | Coverage |
 | --- | --- |
+| [Phase 1 focused audit](phase-1.md) | Synchronization foundations, identity, ordering, diagnostics and phase 1 evidence. |
+| [Phase 2 focused audit](phase-2.md) | Shared Free Build lifecycle, snapshot admission, co-op saves and phase 2 evidence. |
+| [Phase 3 focused audit](phase-3.md) | PC/inventory/carry/bench native paths; 3a/3b evidence and exact-save fix; 3c identity/paired persistence; 3d actor activity/conflicts; 3e creation/removal; 3f atomic transfers, async projection corrections, load-queue and hidden-bench persistence fixes, and owned two-instance verification. |
 | [Player, workshop and presentation](player-workshop-and-presentation.md) | Movement/activity, carrying, benches, notes/packages, workshop travel, decorations, lighting, ceiling fans, clocks, traffic, animation callbacks, audio and local-view candidates. |
 | [Hardware and building](hardware-and-building.md) | Part instances/topology, screws/latches, tools, paste/pads/delid/dust, cables/pipes/coolant, case paint/stickers/themes, RGB/LEDs, fan direction/blur, peripherals, physical power and damage. |
 | [Screens, software and simulation](screens-software-and-simulation.md) | Boot/BIOS/OS, files/programs/install/clone, monitors/case LCDs, desktop windows/input, wallpapers/GIFs, benchmarks/tuning/thermal/load/failure, tablet feeds, apps/minigames and audio-driven effects. |

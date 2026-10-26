@@ -1,6 +1,6 @@
 # Player, workshop, animation, and audio audit
 
-Static audit, October 25, 2026. This report inventories multiplayer consequences; it does not approve shared behavior or add it. See [scope and evidence rules](README.md) and the [progress tracker](../../sync-progress.md).
+Static audit, October 25, 2026. This report inventories multiplayer consequences; it does not approve shared behavior or add it. See [scope and evidence rules](README.md) and the [progress tracker](../sync-progress.md).
 
 `M` = mod source inspected; `D` = recovered declarations inspected; `N` = selected native disassembly/ISIL inspected; `I` = multiplayer requirement inferred from those sources. `S` = persistent/current state candidate, `E` = event candidate, `R` = reconstructable presentation candidate, `L?` = personal/local behavior awaiting owner decision. None of the `D/N/I` labels means a fresh running-game test.
 

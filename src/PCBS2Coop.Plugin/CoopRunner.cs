@@ -22,6 +22,7 @@ public sealed class CoopRunner : MonoBehaviour
     private TextMeshProUGUI _status;
     private AutoTest _autoTest;
     private Probe _probe;
+    private Phase3Probe _phase3Probe;
 
     private void Awake()
     {
@@ -29,6 +30,7 @@ public sealed class CoopRunner : MonoBehaviour
         Coop = new CoopController();
         _autoTest = AutoTest.FromEnvironment();
         if (Probe.Enabled) _probe = new Probe();
+        if (Phase3Probe.Enabled) _phase3Probe = new Phase3Probe();
     }
 
     private void Update()
@@ -56,6 +58,7 @@ public sealed class CoopRunner : MonoBehaviour
         UpdateStatus(scene == WorkshopScene);
         _autoTest?.Update(this);
         _probe?.Update(this);
+        _phase3Probe?.Update(this);
     }
 
     private void OnApplicationQuit() => Coop?.OnQuit();

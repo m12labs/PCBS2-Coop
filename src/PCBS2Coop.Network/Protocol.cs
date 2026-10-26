@@ -61,6 +61,11 @@ public static class CommandTypes
 {
     /// <summary>A harmless shared marker used by tests to exercise ordering and duplicate handling end to end.</summary>
     public const ushort DiagnosticMarker = 1;
+    public const ushort ActorActivity = 2;
+    /// <summary>Host-ordered PC creation/removal and the host's observed locations (<see cref="PcLifecycle"/>).</summary>
+    public const ushort PcLifecycle = 3;
+    /// <summary>Host-ordered atomic PC moves between benches, hands and the shared cupboard (<see cref="PcTransfers"/>).</summary>
+    public const ushort PcTransfer = 4;
 }
 
 /// <summary>World-space snapshot of one player. Position is the feet (bottom of the character controller).</summary>

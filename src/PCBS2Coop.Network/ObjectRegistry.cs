@@ -16,7 +16,11 @@ public sealed class NetObjectIdAllocator
         }
     }
 
-    public NetObjectId Allocate() => new(_next++);
+    public NetObjectId Allocate()
+    {
+        if (_next == ulong.MaxValue) throw new InvalidOperationException("Object ID space exhausted.");
+        return new(_next++);
+    }
 }
 
 public enum ObjectLookup : byte
