@@ -198,6 +198,42 @@ internal sealed class Phase3Probe
                 unsupported = NativeWorkstations.Unsupported(), inventory = CareerStatus.Get()?.GetPeripheralInventory()?.Count };
             File.WriteAllText(Path.Combine(_dir, "peripherals-report.json"), JsonSerializer.Serialize(result)); Event("peripherals-report", result);
         }
+        else if (command.StartsWith("chat:", StringComparison.Ordinal))
+        {
+            // Task 3h: the same handler the chat box's Enter calls; typed input is certified separately.
+            Event("direct-call", "CoopController.SubmitChat (the chat box's submit handler), not typed-input evidence");
+            runner.Coop.SubmitChat(command[5..]);
+        }
+        else if (command == "chat-report")
+        {
+            var coop = runner.Coop;
+            var result = new { role = coop.Session.Role.ToString(), sync = coop.SyncState, requestWaiting = coop.SyncRequestWaiting, outOfSync = coop.OutOfSync,
+                guestState = coop.Session.GuestState.ToString(), marker = runner.Chat.MarkerShown, typing = runner.Chat.Typing,
+                lines = coop.ChatLines.Select(l => l.Text) };
+            File.WriteAllText(Path.Combine(_dir, "chat-report.json"), JsonSerializer.Serialize(result)); Event("chat-report", result);
+        }
+        else if (command == "fault-projection")
+        {
+            // Task 3h: injected fault. The next accepted remote bench drop fails on this game before its native load.
+            runner.Coop.Objects.FailNextRemoteLoad = true;
+            Event("injected-fault", "the next remote bench load on this game fails (repair check), not a native failure");
+        }
+        else if (command == "summary-report")
+        {
+            // Task 3h: one file per game with every shared-state hash, to compare both games at a checkpoint.
+            var coop = runner.Coop; var world = coop.Session.World;
+            string Hash(Action<LiteNetLib.Utils.NetDataWriter> write) { var w = new LiteNetLib.Utils.NetDataWriter(); write(w); return Convert.ToHexString(SHA256.HashData(w.CopyData())); }
+            string objectsCheck = null, perifCheck = null;
+            try { coop.Objects.CheckProjection(world.Local, coop.Session.LocalIdentity.Player); } catch (Exception e) { objectsCheck = e.Message; }
+            try { coop.Workstations.CheckNative(); } catch (Exception e) { perifCheck = e.Message; }
+            var m = coop.Objects.Model;
+            var result = new { role = coop.Session.Role.ToString(), generation = world.Generation, revision = world.Revision, chain = world.ChainHash.ToString("X16"),
+                divergence = world.Divergence, projectionFault = coop.Objects.ProjectionFault, sync = coop.SyncState,
+                objects = Convert.ToHexString(SHA256.HashData(m.ToBytes())), activity = Hash(coop.Activity.Write), peripherals = Hash(coop.Workstations.Model.Write),
+                pcs = m.Pcs.Count, next = m.NextId, retired = m.Retired.Count, objectsCheck, perifCheck,
+                placement = m.Pcs.Select(p => $"{p.Id.Value}@{p.Location.Place}:{p.Location.Key}{p.Location.Actor}").OrderBy(x => x) };
+            File.WriteAllText(Path.Combine(_dir, "summary-report.json"), JsonSerializer.Serialize(result)); Event("summary-report", result);
+        }
         else if (command.StartsWith("perif-request:", StringComparison.Ordinal))
         {
             // Pinned intent (optionally naming a stale "from" path) for race checks; bypasses the gesture deliberately.

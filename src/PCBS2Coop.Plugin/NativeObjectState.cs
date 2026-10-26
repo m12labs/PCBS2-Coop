@@ -25,8 +25,13 @@ internal sealed class NativeObjectState : IWorldState
     private string _catalog;
     private bool _reading;
     private readonly Dictionary<long, ProjectionBindings<Case>.Ticket> _spawnTickets = new();
+    /// <summary>When each spawn ticket was opened (realtime seconds); see <see cref="ExpireStaleSpawns"/>.</summary>
+    private readonly Dictionary<long, float> _ticketBorn = new();
+    private const float StaleTicketSeconds = WorldReadiness.SettleSeconds + 3f;
     private readonly Dictionary<NetObjectId, ComputerSave> _retrieving = new();
     private readonly Dictionary<NetObjectId, BenchSlot> _benchLoads = new();
+    /// <summary>Remote drops whose load finished; unplugged once the world settles (see <see cref="SettleRemoteDrops"/>).</summary>
+    private readonly Dictionary<NetObjectId, (Case Mesh, BenchSlot Bench)> _settleDrops = new();
     private readonly HashSet<(long Save, long Callback)> _completedLoads = new();
     /// <summary>A local retrieval of this stored record is about to start loading.</summary>
     internal void Retrieving(NetObjectId id, ComputerSave record) => _retrieving[id] = record;
@@ -35,11 +40,17 @@ internal sealed class NativeObjectState : IWorldState
     internal NetObjectId IdOf(Case mesh) => mesh != null && _cases.TryGetValue(mesh.Pointer.ToInt64(), out var id) ? id : default;
     internal NetObjectId IdOf(ComputerSave save) => save != null && _saves.TryGetValue(save.Pointer.ToInt64(), out var id) ? id : default;
 
+    /// <summary>Why this game no longer shows every accepted PC (a load that never finished), or null. Shown as
+    /// out of sync until the next world generation or admission (task 3h: the players' /sync).</summary>
+    public string ProjectionFault { get; private set; }
+    /// <summary>Probe-only fault injection: the next remote bench load fails before the game starts it.</summary>
+    internal bool FailNextRemoteLoad;
+
     public void Reset()
     {
         CleanupCompletedLoads();
-        Model.Reset(); _cases.Clear(); _saves.Clear(); _saveRoots.Clear(); _saveBindings.Clear(); _carrierRecords.Clear(); _spawnTickets.Clear(); _retrieving.Clear(); _benchLoads.Clear();
-        _catalog = null; Projections.Reset(Guid.Empty);
+        Model.Reset(); _cases.Clear(); _saves.Clear(); _saveRoots.Clear(); _saveBindings.Clear(); _carrierRecords.Clear(); _spawnTickets.Clear(); _ticketBorn.Clear(); _retrieving.Clear(); _benchLoads.Clear(); _settleDrops.Clear();
+        _catalog = null; Projections.Reset(Guid.Empty); ProjectionFault = null; FailNextRemoteLoad = false;
         // _loadBindings/_guestCarry bridge a paired native load to the subsequent generation/admission reset.
     }
 
@@ -115,6 +126,7 @@ internal sealed class NativeObjectState : IWorldState
             ((bool powered, Case mesh, BenchSlot slot) => callback?.Invoke(powered, mesh, slot));
         foreach (var old in _cases.Where(x => x.Value == id).Select(x => x.Key).ToArray()) _cases.Remove(old);
         _spawnTickets.Add(wrapper.Pointer.ToInt64(), Projections.Begin(id));
+        _ticketBorn[wrapper.Pointer.ToInt64()] = Time.realtimeSinceStartup;
         return wrapper;
     }
 
@@ -124,7 +136,7 @@ internal sealed class NativeObjectState : IWorldState
         if (callback == null || !_spawnTickets.TryGetValue(callback.Pointer.ToInt64(), out var ticket)) return true;
         if (Model.Lookup(ticket.Id) == ObjectLookup.Live && Projections.IsPending(ticket)) return true;
         // Refuse before the native delegate can install an obsolete mesh into a bench now owned by another PC.
-        _spawnTickets.Remove(callback.Pointer.ToInt64());
+        _spawnTickets.Remove(callback.Pointer.ToInt64()); _ticketBorn.Remove(callback.Pointer.ToInt64());
         _completedLoads.Add((operation.CompSave.Pointer.ToInt64(), callback.Pointer.ToInt64()));
         if (mesh != null && mesh) Object.Destroy(mesh.gameObject);
         Plugin.Logger.LogInfo($"[objects] discarded stale native load for {ticket.Id} (attempt {ticket.Attempt}).");
@@ -140,11 +152,12 @@ internal sealed class NativeObjectState : IWorldState
         if (CoopSaves.Current != CoopSaves.Mode.None && mesh != null && operation.CompSave != null)
             _completedLoads.Add((operation.CompSave.Pointer.ToInt64(), callback?.Pointer.ToInt64() ?? 0));
         if (callback == null || !_spawnTickets.Remove(callback.Pointer.ToInt64(), out var ticket)) return;
+        _ticketBorn.Remove(callback.Pointer.ToInt64());
         var retrieved = _retrieving.Remove(ticket.Id, out var stored) ? stored : null;
         if (mesh != null && Model.Lookup(ticket.Id) == ObjectLookup.Live && Projections.Complete(ticket, mesh))
         {
             _cases[mesh.Pointer.ToInt64()] = ticket.Id;
-            _benchLoads.Remove(ticket.Id);
+            if (_benchLoads.Remove(ticket.Id, out var dropBench)) _settleDrops[ticket.Id] = (mesh, dropBench);
             if (Model.Pcs.Single(x => x.Id == ticket.Id).Location.Place == PcPlace.Bench) _carrierRecords.Remove(ticket.Id);
             // Every retrieval logged in F2-F17 (storage button and accepted requests) left the record listed after
             // loading; otherwise the same PC would exist twice. Remove exactly that record object.
@@ -174,13 +187,23 @@ internal sealed class NativeObjectState : IWorldState
         if (removed > 0) Plugin.Logger.LogInfo($"[objects] cleared {removed} completed native load record(s).");
     }
 
-    /// <summary>Called once the world has settled with nothing loading: a ticket still open belongs to a failed or
-    /// abandoned load. Drop it so it can neither block saves forever nor bind a later mesh.</summary>
+    /// <summary>Called while the world is ready (settled, nothing loading): a ticket that has been open for longer than
+    /// the settle period belongs to a failed or abandoned load. Drop it so it can neither block saves forever nor bind
+    /// a later mesh. A younger ticket may come from a load started this very frame, after readiness was computed
+    /// (run H1: a guest replaying a held drop during admission), so it is left alone.</summary>
     internal void ExpireStaleSpawns()
     {
         if (_spawnTickets.Count == 0) return;
-        foreach (var t in _spawnTickets.Values) { Plugin.Logger.LogWarning($"[objects] native load for {t.Id} never completed; dropping its projection ticket."); Projections.Remove(t.Id); }
-        _spawnTickets.Clear();
+        var now = Time.realtimeSinceStartup;
+        foreach (var key in _spawnTickets.Keys.ToArray())
+        {
+            if (_ticketBorn.TryGetValue(key, out var born) && now - born < StaleTicketSeconds) continue;
+            var t = _spawnTickets[key];
+            Plugin.Logger.LogWarning($"[objects] native load for {t.Id} never completed; dropping its projection ticket.");
+            Projections.Remove(t.Id);
+            ProjectionFault ??= $"PC {t.Id} never finished loading on this game.";
+            _spawnTickets.Remove(key); _ticketBorn.Remove(key);
+        }
     }
 
     // ---------------- task 3e: created/removed PCs and host observation ----------------
@@ -259,11 +282,12 @@ internal sealed class NativeObjectState : IWorldState
         {
             // Drop then pickup can arrive in one network poll. Ownership moves immediately; the earlier load
             // remains only an obsolete attempt, which is suppressed before it can place its mesh.
-            _benchLoads.Remove(pc.Id); bench.m_caseLoadingToSlot = false;
+            _benchLoads.Remove(pc.Id); _settleDrops.Remove(pc.Id); bench.m_caseLoadingToSlot = false;
             UnbindMesh(pc.Id); HoldRemote(pc, carrier, held);
             return;
         }
         if (mesh == null || IdOf(mesh) != pc.Id) throw new InvalidDataException($"bench does not hold PC {pc.Id} on this game");
+        _settleDrops.Remove(pc.Id);
         LeaveWork(mesh);
         NativeProjection.Run(() => mesh.OnPickup());
         var record = bench.GetComputer(true); // the record after the pickup side effects (runs SaveComputer)
@@ -288,12 +312,16 @@ internal sealed class NativeObjectState : IWorldState
     {
         if (!_carrierRecords.TryGetValue(pc.Id, out var record)) throw new InvalidDataException($"no carried record for PC {pc.Id}");
         if (bench.GetCaseInSlot() != null || bench.m_caseLoadingToSlot) throw new InvalidDataException("the bench is not empty on this game");
+        if (FailNextRemoteLoad) { FailNextRemoteLoad = false; throw new InvalidDataException("injected projection failure (probe fault-projection)"); }
         _saveBindings.Remove(pc.Id);
         // Keep the held graph intact until completion: the native loader mutates its input aliases, and a newer
         // accepted move may need this PC before the mesh exists. A separate graph belongs to each load attempt.
         var input = NativePcCodec.Read(NativePcCodec.Write(record));
         RememberSave(pc.Id, input); _benchLoads[pc.Id] = bench; bench.m_caseLoadingToSlot = true;
         ShowBench(bench);
+        // loadCables stays true: false also skips the PC's internal cables ("Missing cable(s)", run H6b). Known phase 5
+        // gap: this load plugs the bench's external cables back in, while the mover's own DropCase leaves the PC
+        // "Not plugged in" (runs H5c/H6b). Both games keep the same parts and location.
         NativeProjection.Run(() => Saves.LoadComputerToSlot(input, bench, true, false, null));
         if (!_spawnTickets.Values.Any(t => t.Id == pc.Id) && IdOf(bench.GetCaseInSlot()) != pc.Id)
             throw new InvalidDataException("the game did not start loading the PC onto the bench");
@@ -307,6 +335,64 @@ internal sealed class NativeObjectState : IWorldState
         Saves.AddComputerToStorage(record);
         RememberSave(pc.Id, record);
         RefreshStorage();
+    }
+
+    /// <summary>
+    /// Host, before the /sync save (its game is the reference): an accepted PC this game failed to show would otherwise
+    /// be retired by the capture, losing a whole build (run H5b). If the mod still holds its record, put it in the shared
+    /// cupboard instead, keeping its IDs and contents (the owner's rule for a PC without a place). Returns those PCs.
+    /// </summary>
+    internal List<NetObjectId> RecoverUnshown(PlayerId host)
+    {
+        var shown = new HashSet<NetObjectId>();
+        foreach (var o in Observe(ActorSlot.Host, host))
+        {
+            NetObjectId id = default;
+            if (o.Mesh != null) _cases.TryGetValue(o.Mesh.Pointer.ToInt64(), out id);
+            if (id.IsNone) _saves.TryGetValue(o.Save.Pointer.ToInt64(), out id);
+            if (!id.IsNone) shown.Add(id);
+        }
+        var recovered = new List<NetObjectId>();
+        foreach (var pc in Model.Pcs)
+        {
+            // The guest's own carried PC lives only in the mod on the host; the capture keeps it as a remote carrier.
+            if (shown.Contains(pc.Id) || pc.Location is { Place: PcPlace.Carrier, Actor: ActorSlot.Guest }) continue;
+            var record = _carrierRecords.GetValueOrDefault(pc.Id) ?? _saveRoots.GetValueOrDefault(pc.Id);
+            if (record?.caseID == null) { Plugin.Logger.LogWarning($"[objects] /sync: PC {pc.Id} isn't shown here and no record is held; the save retires it."); continue; }
+            try { CheckParts(pc, record); }
+            catch (InvalidDataException e) { Plugin.Logger.LogWarning($"[objects] /sync: PC {pc.Id}'s held record doesn't match its facts ({e.Message}); the save retires it."); continue; }
+            _carrierRecords.Remove(pc.Id); _saveBindings.Remove(pc.Id);
+            Saves.AddComputerToStorage(record);
+            RememberSave(pc.Id, record);
+            recovered.Add(pc.Id);
+            Plugin.Logger.LogWarning($"[objects] /sync: PC {pc.Id} wasn't shown on the host's game; put its record in the shared cupboard.");
+        }
+        if (recovered.Count > 0) RefreshStorage();
+        return recovered;
+    }
+
+    /// <summary>
+    /// The mover's own game ran <c>Case.OnPickup</c> when it picked the PC up (power off, external cables removed) and
+    /// <c>DropCase</c>'s <c>EnableCaseColliders(true)</c> + <c>OnPutDown</c> when it put it down, so its PC shows "Not
+    /// plugged in". This game loaded the PC with <c>loadCables: true</c> (internal cables need it), which also plugs the
+    /// bench's external cables back in (runs H5c/H6b). Once the load and its cable coroutine have settled, run the same
+    /// three calls here so both games show the same plug and power state.
+    /// </summary>
+    internal void SettleRemoteDrops(bool worldReady)
+    {
+        if (!worldReady || _settleDrops.Count == 0) return;
+        foreach (var (id, (mesh, bench)) in _settleDrops.ToArray())
+        {
+            _settleDrops.Remove(id);
+            var pc = Model.Pcs.SingleOrDefault(x => x.Id == id);
+            if (mesh == null || !mesh || bench == null || IdOf(mesh) != id || pc?.Location.Place != PcPlace.Bench || bench.GetCaseInSlot() != mesh) continue;
+            try
+            {
+                NativeProjection.Run(() => { mesh.OnPickup(); mesh.EnableCaseColliders(true); mesh.OnPutDown(bench); });
+                Plugin.Logger.LogInfo($"[objects] PC {id}: unplugged as the mover's drop leaves it.");
+            }
+            catch (Exception e) { CoopController.Instance?.ProjectionFailed($"PC {id}'s plug state could not be matched", e); }
+        }
     }
 
     internal static void RefreshStorage()

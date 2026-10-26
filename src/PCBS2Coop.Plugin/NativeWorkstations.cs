@@ -94,12 +94,17 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
     }
 
     /// <summary>Host, at a generation start: bind the slot table from the loaded world. A restored state (a paired save)
-    /// must match it exactly; a save from before 0.10 has none and is bound from the world.</summary>
-    internal void CaptureHost()
+    /// must match it exactly; a save from before 0.10 has none and is bound from the world. <paramref name="rebind"/>
+    /// (the save before a /sync reload): the host's game is the reference, so take what it shows.</summary>
+    internal void CaptureHost(bool rebind = false)
     {
         var facts = Read(out var loading);
         if (loading != null) throw new InvalidDataException($"Peripheral {loading} is still loading.");
-        if (Model.Bound && Difference(facts) is { } diff) throw new InvalidDataException("The saved peripherals don't match the loaded world: " + diff);
+        if (Model.Bound && Difference(facts) is { } diff)
+        {
+            if (!rebind) throw new InvalidDataException("The saved peripherals don't match the loaded world: " + diff);
+            Plugin.Logger.LogWarning("[workstations] /sync: the host's game differs from the shared peripherals (" + diff + "); saving what the host's game shows.");
+        }
         Model.Replace(facts);
         Plugin.Logger.LogInfo($"[workstations] bound {facts.Count} peripheral slots ({facts.Count(x => x.Path != "")} with a peripheral).");
     }
@@ -232,8 +237,7 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
         }
         catch (Exception e)
         {
-            Plugin.Logger.LogError($"[workstations] the swap of {c.Bench}/{c.Slot} to {c.Part} was accepted, but this game could not show it: {e}");
-            _coop.Notice("A peripheral swap could not be shown on this game (see log).");
+            _coop.ProjectionFailed($"The peripheral swap of {c.Bench}/{c.Slot} to {c.Part} was accepted, but this game could not show it", e);
         }
     }
 
@@ -263,7 +267,7 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
             if (Loading(key, slot)) continue;
             var (part, path, request) = _waiting[key]; _waiting.Remove(key);
             try { Project(key, slot, part, path, request); Plugin.Logger.LogInfo($"[workstations] {Describe(slot)} → {part} (after waiting)."); }
-            catch (Exception e) { Plugin.Logger.LogError($"[workstations] the waiting swap of {Describe(slot)} to {part} failed: {e}"); _coop.Notice("A peripheral swap could not be shown on this game (see log)."); }
+            catch (Exception e) { _coop.ProjectionFailed($"The waiting peripheral swap of {Describe(slot)} to {part} could not be shown", e); }
         }
     }
 

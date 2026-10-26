@@ -94,7 +94,7 @@ internal static class TransportTests
             var r = new NetDataReader(current); var w = new NetDataWriter();
             w.Put(r.GetULong()); r.GetString(); w.Put(version); w.Put(r.GetRemainingBytes()); return w.CopyData();
         }
-        foreach (var older in new[] { "0.8", "0.9" })
+        foreach (var older in new[] { "0.8", "0.9", "0.10" })
         {
             var previous = CoopSavePair.Decode(Version(older)); CoopSavePair.Verify(native, previous);
             t.Check(previous.Position == metadata.Position with { State = previous.Position.State } && previous.Position.State.SequenceEqual(metadata.Position.State) && previous.Carriers[0].Pc.Value == 8,
@@ -178,7 +178,7 @@ internal static class TransportTests
         public void Dispose() => IsConnected = false;
     }
 
-    private sealed class FramedLink : ISessionTransport
+    internal sealed class FramedLink : ISessionTransport
     {
         public FramedLink Peer = null!;
         private PacketStream _stream = new();

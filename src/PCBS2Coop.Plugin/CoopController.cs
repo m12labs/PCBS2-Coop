@@ -13,7 +13,7 @@ namespace PCBS2Coop;
 /// world once its load has settled. Leaving the host's world in any way returns it to the main menu.</item>
 /// </list>
 /// </summary>
-internal sealed class CoopController
+internal sealed partial class CoopController
 {
     private const float SendInterval = 1f / 20f;
     private const float RemoteTimeout = 2f;
@@ -88,6 +88,7 @@ internal sealed class CoopController
         Session.RemoteState += (PlayerState s) => { _remote = s; _lastRemoteAt = Time.realtimeSinceStartup; };
         Session.WorldCreated += OnWorldCreated;
         Session.SnapshotReceived += OnSnapshotReceived;
+        HookChatAndSync();
         if (SteamBootstrap.Service != null)
         {
             SteamBootstrap.Service.InviteRequested += OnSteamInvite;
@@ -252,12 +253,20 @@ internal sealed class CoopController
         _pairWrites.Clear(); _saveCapture = null; _loadingPair = null; _snapshotPair = null; _saveError = null;
         _guestLoading = false;
         GuestLoadStarted = false;
+        ResetSync();
         EndBackgroundRun();
     }
 
     /// <summary>The main menu is showing: end any session and give the game its solo save folder back.</summary>
     public void OnMainMenu()
     {
+        if (SyncKeepsSession && Session.IsRunning)
+        {
+            // A /sync passes through the menu on purpose; the session and the co-op save folder stay as they are.
+            _readiness.Reset();
+            Plugin.Logger.LogInfo("[sync] on the main menu; the session stays open.");
+            return;
+        }
         if (Session.IsRunning)
             Stop(Session.Role == Role.Host ? "The host ended the session." : "The other player left.", "Returned to the main menu.");
         _leavingToMenu = false;
@@ -275,6 +284,7 @@ internal sealed class CoopController
         Session.Poll();
         Objects.CleanupCompletedLoads();
         _readiness.Update(inWorkshop);
+        UpdateOutOfSync();
 
         // A guest whose session ended while its load was starting must not stay in a world nobody shares.
         if (!Session.IsRunning && CoopSaves.Current == CoopSaves.Mode.Guest && inWorkshop && !_leavingToMenu)
@@ -291,6 +301,7 @@ internal sealed class CoopController
 
     private void UpdateHost()
     {
+        UpdateHostSync();
         if (!_hostWorldStarted && _readiness.Ready && CoopSaves.Current == CoopSaves.Mode.Host)
         {
             // Owner decision (3g): a world with packages or physical notes is refused rather than half shared.
@@ -323,12 +334,13 @@ internal sealed class CoopController
             Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, Session.RemoteIdentity.Player), out _);
         if (_pairWrites.Count > 0 && !SaveLoadSystem.WaitingOnThread()) FinishPairWrites();
         if (_pendingFile is { } p) PollSnapshotFile(p);
-        else if (Session.GuestNeedsWorld && _hostWorldStarted && _readiness.Ready && Workstations?.Settled != false) TakeSnapshot();
+        else if (Session.GuestNeedsWorld && _hostWorldStarted && _readiness.Ready && Workstations?.Settled != false && _sync == SyncStep.None) TakeSnapshot();
         else if (_copiesToSend.Count > 0 && Session.GuestState == GuestState.InWorld && !SaveLoadSystem.WaitingOnThread()) SendCopy(_copiesToSend.Dequeue());
     }
 
     private void UpdateGuest(bool inWorkshop)
     {
+        UpdateGuestSync();
         if (!_guestLoading) return;
         var now = Time.realtimeSinceStartup;
         if (inWorkshop && _readiness.Ready)
@@ -344,6 +356,7 @@ internal sealed class CoopController
             {
                 Objects.FinishGuestRestore(); _loadingPair = null;
                 Plugin.Logger.LogInfo($"[world] entered the host's world with {Objects.Model.Pcs.Count} bound PCs.");
+                OnGuestSyncAdmitted();
             }
             else LeaveToMenu("Could not enter the host's world: " + error, failAdmission: true);
         }
@@ -448,8 +461,12 @@ internal sealed class CoopController
                 (db?.m_loadCableOperations?.Count ?? 0) + (db?.m_loadPrefabOperations?.Count ?? 0) > 0)
                 throw new InvalidOperationException("Objects are still loading; wait before saving.");
             Lifecycle?.ExtendHost(); Lifecycle?.ObserveHost(force: true);
+            if (_syncSaving)
+                foreach (var id in Objects.RecoverUnshown(Session.LocalIdentity.Player))
+                    AddChat($"Sync: PC {id.Value} wasn't shown on your game; it's in the storage cupboard.");
             Objects.CaptureHost(Session.LocalIdentity.Player);
-            Workstations?.CheckNative();
+            // A /sync save takes what the host's game shows; any other save must match the shared peripherals.
+            if (_syncSaving) Workstations?.CaptureHost(rebind: true); else Workstations?.CheckNative();
             _saveCapture = (Session.World.CapturePosition(), Objects.CaptureCarriers());
             return true;
         }
@@ -568,7 +585,8 @@ internal sealed class CoopController
         }
         else
         {
-            if (Session.World is { Admitted: true })
+            // During a /sync reload the next generation start records the guest's absence instead.
+            if (Session.World is { Admitted: true } && _hostWorldStarted)
             {
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, default), out _);
                 Transfers?.RecoverDeparted(); // a PC the guest carried goes to the shared cupboard
@@ -599,8 +617,8 @@ internal sealed class CoopController
         // Optional: saves from before 0.10 have no workstation state; the host binds it from its loaded world.
         world.RegisterState(Workstations, optional: true);
         world.Rejected += (OperationId op, RejectReason reason, string text) => Plugin.Logger.LogWarning($"[world] {op} refused: {reason} {text}");
-        world.Diverged += (string why) => Plugin.Logger.LogError($"[world] OUT OF SYNC: {why}");
-        world.GenerationStarted += (uint gen, string why) => Plugin.Logger.LogInfo($"[world] generation {gen}: {why}");
+        world.Diverged += (string why) => { Plugin.Logger.LogError($"[world] OUT OF SYNC: {why}"); AnnounceOutOfSync(why); };
+        world.GenerationStarted += (uint gen, string why) => { Plugin.Logger.LogInfo($"[world] generation {gen}: {why}"); ClearProjectionFault(); };
         world.WorldReplaced += (string why) => LeaveToMenu("The host loaded a different world.", failAdmission: false);
     }
 
@@ -682,7 +700,8 @@ internal sealed class CoopController
         {
             if (_notice != null && Time.realtimeSinceStartup < _noticeUntil) return " · " + _notice;
             if (_saveError != null) return " · SAVE FAILED (see log)";
-            if (Session.World?.Divergence != null) return " · OUT OF SYNC (see log)";
+            if (OutOfSync != null) return " · OUT OF SYNC (type /sync)";
+            if (SyncRunning) return " · syncing";
             var w = Session.Warnings;
             if (!Session.IsJoined || w.Count == 0) return "";
             return " · Warning: " + w[0] + (w.Count > 1 ? $" (+{w.Count - 1} more in log)" : "");

@@ -1,6 +1,6 @@
 # Phase 3 focused audit: PCs, inventory, carrying and benches
 
-October 25, 2026. Starting point: phase 2 complete, HEAD `3897519`, working tree initially clean. **This records the 3a/3b audit and runtime evidence, 3c object identity/persistence, 3d activity, 3e PC creation/removal and the 3f transfer implementation. 3f is incomplete: transfer checks have runtime evidence, but persistence validation remains unresolved and work stopped at the owner's request.** The [phase 3 subplan](../../plan.md#3-pcs-inventory-carrying-and-benches) owns implementation order and completion evidence.
+October 25, 2026. Starting point: phase 2 complete, HEAD `3897519`, working tree initially clean. **This records the 3a/3b audit and runtime evidence, 3c object identity/persistence, 3d activity, 3e PC creation/removal, 3f transfers and 3g workstation peripherals (all complete), and the 3h acceptance (complete).** The [phase 3 subplan](../../plan.md#3-pcs-inventory-carrying-and-benches) owns implementation order and completion evidence.
 
 Evidence labels: **M** inspected mod source; **D** recovered declarations (empty C# bodies are placeholders); **N** inspected native ISIL excerpts; **historical R** previously recorded game observations; **I** inferred multiplayer consequence. Task 3a performed no new running-game check; [task 3b](#task-3b-runtime-evidence) records subsequent runtime work separately. Unresolved native addresses, incomplete ISIL instructions and asset wiring are limitations, not proven behavior.
 
@@ -488,3 +488,117 @@ The owner authorized G1–G7. G1 and G4–G7 ran first with probe commands, whic
 | G7 | Passed with a disposable native package fixture. The opt-in `package-fixture-save` command requires an isolated ready host without a guest, stops its session, creates a carried package through `TrySpawnPackageInHands`, saves natively, and pairs the fixture with the pre-fixture PC facts. Host Continue loaded that pair and returned to the menu with “Co-op can't host this world: it contains a carried package, 1 package. Packages and physical notes aren't shared in co-op yet.” No generation started for that load. The generic positive-reload result has `passed:false` and that exact expected failure; this is the successful refusal assertion, not a successful admission. A physical-note fixture was not tested. |
 
 Evidence: `.local/phase3-G1/` (G1/G4/G5/current-format G6 reports and logs) and `.local/phase3-G7/`, plus `<GameDir>/BepInEx/PCBS2Coop-diag/phase3/G1/` and `G7/`. G2: `.local/phase3-G2/` (crash dump, host log, screenshots), `phase3-G2repro`, `phase3-G2fix`, `phase3-G2fix2`, and `.local/phase3-G2b/` (baseline/G2/G3 peripheral reports from both games, logs, `screens/`). All owned processes were stopped; every cleanup manifest confirmed all 12 owner save files unchanged. The deployed DLLs matched the Release build before each run. Rebuilt plugin with both fixes: zero warnings/errors. The fixes are plugin-only; network suite rerun, **309/309** passed. A physical-note fixture (G7) was not tested.
+
+## Task 3h: phase 3 acceptance
+
+**Complete (October 26, 2026), version 0.11: code, model tests and owned game checks H1–H6 (results below).** The owner also tested chat and `/sync` by hand before H1. Affected factors: all IDs in 3a–3g, with SS-029/SS-031/SS-032/SS-034/SS-035 and CP-058 for repair.
+
+Owner answers before implementation (October 26, 2026):
+- When a game can't show a change the host accepted, show a small "out of sync" marker in the corner. Add a chat box with a `/sync` command that saves and reloads both games for a full sync.
+- `/sync` saves on the host and reloads both games from that save. Either player can type it; a Client's request needs the host's confirmation.
+- Chat: press Enter to type. Plain text goes to the other player; lines starting with `/` are commands. (The first choice, T, opens the game's tablet; the owner changed it to Enter the same day.)
+- The only specialist game check is a powered PC with USB devices. The other untested cases move to later phases (below).
+- Code and tests first, then stop for game checks.
+
+The chat box and `/sync` are an owner-approved scope addition. They answer acceptance case 9: a projection failure leads to repair, not silent divergent success.
+
+### Implementation contracts
+
+- **Out of sync.** A game is out of sync when any of these happens:
+  - its change stream diverged (an accepted change failed to apply, a hash mismatch or a gap);
+  - an adapter couldn't show an accepted change (`CoopController.ProjectionFailed`). The PC transfer, PC lifecycle and peripheral adapters catch native failures themselves; before 0.11 that was only a short notice, so the game silently disagreed with the host (found in H4/H5);
+  - a PC load it started never finished. A projection ticket older than the settle period plus 3 s, while the world is ready, marks `NativeObjectState.ProjectionFault`. This now runs on both games; before 0.11 only the host dropped such tickets. The age limit matters: a guest replaying a held drop during admission starts a load in the same frame its readiness was computed (H1).
+  - Shown as a small red marker in the top-right corner, one line below the status line ("OUT OF SYNC · press Enter, type /sync"), and on the status line. A new generation or admission clears it.
+  - A chat line gives the reason, and the other player gets a system line ("Client is out of sync").
+  - An out-of-sync game stops applying changes, as before. Its adapters stop intercepting gestures, so local actions are no longer shared until the sync.
+- **Chat** ([`ChatBox`](../../src/PCBS2Coop.Plugin/ChatBox.cs), [`ChatLine`](../../src/PCBS2Coop.Network/Protocol.cs)): message type 12, one line of up to 200 characters with no control characters. Each line is a player line or a system line; malformed lines are dropped and counted.
+  - Enter in the workshop opens the input one frame later, so the opening keypress isn't taken as a submit. Enter sends; Escape cancels. The box doesn't reopen in the frame it closes, and Enter does nothing while a game text field has focus. On entering the workshop, a warning is logged if the game also binds Enter.
+  - While typing, the game's controls are paused by disabling Rewired's keyboard and mouse controllers, since every game action reads through Rewired. They return once the closing key is released.
+  - Commands: `/help`, `/sync`, and `/yes` and `/no` (host only).
+- **Sync messages** ([`CoopSession`](../../src/PCBS2Coop.Network/CoopSession.cs)): message type 13. The guest sends Request; the host sends Decline or Start. `GuestState.Leaving` is new.
+  - On Start, the guest leaves the world while staying connected (`WorldSync.LeaveWorld`): waiting requests are abandoned, and a later world reset isn't treated as "world replaced".
+  - Back on its menu, the guest asks for the world again (`ReadyForWorld`). The host sends no snapshot until then.
+  - A "back on the menu" status without a sync, or a sync message sent in the wrong direction, is malformed.
+- **Host `/sync`** ([`CoopSync`](../../src/PCBS2Coop.Plugin/CoopSync.cs)). It is refused while the world or the guest is still loading.
+  1. Tell a guest in the world to leave.
+  2. Wait (at most 30 s) until nothing is loading, then save the co-op world. The host's game is the reference: PC identities are captured from it as usual, and peripherals are rebound from what it shows instead of refusing on a mismatch.
+  3. Wait for the paired sidecar.
+  4. Return to the main menu without ending the session; the co-op save folder stays redirected.
+  5. Continue that exact save. The new generation restores its facts and clears the host's own divergence.
+  6. The guest, back on its menu, is admitted from a fresh snapshot.
+  - If the save fails, the host stays in its world and the guest reloads the host's current world instead. A failed menu return or reload ends the session with the reason.
+  - A guest request waits 60 s for `/yes` or `/no`.
+  - As on any guest departure, a PC the guest carries goes to the shared cupboard when the host reloads.
+  - Before the `/sync` save, an accepted PC the host's game isn't showing is put in the shared cupboard from the record the mod holds, keeping its IDs and contents (`NativeObjectState.RecoverUnshown`). Without this, the save retired it and a whole build was lost on both games (H5b).
+- Version **0.11**: new session messages and guest state. Co-op saves are unchanged; 0.8–0.10 paired saves still load.
+- **Probe commands** (opt-in, labelled direct calls or injected faults):
+  - `chat:<text>` runs the chat box's submit handler.
+  - `chat-report` writes chat lines, sync step, marker and out-of-sync state.
+  - `fault-projection` makes the next remote bench load on that game fail before the game starts it.
+  - `summary-report` writes generation, revision, chain hash, divergence, the object/activity/peripheral hashes, placements and both native checks, for comparing the two games at a checkpoint.
+
+### Model/network checks
+
+**353/353** pass (44 new). The new checks cover:
+- chat both ways, before admission too; cleaning; dropped malformed lines;
+- sync request, decline and wrong-role actions;
+- a full sync: the guest leaves, its waiting request is abandoned, the host starts a new generation without a "world replaced" exit, and the guest is admitted again in step;
+- a sync whose host save fails: the guest re-enters the current generation; no sync while the guest loads;
+- disconnect before the host answers: the request is abandoned and the world is unchanged; after rejoining, the PC is still on its bench;
+- disconnect after the host commits: the guest never saw the commit; the PC is recovered to the cupboard once with its IDs, then retrieved;
+- an injected projection failure on the guest, then on the host: out of sync is reported and later changes stop; a reload of the saved state plus re-admission matches again; a guest-only reload also repairs it;
+- 0.10 paired saves read in 0.11.
+
+Release build against the installed interop: 0 warnings, 0 errors.
+
+### Acceptance coverage
+
+| Acceptance case | Evidence |
+| --- | --- |
+| 1. Fresh/continued worlds agree; duplicate same-SKU objects distinct | C2–C7, E2–E5, F5, G1, G6; H1 (two PCs from one catalog case, distinct IDs, matching summaries), H4 |
+| 2. Races and repeated operations | F5; H1 (contested PC and contested bench: one lands, the other is refused with its notice) |
+| 3. Independent benches; shared work blocks movement | D1–D2, F2, G3; H1 (simultaneous independent moves) |
+| 4. Populated/running PC moves | B1–B2, F2, F17; H6/H6c (running PC with a USB drive moved by either player: parts, location, pipes, power-off and plug state agree on both games; exact save/Continue afterwards) |
+| 5. Spawn/switch while the other player carries; deletion | E3–E5, F3; H1 |
+| 6. Packages and notes | Not reachable in Free Build (3b); a package world is refused (G7). A physical-note fixture was not tested. |
+| 7. Save, late join, rejoin, restart | C3–C7, E5/E7, F17, G5–G6; H2 (join while the host carries, a held drop applied once), H4 (save while the guest carries → fresh-process Continue → rejoin) |
+| 8. Disconnect at each point | F2/F17; model tests; H3 checks run in H2 (right after a request, after a commit, during the other game's load) |
+| 9. Malformed/stale requests; projection failure repaired | Model tests; H1 (a real fault), H5b/H5c (injected faults on either game, `/no` and `/yes`, host `/sync`) |
+
+### Owned game results (October 26, 2026)
+
+Probe `aim:` commands only placed the camera. `transfer-request:*`, `chat:` and `fault-projection` are labelled probe commands. H1 creation, placing and storing, and the H6 USB install and power-on, used ordinary Windows input; the owner checked chat typing by hand. Each checkpoint compared `summary-report` from both games (chain, object, activity and peripheral hashes plus both native checks). Every run stopped only its own instances and confirmed the owner's 11 save files unchanged.
+
+| Run | Result |
+| --- | --- |
+| H1 | Passed. Ordinary input: host and guest each picked Kolink Stronghold (Black) from case storage, giving PCs 63 and 67 (revision 5, matching). Host placed PC 63 on a bench while the guest stored PC 67 (revision 7). Pinned simultaneous pickups of PC 63: host won, guest refused "Someone else moved that PC." Both dropped onto one empty bench: host landed, guest refused "That bench was just taken." (revision 10). The guest left while carrying: PC 67 recovered to the cupboard. It rejoined while the host carried PC 26; a host drop during its load was held and applied once. **Failure:** the guest flagged "PC 26 never finished loading" and its PC was unbound (fixed below). The guest's `/sync` → host `/yes` repaired it: generation 2, matching, both native checks clean. |
+| H2 | Passed with the ticket-age fix. Join while the host carried, with a held drop: applied once, guest native check clean, revision 7 matching. Disconnect right after a pickup request: the request reached the host first, so it committed and was recovered to the cupboard; matching after rejoin (revision 11). Disconnect while the host was loading the guest's drop: the host finished it, native check passed; matching after rejoin (revision 15). A host save while the guest carried PC 45 wrote a paired save with the carrier graph, and the guest stored its copy. |
+| H4 | Passed. A fresh host process continued H2's save: exact identity regression passed (PC 26 benched, the absent guest's PC 45 in the cupboard). A guest joined: matching at revision 3. **Finding:** an injected guest load failure was only a notice; hashes matched, but the guest's native check failed ("Not every accepted PC has a native projection"). A host `/sync` repaired it. Fixed below. |
+| H5 | Interrupted: the games closed during a pause in the session. Not used as evidence. |
+| H5b | Guest fault: the marker and chat line showed, and the host got the system line. Guest `/sync` → host `/no` → "Host declined the sync."; guest `/sync` → host `/yes` → generation 2, matching, clean. Host fault: the host's marker showed, the host typed `/sync` → generation 3, matching. **Failure:** PC 45, which the host had failed to show, was retired by the save and lost on both games. Fixed below. |
+| H5c | Passed with the fix. Host fault, host `/sync`: "Sync: PC 45 wasn't shown on your game; it's in the storage cupboard." PC 45 kept all 17 part IDs, both games matching at generation 2. The marker sits below the status line. |
+| H6 | Ordinary input on the host: work mode on the MSI PC → Tools → USB Drive → rear USB port (press and hold) → P. The PC booted (Omega System on the monitor). The guest picked it up and dropped it on another bench: both native checks passed (parts, location, pipes). Picking up didn't return the USB drive to the inventory; it stays installed with the PC. Findings: installing the drive is a component edit, so the host's next save added it as a host-only part (19 parts vs 18, phase 4). The host's copy of the moved PC showed the bench cables plugged in ("Ready to boot"), while the guest, which made the move, showed "Not plugged in". |
+| H6b | Tried `loadCables: false` for the projected drop: the host's copy then showed "Missing cable(s)" (internal cables skipped too). Reverted. |
+| H6c | Passed with the settle step (owner: fix it in 3h). The running MSI PC with the USB drive, moved by the guest: both games show "Not plugged in" with internal cables and the water loop intact. Moved back by the host (the guest's game projects): the same on both. Both native checks passed after the host's save had recorded the USB drive (before that save, the host's check failed only on the unshared drive, phase 4). Exact save → Continue on the host passed with no load error. |
+
+### Runtime findings and fixes
+
+- **Held drop during admission left the PC unbound (H1).** Fixed with the ticket age (contract above); verified in H2.
+- **Adapter-caught projection failures were silent (H4).** Now reported as out of sync with the marker; verified in H5b/H5c.
+- **Host `/sync` lost a PC its game wasn't showing (H5b).** Now kept in the cupboard; verified in H5c.
+- **Plug state after a projected move (H6).** The other game loads the moved PC with `loadCables: true` (needed for its internal cables), which also plugs the bench's external cables in, while the mover's own drop leaves it "Not plugged in". Once that load and its cable coroutine settle (world ready), the other game now runs what the mover's game ran: `Case.OnPickup` (power off, external cables out), then `EnableCaseColliders(true)` and `OnPutDown(bench)` as `DropCase` does (`NativeObjectState.SettleRemoteDrops`). Verified in H6c.
+- **Cosmetic:** the long notice overlapped the corner marker, and the game's font lacks the "→" character. The notice is now short, the marker sits one line lower, and the chat line uses "to".
+
+The final build (all fixes, including the settle step) is deployed: plugin, network and LiteNetLib hashes match the Release build. 353/353 model/network checks; Release build 0 warnings, 0 errors. Evidence: `.local/phase3-H1`, `H2` (including the paired `fixture/`), `H4`, `H5b`, `H5c`, `H6b`, `H6c` (summaries, logs), `<GameDir>/BepInEx/PCBS2Coop-diag/phase3/H*/`; screenshots stayed in the session scratchpad.
+
+### Moved to later phases (owner, October 26, 2026)
+
+- Tool-bench (modding/delid) pickups and other case layouts: phase 9. The interception code exists and is model-tested; it has never run in the game.
+- Desk and shop-front drops: phases 15–16.
+- DLC case layouts: none installed here, so they can't be tested; DLC support stays with phase 12.
+- Not covered by `/sync`: automatic repair without a player's command, and a repair that keeps both games running without a reload (phase 8).
+
+### Carried to later phases
+
+- Installing a USB drive (or any part) is a component edit and is not shared. A host save records it as a host-only part outside the change stream. Phase 4.
+- A physical-note fixture (3g) remains untested; Free Build can't create one, and a world with one is refused.

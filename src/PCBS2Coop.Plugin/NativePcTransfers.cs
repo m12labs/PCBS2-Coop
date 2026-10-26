@@ -184,8 +184,7 @@ internal sealed class NativePcTransfers : IPcTransferNative
         }
         catch (Exception e)
         {
-            Plugin.Logger.LogError($"[objects] {c.Action} {what} was accepted, but this game could not show it: {e}");
-            _coop.Notice($"A PC move could not be shown on this game (see log).");
+            _coop.ProjectionFailed($"A PC move ({c.Action} {what}) was accepted, but this game could not show it", e);
         }
     }
 

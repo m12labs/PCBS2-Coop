@@ -338,6 +338,18 @@ public sealed class WorldSync
         if (r.AvailableBytes != 0) throw new InvalidDataException("Trailing world state bytes.");
     }
 
+    /// <summary>Guest: leave the world while staying connected (a sync). Waiting requests are abandoned; the guest
+    /// enters again from a new snapshot. A later world reset is then not a <see cref="WorldReplaced"/>.</summary>
+    internal void LeaveWorld(string why)
+    {
+        if (IsAuthority) throw new InvalidOperationException("Only a guest leaves the host's world.");
+        AbandonPending(why);
+        CancelHold();
+        Synchronized = false;
+        _admitted = false;
+        _log?.Invoke("Left the host's world: " + why);
+    }
+
     /// <summary>Session ended or the guest dropped: forget per-link state. Host keeps its world generation.</summary>
     internal void OnLinkLost()
     {
@@ -602,7 +614,7 @@ public sealed class WorldSync
         }
 
         if (!_admitted || gen != Generation) { Stats.StaleDropped++; return; }
-        if (Divergence != null) return; // wait for a new generation (resync is phase 2)
+        if (Divergence != null) return; // wait for a new generation or snapshot (the players' /sync)
         if (revision <= Revision) { Stats.StaleDropped++; return; } // already part of the snapshot
         if (revision != Revision + 1) { Diverge($"Missing world changes: expected revision {Revision + 1}, got {revision}."); return; }
         if (actor is not (ActorSlot.Host or ActorSlot.Guest)) { Diverge($"World change from unknown actor {(byte)actor}."); return; }

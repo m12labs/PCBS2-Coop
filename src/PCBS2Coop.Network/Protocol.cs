@@ -31,8 +31,58 @@ public enum MessageType : byte
     SnapshotChunk = 9,
     /// <summary>Host → guest: the snapshot can't be completed (for example the save failed). Reliable ordered.</summary>
     SnapshotAbort = 10,
-    /// <summary>Guest → host: loading, in the world, or failed to load. Reliable ordered.</summary>
+    /// <summary>Guest → host: loading, in the world, back on the menu after a sync, or failed to load. Reliable ordered.</summary>
     GuestStatus = 11,
+    /// <summary>Both directions: a chat line from a player, or a short system note (<see cref="ChatLine"/>). Reliable ordered.</summary>
+    Chat = 12,
+    /// <summary>Sync control (<see cref="SyncAction"/>): the guest asks, the host declines or starts one. Reliable ordered.</summary>
+    Sync = 13,
+}
+
+/// <summary>Who wrote a chat line.</summary>
+public enum ChatKind : byte
+{
+    /// <summary>Typed by the other player.</summary>
+    Player = 1,
+    /// <summary>Written by the other player's mod (for example "Client is out of sync").</summary>
+    System = 2,
+}
+
+/// <summary>A chat line. Text is one line of at most <see cref="MaxLength"/> characters, without control characters.</summary>
+public readonly record struct ChatLine(ChatKind Kind, string Text)
+{
+    public const int MaxLength = 200;
+
+    public void Write(NetDataWriter w)
+    {
+        w.Put((byte)MessageType.Chat);
+        w.Put((byte)Kind);
+        w.Put(Text ?? "", MaxLength + 1);
+    }
+
+    public static ChatLine Read(NetDataReader r) => new((ChatKind)r.GetByte(), r.GetString(MaxLength + 1));
+
+    public bool IsValid => Kind is ChatKind.Player or ChatKind.System && !string.IsNullOrWhiteSpace(Text) &&
+                           Text.Length <= MaxLength && Text.All(c => !char.IsControl(c));
+
+    /// <summary>Trim, turn control characters into spaces and cut to the maximum length.</summary>
+    public static string Clean(string? text)
+    {
+        var chars = (text ?? "").Select(c => char.IsControl(c) ? ' ' : c).ToArray();
+        var s = new string(chars).Trim();
+        return s.Length <= MaxLength ? s : s[..MaxLength].TrimEnd();
+    }
+}
+
+/// <summary>Payload of <see cref="MessageType.Sync"/>.</summary>
+public enum SyncAction : byte
+{
+    /// <summary>Guest → host: please sync both games (the host confirms).</summary>
+    Request = 1,
+    /// <summary>Host → guest: the host declined the request.</summary>
+    Decline = 2,
+    /// <summary>Host → guest: a sync starts. Leave the world, return to the menu and ask for the world again.</summary>
+    Start = 3,
 }
 
 /// <summary>Why a snapshot is sent.</summary>
@@ -54,6 +104,9 @@ public enum GuestState : byte
     InWorld = 2,
     /// <summary>Could not receive or load the world.</summary>
     Failed = 3,
+    /// <summary>Left the world for a sync and is returning to the main menu. It asks for the world again from there
+    /// (<see cref="CoopSession.ReadyForWorld"/>); until then the host sends no snapshot.</summary>
+    Leaving = 4,
 }
 
 /// <summary>Command type numbers. 1–99 are reserved for the mod's own diagnostics/system commands.</summary>

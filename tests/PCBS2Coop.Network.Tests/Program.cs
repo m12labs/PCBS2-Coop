@@ -14,6 +14,8 @@ WorkstationTests.Run(t);
 WorldSyncTests.Run(t);
 SnapshotTests.Run(t);
 TransportTests.Run(t);
+SyncTests.Run(t);
+AcceptanceTests.Run(t);
 LoopbackTests.Run(t);
 return t.Finish();
 

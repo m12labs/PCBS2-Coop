@@ -6,8 +6,13 @@ internal sealed class FakeTransferNative : IPcTransferNative
     public Func<TransferCommand, IReadOnlyList<PcMove>, string?> Host = (_, _) => null;
     public readonly List<string> Calls = new();
     public string? CheckHost(in CommandContext ctx, TransferCommand c, IReadOnlyList<PcMove> moves) => Host(c, moves);
-    public void Moved(in MutationContext ctx, TransferCommand c, IReadOnlyList<PcMove> moves) =>
+    /// <summary>Injected projection failure: the native move throws, as a failed native load would.</summary>
+    public Func<TransferCommand, bool> Fail = _ => false;
+    public void Moved(in MutationContext ctx, TransferCommand c, IReadOnlyList<PcMove> moves)
+    {
+        if (Fail(c)) throw new InvalidDataException("injected projection failure");
         Calls.Add($"{c.Action} {string.Join(",", moves.Select(m => $"{m.Pc.Value}:{Where(m.From)}>{Where(m.To)}"))} local={ctx.FromLocalPlayer}");
+    }
     private static string Where(PcLocation l) => l.Place switch { PcPlace.Bench => l.Key, PcPlace.Storage => "S", _ => l.Actor.ToString() };
 }
 

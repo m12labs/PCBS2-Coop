@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **In progress: tasks 3a–3g complete; 3h next**, started at the owner's request on October 25, 2026. Phases 4–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is next. Phases 4–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -217,7 +217,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** PW carrying/benches/storage; HW identity/topology; CP inventory/StoredPC records.
 
-**Status: In progress — 3a–3g complete; 3h next.** Findings and evidence: [docs/audit/phase-3.md](docs/audit/phase-3.md). Version 0.8 includes baseline identity/persistence, per-player activity and resource ownership, host-ordered PC creation/removal, and atomic PC transfers (pickup, drop/swap, store, retrieve, departure recovery), verified in owned two-instance runs. Version 0.10 adds host-ordered workstation peripheral swaps and refuses worlds with packages or physical notes (model-tested and verified in owned two-instance runs G1–G7, including ordinary-input swaps and the busy refusal). The existing decisions above remain binding, including shared cupboard recovery for an absent carrier. Next: 3h.
+**Status: Complete — 3a–3h, October 26, 2026.** Findings and evidence: [docs/audit/phase-3.md](docs/audit/phase-3.md). Version 0.8 includes baseline identity/persistence, per-player activity and resource ownership, host-ordered PC creation/removal, and atomic PC transfers (pickup, drop/swap, store, retrieve, departure recovery), verified in owned two-instance runs. Version 0.10 adds host-ordered workstation peripheral swaps and refuses worlds with packages or physical notes (model-tested and verified in owned two-instance runs G1–G7, including ordinary-input swaps and the busy refusal). Version 0.11 (3h) adds an out-of-sync marker, a chat box and the players' `/sync` repair, verified with phase 3's acceptance runs H1–H6. The existing decisions above remain binding, including shared cupboard recovery for an absent carrier. Carried forward: component edits such as a USB drive (phase 4) and an untested physical-note fixture. Next: phase 4.
 
 #### 3a. Focused audit and remaining owner decisions
 
@@ -297,8 +297,14 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 3h. Phase 3 acceptance and evidence closure
 
-- **Status:** Not started.
-- **Outcome and audit IDs:** prove phase 3's exit criteria for the supported Free Build paths; all IDs in 3a–3g.
+- **Status:** Complete (0.11), October 26, 2026: **353/353** model/network checks and owned game checks H1–H6. The runs found and fixed four problems: a held drop during admission left the PC unbound on the guest; adapter-caught projection failures only showed a notice; a host `/sync` retired a PC its game wasn't showing; and a moved PC showed different plug states on the two games. Details: [phase 3 audit](docs/audit/phase-3.md#task-3h-phase-3-acceptance).
+- **Owner answers (October 26, 2026):**
+  - When a game can't show an accepted change: a small "out of sync" marker in the corner, plus a chat box with a `/sync` command that saves and reloads both games for a full sync.
+  - `/sync`: the host saves, both games reload from that save. Either player can type it; a Client's request needs the host's confirmation (`/yes` or `/no`).
+  - Chat: press Enter to type (first T, changed the same day because T opens the game's tablet); plain text goes to the other player; lines starting with `/` are commands.
+  - Specialist game check: a powered PC with USB devices only. Tool-bench pickups and other case layouts move to phase 9; desk and shop-front drops to phases 15–16. DLC layouts can't be tested here (none installed) and stay with phase 12.
+  - Code and tests first, then stop for game checks.
+- **Outcome and audit IDs:** prove phase 3's exit criteria for the supported Free Build paths; all IDs in 3a–3g. The chat box and `/sync` repair are an owner-approved scope addition (acceptance case 9: a projection failure leads to repair, not silent divergence).
 - **Dependencies:** 3a–3g complete or an owner-approved scope change recorded with a destination and reason.
 - **Scope and files:** extend network fault-injection cases and the disposable two-instance `AutoTest` with object IDs, per-actor activity, inventory, location and association summaries; record screenshots/census and named runs in the phase audit. Build against actual interop and compare the deployed plugin hashes before game tests.
 - **Acceptance and completion:** create duplicate PCs/parts; both actors transfer concurrently; contest one PC and one bench; cancel and disconnect at pending/committed/async boundaries; join while carrying/loading; hold/replay a transfer after the snapshot mark; save/close/Continue/rejoin with stable IDs/occupancy. Network checks and visible results pass on both owned instances with identical object summaries and unchanged owner saves. Update only evidenced sync-progress rows. Leave component editing in phase 4 and unresolved required runtime cases in validation; do not close phase 3 on model tests alone.

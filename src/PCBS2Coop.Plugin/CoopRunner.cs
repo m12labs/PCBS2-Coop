@@ -18,6 +18,7 @@ public sealed class CoopRunner : MonoBehaviour
     internal CoopController Coop { get; private set; }
     internal MultiplayerMenu Menu { get; private set; }
     internal string Scene { get; private set; } = "";
+    internal ChatBox Chat { get; private set; }
 
     private TextMeshProUGUI _status;
     private AutoTest _autoTest;
@@ -30,6 +31,7 @@ public sealed class CoopRunner : MonoBehaviour
     {
         Instance = this;
         Coop = new CoopController();
+        Chat = new ChatBox(Coop);
         _autoTest = AutoTest.FromEnvironment();
         if (Probe.Enabled) _probe = new Probe();
         if (Phase3Probe.Enabled) _phase3Probe = new Phase3Probe();
@@ -62,6 +64,7 @@ public sealed class CoopRunner : MonoBehaviour
         _steamMenu ??= new SteamInviteMenu(Coop);
         _steamMenu.Update(scene == WorkshopScene);
         UpdateStatus(scene == WorkshopScene);
+        Chat.Update(scene == WorkshopScene);
         _autoTest?.Update(this);
         _probe?.Update(this);
         _phase3Probe?.Update(this);

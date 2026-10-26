@@ -2,7 +2,7 @@
 
 Build PCs together in **PC Building Simulator 2**. PCBS2 Co-op is an unofficial two-player mod that puts you and a friend in the same Free Build workshop over LAN or Steamworks when available.
 
-Built for BepInEx 6 IL2CPP. **Current version: 0.10** (early development). Both players need the same mod version; a different version is refused when joining.
+Built for BepInEx 6 IL2CPP. **Current version: 0.11** (early development). Both players need the same mod version; a different version is refused when joining.
 
 > **Early development.** You share one workshop, and whole PCs are shared: creating and deleting PCs and moving them between benches, your hands and the storage cupboard show up for both players. Building inside a PC isn't shared yet: installing or removing parts only changes your own screen. That is the next milestone. See [what works](#sync-progress).
 
@@ -24,7 +24,8 @@ A quick look at what's ready and what's next. See the [full sync checklist](docs
 | Pause | | | ✅ | Either player's pause menu is personal; the session keeps running. |
 | Seeing each other | | ✅ | | Position and facing on a placeholder capsule; a PC the other player carries shows as a cardboard box. Character models and animations later. |
 | Creating and deleting PCs | | | ✅ | Choosing a case from the inventory and deleting a PC are approved by the host and appear for both players. |
-| Carrying, benches and storage | | ✅ | | Picking up, dropping, swapping, storing and retrieving PCs on workbenches are shared. If both players grab the same PC or bench, one wins and the other sees a short notice. A guest who leaves while carrying a PC puts it back in the cupboard. Tool benches, desks, the shop front, notes and packages are still to come (phase 3). |
+| Carrying, benches and storage | | ✅ | | Picking up, dropping, swapping, storing and retrieving PCs on workbenches are shared. If both players grab the same PC or bench, one wins and the other sees a short notice. A guest who leaves while carrying a PC puts it back in the cupboard. Tool benches come later (phase 9), desks and the shop front with career mode; a world with notes or packages can't be hosted yet. |
+| Chat and /sync | | | ✅ | Press Enter to chat. If a game shows "out of sync", `/sync` saves and reloads both games. |
 | Co-op saves of shared PCs | | | ✅ | Every PC keeps its identity and location through saves, Continue and rejoining, including a PC the guest was carrying. |
 | Installing and removing parts | ✅ | | | Phase 4. |
 | Cables, power and peripherals | ✅ | | | Phase 5. |
@@ -83,7 +84,7 @@ To remove the loader again, run `.\scripts\Uninstall-Loader.ps1`. It restores or
 Start the game, then open `<GameDir>\BepInEx\LogOutput.log` and look for:
 
 ```text
-[Info   :PCBS2 Coop] PCBS2 Coop 0.10 loaded.
+[Info   :PCBS2 Coop] PCBS2 Coop 0.11 loaded.
 ```
 
 The main menu also gains a **Multiplayer** panel below Free Build.
@@ -104,6 +105,8 @@ The guest can join at any time while the host is in the workshop, and can leave 
 **Pause and leaving.** The Esc menu is personal for both players; the session keeps running. If the host leaves, the guest returns to the main menu with the reason. If the guest leaves, the host keeps playing, and a PC the guest was carrying goes to the storage cupboard.
 
 **Shared PCs.** Choosing a case, deleting a PC and moving PCs between workbenches, your hands and the cupboard are checked by the host and then happen on both screens. If the other player already took that PC or bench, your action is refused with a short notice on the co-op status line. Two players can work on the same PC, but part changes inside it aren't shared yet.
+
+**Chat and /sync.** Press **Enter** in the workshop to type, **Enter** again to send and **Esc** to cancel; the game ignores your keys while you type. If a game can't show a change, a red **OUT OF SYNC** marker appears in its top-right corner. Type `/sync` to fix it: the host saves the world and both games reload it, which takes a short loading screen. A guest's `/sync` asks the host first; the host answers with `/yes` or `/no`. A PC the guest is carrying goes to the storage cupboard during the reload. `/help` lists the commands.
 
 ## Development and testing
 

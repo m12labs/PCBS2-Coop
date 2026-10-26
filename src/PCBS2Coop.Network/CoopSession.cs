@@ -74,6 +74,15 @@ public sealed class CoopSession : IDisposable
     public event Action<Snapshot>? SnapshotReceived;
     /// <summary>Raised when <see cref="GuestState"/> changes (both sides).</summary>
     public event Action<GuestState>? GuestStateChanged;
+    /// <summary>A valid chat line arrived from the other player.</summary>
+    public event Action<ChatLine>? ChatReceived;
+    /// <summary>Host: the guest asked for a sync. Answer with <see cref="BeginResync"/> or <see cref="DeclineSync"/>.</summary>
+    public event Action? SyncRequested;
+    /// <summary>Guest: the host declined its sync request.</summary>
+    public event Action? SyncDeclined;
+    /// <summary>Guest: the host started a sync (the text says who asked). This guest has left the world
+    /// (<see cref="GuestState.Leaving"/>); return to the menu and call <see cref="ReadyForWorld"/>.</summary>
+    public event Action<string>? SyncStarted;
 
     public string TransportName => _transport?.Name ?? "LAN";
 
@@ -176,6 +185,95 @@ public sealed class CoopSession : IDisposable
         _transport?.Disconnect("The guest could not load the world: " + reason);
     }
 
+    // ---------------- chat and sync ----------------
+
+    /// <summary>Send a chat line to the other player. False when not joined or the text is empty after cleaning.</summary>
+    public bool SendChat(ChatKind kind, string text)
+    {
+        var line = new ChatLine(kind, ChatLine.Clean(text));
+        if (!IsJoined || !line.IsValid) return false;
+        _writer.Reset();
+        line.Write(_writer);
+        SendReliable(_writer);
+        return true;
+    }
+
+    /// <summary>Guest in the world: ask the host to sync both games.</summary>
+    public bool RequestSync()
+    {
+        if (Role != Role.Client || !IsJoined || GuestState != GuestState.InWorld) return false;
+        SendSync(SyncAction.Request, "");
+        return true;
+    }
+
+    /// <summary>Host: decline the guest's sync request.</summary>
+    public bool DeclineSync()
+    {
+        if (Role != Role.Host || !IsJoined) return false;
+        SendSync(SyncAction.Decline, "");
+        return true;
+    }
+
+    /// <summary>
+    /// Host: a sync starts. A guest in the world is told to leave it (<see cref="GuestState.Leaving"/>); no snapshot is
+    /// offered until it is back on its menu and asks again. Returns false when there is no guest in the world (nothing
+    /// to tell), or the guest is loading a snapshot (the caller should wait).
+    /// </summary>
+    public bool BeginResync(string by)
+    {
+        if (Role != Role.Host || !IsJoined || GuestState != GuestState.InWorld || _sender.LoadInProgress) return false;
+        _sender.Clear(); // a copy queued for the old world is no longer useful
+        SetGuestState(GuestState.Leaving);
+        SendSync(SyncAction.Start, by);
+        Log?.Invoke($"Sync started ({by}); the guest leaves the world.");
+        return true;
+    }
+
+    /// <summary>Guest: back on the menu after a sync. The host sends the world again.</summary>
+    public bool ReadyForWorld()
+    {
+        if (Role != Role.Client || !IsJoined || GuestState != GuestState.Leaving) return false;
+        SetGuestState(GuestState.Connected);
+        SendGuestStatus(GuestState.Connected);
+        return true;
+    }
+
+    private void SendSync(SyncAction action, string text)
+    {
+        _writer.Reset();
+        _writer.Put((byte)MessageType.Sync);
+        _writer.Put((byte)action);
+        _writer.Put(text ?? "", Protocol.MaxShortString);
+        SendReliable(_writer);
+    }
+
+    private void OnChat(NetDataReader r)
+    {
+        var line = ChatLine.Read(r);
+        if (r.AvailableBytes != 0 || !line.IsValid) { Stats.MalformedMessages++; return; }
+        ChatReceived?.Invoke(line);
+    }
+
+    private void OnSync(NetDataReader r)
+    {
+        var action = (SyncAction)r.GetByte();
+        var text = Protocol.ReadString(r);
+        if (r.AvailableBytes != 0) { Stats.MalformedMessages++; return; }
+        switch (action)
+        {
+            case SyncAction.Request when Role == Role.Host: SyncRequested?.Invoke(); return;
+            case SyncAction.Decline when Role == Role.Client: SyncDeclined?.Invoke(); return;
+            case SyncAction.Start when Role == Role.Client:
+                World?.LeaveWorld("the host started a sync");
+                _receiver.Reset();
+                SetGuestState(GuestState.Leaving);
+                Log?.Invoke($"The host started a sync ({text}).");
+                SyncStarted?.Invoke(text);
+                return;
+            default: Stats.MalformedMessages++; return;
+        }
+    }
+
     private void SendGuestStatus(GuestState state)
     {
         _writer.Reset();
@@ -249,6 +347,12 @@ public sealed class CoopSession : IDisposable
         if (Role != Role.Host) { Stats.MalformedMessages++; return; }
         var state = (GuestState)r.GetByte();
         var gen = r.GetUInt();
+        if (state == GuestState.Connected && GuestState == GuestState.Leaving)
+        {
+            Log?.Invoke("Guest is back on its menu after the sync and needs the world.");
+            SetGuestState(GuestState.Connected);
+            return;
+        }
         if (state is not (GuestState.Loading or GuestState.InWorld)) { Stats.MalformedMessages++; return; }
         if (state == GuestState.InWorld && gen != World?.Generation)
         {
@@ -442,6 +546,8 @@ public sealed class CoopSession : IDisposable
                 return;
             }
             if (type == MessageType.GuestStatus) { OnGuestStatus(reader); return; }
+            if (type == MessageType.Chat) { OnChat(reader); return; }
+            if (type == MessageType.Sync) { OnSync(reader); return; }
             if (World == null || !World.Handle(type, reader))
             {
                 Stats.UnknownMessages++;

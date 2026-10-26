@@ -137,8 +137,11 @@ internal sealed class NativePcLifecycle : IPcNative
 
     public void Update()
     {
-        if (!_world.IsAuthority || !Active) return;
+        if (!Active) return;
+        // Both games: a load still open once nothing is loading failed or was abandoned (shown as out of sync).
         if (_coop.WorldReady) Objects.ExpireStaleSpawns();
+        Objects.SettleRemoteDrops(_coop.WorldReady);
+        if (!_world.IsAuthority) return;
         ObserveHost(force: false);
     }
 
@@ -300,11 +303,7 @@ internal sealed class NativePcLifecycle : IPcNative
         foreach (var storage in Object.FindObjectsOfType<Storage>()) storage.Populate(true, true, false);
     }
 
-    private void Fault(string what, Exception e)
-    {
-        Plugin.Logger.LogError($"[objects] {what}: {e}");
-        _coop.Notice(what + " (see log).");
-    }
+    private void Fault(string what, Exception e) => _coop.ProjectionFailed(what, e);
 
     private static void Native(Action call) => NativeProjection.Run(call);
 
@@ -318,7 +317,7 @@ internal sealed class NativePcLifecycle : IPcNative
             Native(() => Saves.PickupComputerFromStorage(record, true));
             Plugin.Logger.LogInfo($"[objects] restored carried PC {id} into this guest's hands.");
         }
-        catch (Exception e) { Plugin.Logger.LogError($"[objects] could not restore carried PC {id}: {e}"); CoopController.Instance?.Notice($"Your carried PC {id} could not be shown (see log)."); }
+        catch (Exception e) { CoopController.Instance?.ProjectionFailed($"Your carried PC {id} could not be shown", e); }
     }
 
     // ---------------- catalog ----------------
