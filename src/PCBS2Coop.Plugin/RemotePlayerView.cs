@@ -5,33 +5,112 @@ using Object = UnityEngine.Object;
 
 namespace PCBS2Coop;
 
-/// <summary>The other player: a colored capsule with a facing marker and a floating name tag.</summary>
+/// <summary>
+/// The other player: the animated character from the player model bundle (docs/playermodel.md), or a colored
+/// capsule with a facing marker when the bundle can't load; plus a floating name tag and the carried-PC box.
+/// </summary>
 internal sealed class RemotePlayerView
 {
     private const float Height = 1.8f;
     private const float Radius = 0.3f;
+    /// <summary>Faster than this between two frames is a teleport (spawn, respawn), not movement.</summary>
+    private const float TeleportSpeed = 10f;
+
+    private static readonly int SpeedParam = Animator.StringToHash("Speed");
+    private static readonly int CarryingParam = Animator.StringToHash("Carrying");
+
+    /// <summary>The floor is searched from this far above the received feet position…</summary>
+    private const float FloorProbeUp = 0.5f;
+    /// <summary>…down to this far below it. Further away, the received height is kept.</summary>
+    private const float FloorProbeDown = 0.6f;
+    private static bool s_floorGapLogged;
 
     private readonly GameObject _root;
+    private readonly Transform _visual;
     private readonly Transform _label;
+    private readonly Animator _animator;
+    private readonly Transform _carryAnchor;
     private Vector3 _targetPos;
     private float _targetYaw;
     private bool _placed;
+    private Vector3 _lastPos;
+    private float _speed;
+    private float _floorOffset;
+    private bool _floorOffsetSet;
 
-    private RemotePlayerView(GameObject root, Transform label)
+    private RemotePlayerView(GameObject root, Transform visual, Transform label, Animator animator, Transform carryAnchor)
     {
         _root = root;
+        _visual = visual;
         _label = label;
+        _animator = animator;
+        _carryAnchor = carryAnchor;
     }
+
+    /// <summary>"model" for the animated character, "capsule" for the fallback.</summary>
+    public string BodyLook => _animator != null ? "model" : "capsule";
+    /// <summary>Smoothed horizontal speed of the view in m/s (drives the animation).</summary>
+    public float GroundSpeed => _speed;
 
     public static RemotePlayerView Create(string name)
     {
         var root = new GameObject("PCBS2Coop Remote " + name);
         var color = name == "Host" ? new Color(0.95f, 0.55f, 0.1f) : new Color(0.2f, 0.6f, 1f);
 
+        // Everything visible hangs under Visual, which Update lowers onto the floor (see SnapToFloor).
+        var visual = new GameObject("Visual").transform;
+        visual.SetParent(root.transform, false);
+
+        Animator animator = null;
+        Transform anchor = null;
+        try { animator = BuildModel(visual, color, out anchor); }
+        catch (Exception e) { Plugin.Logger.LogWarning($"[model] building the character failed ({e.GetType().Name}: {e.Message}); using the capsule."); }
+        if (animator == null) BuildCapsule(visual, color);
+
+        var label = CreateLabel(visual, name);
+        Plugin.Logger.LogInfo($"Spawned remote player '{name}' ({(animator != null ? "model" : "capsule")}).");
+        return new RemotePlayerView(root, visual, label, animator, anchor);
+    }
+
+    /// <summary>Instantiate the bundle's character and give each material slot a copy of the scene's HDRP/Lit with the palette color.</summary>
+    private static Animator BuildModel(Transform parent, Color tint, out Transform anchor)
+    {
+        anchor = null;
+        var prefab = PlayerModelAssets.Prefab;
+        if (prefab == null) return null;
+        var model = Object.Instantiate(prefab, parent);
+        try
+        {
+            model.name = "Model";
+            model.transform.localPosition = Vector3.zero;
+            model.transform.localRotation = Quaternion.identity;
+            foreach (var c in model.GetComponentsInChildren<Collider>(true)) Object.Destroy(c);
+
+            var palette = PlayerModelAssets.Palette;
+            var materials = new Material[palette.Count];
+            foreach (var slot in palette) materials[slot.Index] = Paint(MakeMaterial(), slot.Tint ? tint : slot.Color, slot.Smoothness);
+            model.GetComponentInChildren<SkinnedMeshRenderer>(true).sharedMaterials = materials;
+
+            var animator = model.GetComponent<Animator>();
+            animator.applyRootMotion = false;
+            // The anchor hangs on the chest bone, so the box follows the upper body while walking and running.
+            foreach (var t in model.GetComponentsInChildren<Transform>(true))
+                if (t.name == "CarryAnchor") { anchor = t; break; }
+            return animator;
+        }
+        catch
+        {
+            Object.Destroy(model);
+            throw;
+        }
+    }
+
+    private static void BuildCapsule(Transform parent, Color color)
+    {
         var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
         body.name = "Body";
         Object.Destroy(body.GetComponent<Collider>());
-        body.transform.SetParent(root.transform, false);
+        body.transform.SetParent(parent, false);
         body.transform.localPosition = new Vector3(0, Height / 2, 0);
         body.transform.localScale = new Vector3(Radius * 2, Height / 2, Radius * 2);
         Tint(body, color);
@@ -40,14 +119,10 @@ internal sealed class RemotePlayerView
         var visor = GameObject.CreatePrimitive(PrimitiveType.Cube);
         visor.name = "Visor";
         Object.Destroy(visor.GetComponent<Collider>());
-        visor.transform.SetParent(root.transform, false);
+        visor.transform.SetParent(parent, false);
         visor.transform.localPosition = new Vector3(0, Height - 0.25f, Radius);
         visor.transform.localScale = new Vector3(0.4f, 0.12f, 0.15f);
         Tint(visor, Color.black);
-
-        var label = CreateLabel(root.transform, name);
-        Plugin.Logger.LogInfo($"Spawned remote player '{name}'.");
-        return new RemotePlayerView(root, label);
     }
 
     public void SetTarget(in PlayerState s)
@@ -57,17 +132,64 @@ internal sealed class RemotePlayerView
         if (_placed) return;
         _placed = true;
         _root.transform.SetPositionAndRotation(_targetPos, Quaternion.Euler(0, _targetYaw, 0));
+        _lastPos = _targetPos;
     }
 
     public void Update()
     {
         var t = _root.transform;
-        var k = 1f - Mathf.Exp(-15f * Time.deltaTime);
+        var dt = Time.deltaTime;
+        var k = 1f - Mathf.Exp(-15f * dt);
         t.position = Vector3.Lerp(t.position, _targetPos, k);
         t.rotation = Quaternion.Euler(0, Mathf.LerpAngle(t.eulerAngles.y, _targetYaw, k), 0);
+        SnapToFloor(t.position, k);
+        if (_animator != null) Animate(t.position, dt);
 
         var cam = Camera.main;
         if (cam != null) _label.rotation = Quaternion.LookRotation(_label.position - cam.transform.position);
+    }
+
+    /// <summary>
+    /// The received feet position is the bottom of the other player's CharacterController, which hovers above the
+    /// floor by its skin width. Put the visible body on the floor below it (local look only; nothing is sent).
+    /// </summary>
+    private void SnapToFloor(Vector3 feet, float k)
+    {
+        float? floor = null;
+        var origin = feet + Vector3.up * FloorProbeUp;
+        var local = LocalPlayer.Controller;
+        foreach (var hit in Physics.RaycastAll(origin, Vector3.down, FloorProbeUp + FloorProbeDown, ~0, QueryTriggerInteraction.Ignore))
+        {
+            if (local != null && hit.collider == local) continue; // standing in the local player
+            var gap = hit.point.y - feet.y;
+            if (gap > 0.05f) continue; // something above the feet (a desk edge, a carried box), not the floor
+            if (floor == null || gap > floor) floor = gap; // the highest surface at or below the feet
+        }
+        var target = floor ?? 0f;
+        if (!s_floorGapLogged && floor != null)
+        {
+            s_floorGapLogged = true;
+            Plugin.Logger.LogInfo($"[model] floor is {-target:F3} m below the received feet position; the body is lowered onto it.");
+        }
+        _floorOffset = _floorOffsetSet ? Mathf.Lerp(_floorOffset, target, k) : target;
+        _floorOffsetSet = true;
+        _visual.localPosition = new Vector3(0, _floorOffset, 0);
+    }
+
+    /// <summary>
+    /// Speed comes from the smoothed positions already received (nothing new goes over the network). The Speed
+    /// parameter is ground speed in m/s; the controller's thresholds are each clip's own speed (docs/playermodel.md 5.1).
+    /// </summary>
+    private void Animate(Vector3 pos, float dt)
+    {
+        var moved = pos - _lastPos;
+        moved.y = 0;
+        _lastPos = pos;
+        if (dt <= 0) return;
+        var raw = moved.magnitude / dt;
+        if (raw > TeleportSpeed) raw = 0;
+        _speed = Mathf.Lerp(_speed, raw, 1f - Mathf.Exp(-8f * dt));
+        _animator.SetFloat(SpeedParam, _speed);
     }
 
     public Vector3 Position => _root != null ? _root.transform.position : Vector3.zero;
@@ -88,12 +210,14 @@ internal sealed class RemotePlayerView
     /// <summary>Show or hide the box. Derived from the accepted facts; it has no colliders and no game components.</summary>
     public void SetCarrying(bool carrying)
     {
+        if (_animator != null) _animator.SetBool(CarryingParam, carrying);
         if (!carrying) { if (_box != null) _box.SetActive(false); return; }
         if (_box == null)
         {
             _box = new GameObject("CarriedPC");
-            _box.transform.SetParent(_root.transform, false);
-            _box.transform.localPosition = new Vector3(0, 1.05f, Radius + BoxSize * 0.5f);
+            // The model's CarryAnchor is the box center resting on its hands; the capsule holds it in front.
+            _box.transform.SetParent(_carryAnchor != null ? _carryAnchor : _visual, false);
+            _box.transform.localPosition = _carryAnchor != null ? Vector3.zero : new Vector3(0, 1.05f, Radius + BoxSize * 0.5f);
             try { CarryLook = BuildPackage(_box.transform) ? "package" : "cube"; }
             catch (Exception e) { Plugin.Logger.LogWarning("[view] package meshes unavailable for the carried box: " + e.Message); CarryLook = "cube"; }
             if (CarryLook == "cube") BuildCube(_box.transform);
@@ -197,17 +321,18 @@ internal sealed class RemotePlayerView
     /// Unity's default primitive material doesn't render under HDRP, so build one from an HDRP shader.
     /// A copy of a Lit material already in the scene is preferred because its shader variants are in the build.
     /// </summary>
-    private static void Tint(GameObject go, Color color)
+    private static void Tint(GameObject go, Color color) => go.GetComponent<Renderer>().sharedMaterial = Paint(MakeMaterial(), color, 0.3f);
+
+    /// <summary>A flat color: textures cleared, the base color set, not metallic.</summary>
+    private static Material Paint(Material m, Color color, float smoothness)
     {
-        var r = go.GetComponent<Renderer>();
-        var m = MakeMaterial();
         foreach (var tex in new[] { "_BaseColorMap", "_MaskMap", "_NormalMap", "_EmissiveColorMap", "_UnlitColorMap" })
             if (m.HasProperty(tex)) m.SetTexture(tex, null);
         foreach (var prop in new[] { "_BaseColor", "_UnlitColor", "_Color" })
             if (m.HasProperty(prop)) m.SetColor(prop, color);
-        if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.3f);
+        if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smoothness);
         if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
-        r.sharedMaterial = m;
+        return m;
     }
 
     private static Material _template;

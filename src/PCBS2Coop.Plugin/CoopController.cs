@@ -580,7 +580,7 @@ internal sealed class CoopController
             if (_view == null || cam == null) return "remote view: none";
             var pos = _view.Position;
             var to = pos - cam.transform.position;
-            return $"remote view at {pos}, {to.magnitude:F1} m from camera, {Vector3.Angle(cam.transform.forward, to):F0}° off view centre";
+            return $"remote view at {pos}, {to.magnitude:F1} m from camera, {Vector3.Angle(cam.transform.forward, to):F0}° off view centre, body {_view.BodyLook}, ground speed {_view.GroundSpeed:F2} m/s";
         }
     }
 

@@ -16,6 +16,10 @@
     <Reference Include="0Harmony"><HintPath>$(GameDir)\BepInEx\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="$(GameDir)\BepInEx\interop\*.dll"><Private>false</Private></Reference>
   </ItemGroup>
+  <ItemGroup>
+    <!-- Remote player character, built by unity/PCBS2CoopModels (docs/playermodel.md). Loaded from next to PCBS2Coop.dll. -->
+    <None Include="Assets\pcbs2coop-player.bundle" Link="pcbs2coop-player.bundle" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Assets\pcbs2coop-player.bundle')" />
+  </ItemGroup>
   <Target Name="CheckGameBindings" BeforeTargets="ResolveReferences">
     <Error Condition="'$(GameDir)' == ''" Text="Set the game folder: copy Directory.Build.local.props.example to Directory.Build.local.props and fill in GameDir, or set the PCBS2_GAME_DIR environment variable, or build with -p:GameDir=..." />
     <Error Condition="!Exists('$(GameDir)\BepInEx\interop\Assembly-CSharp.dll')" Text="Install BepInEx (scripts/Install-Loader.ps1) and launch the game once to generate BepInEx/interop. Do not use decompilation dummy DLLs." />
@@ -25,6 +29,7 @@
     <PropertyGroup><PluginDir>$(GameDir)\BepInEx\plugins\PCBS2Coop</PluginDir></PropertyGroup>
     <ItemGroup>
       <DeployFiles Include="$(OutDir)PCBS2Coop.dll;$(OutDir)PCBS2Coop.Network.dll;$(OutDir)LiteNetLib.dll" />
+      <DeployFiles Include="$(OutDir)pcbs2coop-player.bundle" Condition="Exists('$(OutDir)pcbs2coop-player.bundle')" />
     </ItemGroup>
     <MakeDir Directories="$(PluginDir)" />
     <Copy SourceFiles="@(DeployFiles)" DestinationFolder="$(PluginDir)" Retries="0" ContinueOnError="WarnAndContinue" />

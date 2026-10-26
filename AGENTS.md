@@ -42,6 +42,7 @@ The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.8).
 - Workshop player: root `Player` (`CharacterController`, `Walk`) with child `Main Camera` (`MouseLook`).
 - HDRP: Unity's default primitive material doesn't render. Copy an `HDRP/Lit` material already in the scene.
 - Unity 6 interop `CoreModule` exports its own `NullableAttribute`, so the plugin project builds with `<Nullable>disable</Nullable>`. Lambdas taking parameters from nullable-annotated Network events need explicit parameter types.
+- Unity 6 interop wrappers that pass strings or arrays through `ManagedSpanWrapper` (e.g. `AssetBundle.LoadAsset`, `LoadAllAssets`, `LoadFromMemory`) throw `MissingMethodException` for `Il2CppSystem.ReadOnlySpan.GetPinnableReference` in game. `AssetBundle.LoadFromFile` and `LoadAssetAsync(name, type).asset` are plain native calls (see `PlayerModelAssets`). Check a new Unity API's interop body for `GetPinnableReference` before relying on it.
 - `Input.inputString` is stripped. TMP input fields work through the game's `InputModule`.
 - Saves: `SaveLoadSystem.s_saveDir` is the relative path `Saves`, i.e. `<GameDir>\Saves`, shared by every local instance. Redirecting `s_saveDir` on the main menu also redirects PlayFree's existing-save check (run R1). The game lists only the top level of that folder. Saves are `<name>.binary.zip` with one `<name>.binary` entry.
 - `CreateSaveGame(name)` fixes the target path at call time (safe to restore `s_saveDir` right after), writes on a thread (`WaitingOnThread()`), and makes that file the game's current save name (`LevelLoadPersistency.SaveName`, `SetOpenedSaveName`): restore both after a side save. Every save path goes through it; Harmony hooks on it fire for native callers.
@@ -88,3 +89,4 @@ A carried PC of the other player is a box derived from the model. Version 0.7 ad
 3. Ask the owner before design decisions (UI placement, flow, what gets synced). Don't assume.
 4. Separate what was verified in the running game from what was only read in the decompile.
 5. Leave the owner's own game processes and saves alone. Close only the instances you started.
+6. Commit Unity work separately from mod work, with a commit message starting `[unity]`. Unity work is everything under `unity/` plus the built bundle `src/PCBS2Coop.Plugin/Assets/pcbs2coop-player.bundle` (and docs that only describe it, e.g. `docs/playermodel.md`). Plugin, network, test and script changes go in ordinary commits, never mixed into a `[unity]` one.
