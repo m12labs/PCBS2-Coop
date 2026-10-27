@@ -21,6 +21,8 @@ internal sealed class NativeAssembly : IAssemblyNative
         public readonly bool Open;
         public readonly float Rotation, Offset;
         public string IntegralPart = "";
+        /// <summary>A fitted integral case panel in this slot (its home and carried resources go in the manifest).</summary>
+        public ComponentPC Panel;
         public Row(Component native, Transform root, NetObjectId parent, string key, AssemblyResourceKind kind,
             NetObjectId occupant, long occupantMesh, bool open, float rotation, float offset)
         { Native = native; Parent = parent; Key = key; Kind = kind; Occupant = occupant; OccupantMesh = occupantMesh; Open = open; Rotation = rotation; Offset = offset; }
@@ -37,6 +39,7 @@ internal sealed class NativeAssembly : IAssemblyNative
     private readonly Dictionary<NetObjectId, IReadOnlyList<AssemblyTemplate>> _prepared = new();
     private readonly Dictionary<NetObjectId, PcBuildProfile> _preparedProfiles = new();
     private readonly HashSet<NetObjectId> _faults = new();
+    private readonly HashSet<NetObjectId> _rebind = new();
     private static readonly Dictionary<long, ComponentPC> Previews = new();
     private static int _previewDepth;
     public AssemblyManifest Handler { get; private set; }
@@ -45,11 +48,30 @@ internal sealed class NativeAssembly : IAssemblyNative
     { _objects = objects; if (activity != null) Handler = new(objects.Model, activity, this); }
     internal void Configure(ActivityWorld activity) => Handler = new(_objects.Model, activity, this);
     private void MainThread() { if (Environment.CurrentManagedThreadId != _thread) throw new InvalidOperationException("Assembly bindings require the main thread."); }
-    public void Reset() { MainThread(); _bindings.Clear(); _prepared.Clear(); _preparedProfiles.Clear(); _faults.Clear(); }
+    public void Reset() { MainThread(); _bindings.Clear(); _prepared.Clear(); _preparedProfiles.Clear(); _faults.Clear(); _rebind.Clear(); }
+    /// <summary>An accepted change replaced native instances on this PC (a panel removed or refitted): bind it again
+    /// once its native work has finished (no edit state, no moving latch).</summary>
+    internal void RequestRebind(NetObjectId pc) => _rebind.Add(pc);
+    internal bool RebindPending => _rebind.Count > 0;
     public void Forget(NetObjectId id) { _bindings.Remove(id); _prepared.Remove(id); _preparedProfiles.Remove(id); }
 
     private static bool Preview(ComponentPC c) => c != null && Previews.TryGetValue(c.Pointer.ToInt64(), out var held) && held != null;
     internal static bool IsPreview(ComponentPC c) => Preview(c);
+
+    /// <summary>The PC and resource a bound native latch/slot/screw belongs to, or none.</summary>
+    internal (NetObjectId Pc, NetObjectId Resource) Find(Component native)
+    {
+        if (native == null) return default;
+        foreach (var (pc, binding) in _bindings)
+            if (binding.Mesh != null)
+                foreach (var (id, row) in binding.Resources)
+                    if (row.Native != null && row.Native.Pointer == native.Pointer) return (pc, id);
+        return default;
+    }
+
+    /// <summary>The bound native component of a resource on this game, or null (unbound, reloaded or destroyed).</summary>
+    internal Component NativeFor(NetObjectId pc, NetObjectId resource) =>
+        _bindings.TryGetValue(pc, out var b) && b.Mesh != null && b.Resources.TryGetValue(resource, out var row) && row.Native != null ? row.Native : null;
     internal static bool HasPreview
     {
         get
@@ -105,10 +127,14 @@ internal sealed class NativeAssembly : IAssemblyNative
         foreach (var pc in _objects.Model.Pcs.Where(p => p.Resources.Count != 0))
         {
             if (_faults.Contains(pc.Id) || !_objects.Projections.TryGet(pc.Id, out var mesh) || mesh == null ||
-                (_bindings.TryGetValue(pc.Id, out var prior) && prior.Mesh != null && prior.Mesh.Pointer == mesh.Pointer)) continue;
+                (_bindings.TryGetValue(pc.Id, out var prior) && prior.Mesh != null && prior.Mesh.Pointer == mesh.Pointer && !_rebind.Contains(pc.Id))) continue;
+            if (_rebind.Contains(pc.Id) && !CanCaptureNative) continue;
+            // A freshly loaded PC can still be running the native load's own latch animation; check again later.
+            if (mesh.GetComponentsInChildren<CPin>(true).Any(p => p != null && p.IsAnimating())) continue;
             try
             {
                 var record = _objects.CaptureRecord(pc.Id); NativeObjectState.CheckParts(pc, record); Bind(pc, mesh, record);
+                _rebind.Remove(pc.Id);
             }
             catch (Exception e) { _faults.Add(pc.Id); c.ProjectionFailed($"PC {pc.Id}'s assembly could not be rebound after its load", e); }
         }
@@ -134,8 +160,15 @@ internal sealed class NativeAssembly : IAssemblyNative
         if (HasPreview) throw new InvalidDataException("Put the selected component away before saving or joining.");
         if (GameController.Get()?.GetCurrentState()?.TryCast<InstallingPartState>() != null)
             throw new InvalidDataException("A component edit is still running.");
+        if (LatchesBusy) throw new InvalidDataException("A latch is still moving.");
+        if (CoopController.Instance?.Panels?.Busy == true || CoopController.Instance?.Objects?.Assembly?.RebindPending == true)
+            throw new InvalidDataException("A case panel is still being changed.");
     }
-    internal static bool CanCapture => !HasPreview && GameController.Get()?.GetCurrentState()?.TryCast<InstallingPartState>() == null;
+    /// <summary>A shared latch toggle is waiting for the host or still being shown (task 4d).</summary>
+    private static bool LatchesBusy => CoopController.Instance?.Mechanisms?.Busy == true;
+    internal static bool CanCapture => CanCaptureNative && !LatchesBusy && CoopController.Instance?.Objects?.Assembly?.RebindPending != true &&
+        CoopController.Instance?.Panels?.Busy != true;
+    private static bool CanCaptureNative => !HasPreview && GameController.Get()?.GetCurrentState()?.TryCast<InstallingPartState>() == null;
 
     /// <summary>C4b02 N3: native load closes clips over installed RAM after reopening saved pins. /sync uses
     /// that persisted result as its reference, so close those clips synchronously before its repair capture.</summary>
@@ -172,7 +205,8 @@ internal sealed class NativeAssembly : IAssemblyNative
         if (!rebind && _bindings.TryGetValue(pc.Id, out var prior) && prior.Mesh != null && prior.Mesh.Pointer == mesh.Pointer)
         {
             var byKey = scan.Rows.ToDictionary(r => (r.Parent, r.Key));
-            foreach (var r in pc.Resources)
+            var dormant = AssemblyResources.Dormant(pc);
+            foreach (var r in pc.Resources.Where(r => !dormant.Contains(r.Id)))
                 if (prior.Resources.TryGetValue(r.Id, out var old) && (old.Native == null ||
                     old.Native.Pointer != byKey[(r.Parent, r.Binding)].Native.Pointer || old.Occupant != byKey[(r.Parent, r.Binding)].OccupantMesh))
                     throw new InvalidDataException($"PC {pc.Id}: physical instance changed at {r.Binding}, including a possible same-SKU replacement.");
@@ -184,23 +218,43 @@ internal sealed class NativeAssembly : IAssemblyNative
         MainThread(); if (mesh == null || pc.Resources.Count == 0) return;
         var scan = Scan(pc, mesh, save); Check(pc, scan.Templates); CheckProfile(pc, save);
         var rows = scan.Rows.ToDictionary(r => (r.Parent, r.Key));
-        _bindings[pc.Id] = new(mesh, pc.Resources.ToDictionary(r => r.Id,
+        var dormant = AssemblyResources.Dormant(pc);
+        _bindings[pc.Id] = new(mesh, pc.Resources.Where(r => !dormant.Contains(r.Id)).ToDictionary(r => r.Id,
             r => (rows[(r.Parent, r.Binding)].Native, rows[(r.Parent, r.Binding)].OccupantMesh)));
     }
 
     private static void Check(PcFact pc, IReadOnlyList<AssemblyTemplate> actual)
     {
-        if (pc.Resources.Count != actual.Count) throw new InvalidDataException($"PC {pc.Id}: native assembly manifest changed.");
-        var byKey = pc.Resources.ToDictionary(r => (r.Parent, r.Binding));
+        // Resources on a removed panel stay in the model but are absent natively (4d case access).
+        var dormant = AssemblyResources.Dormant(pc);
+        var live = pc.Resources.Where(r => !dormant.Contains(r.Id)).ToArray();
+        if (live.Length != actual.Count)
+            throw new InvalidDataException($"PC {pc.Id}: native assembly manifest changed ({actual.Count} native resources, {live.Length} shared).");
+        var byKey = live.ToDictionary(r => (r.Parent, r.Binding));
         var ids = actual.Select(r => byKey.TryGetValue((r.Parent, r.Binding), out var known) ? known.Id : default).ToArray();
+        IEnumerable<NetObjectId> Live(IEnumerable<NetObjectId> list) => list.Where(id => !dormant.Contains(id));
+        bool Same(IEnumerable<NetObjectId> expected, IReadOnlyList<int> native) => Live(expected).SequenceEqual(native.Select(j => ids[j]).OrderBy(x => x.Value));
+        string List(IEnumerable<NetObjectId> list) => string.Join(",", list.Select(x => x.Value));
+        string Natives(IReadOnlyList<int> rows) => string.Join(",", rows.Select(j => ids[j].IsNone ? "?" + actual[j].Binding : ids[j].Value.ToString()));
         for (var i = 0; i < actual.Count; i++)
         {
             var a = actual[i];
-            if (!byKey.TryGetValue((a.Parent, a.Binding), out var expected) || expected.NativeType != a.NativeType || expected.Kind != a.Kind ||
-                expected.Occupant != a.Occupant || expected.Open != a.Open || expected.Rotation != a.Rotation || expected.Offset != a.Offset || expected.IntegralPart != a.IntegralPart ||
-                !expected.Dependencies.SequenceEqual(a.Guards.Select(j => ids[j]).OrderBy(x => x.Value)) ||
-                !expected.Coupled.SequenceEqual(a.Coupled.Select(j => ids[j]).OrderBy(x => x.Value)))
-                throw new InvalidDataException($"PC {pc.Id}: unconfirmed assembly state at {a.Binding}.");
+            if (!byKey.TryGetValue((a.Parent, a.Binding), out var expected))
+                throw new InvalidDataException($"PC {pc.Id}: unconfirmed assembly state at {a.Binding} (not in the shared manifest).");
+            var diff = new List<string>();
+            if (expected.NativeType != a.NativeType || expected.Kind != a.Kind) diff.Add($"type {expected.NativeType}/{a.NativeType}");
+            if (expected.Occupant != a.Occupant) diff.Add($"occupant {expected.Occupant.Value}/{a.Occupant.Value}");
+            if (expected.Open != a.Open) diff.Add($"open {expected.Open}/{a.Open}");
+            if (expected.Rotation != a.Rotation || expected.Offset != a.Offset) diff.Add($"rotation {expected.Rotation}:{expected.Offset}/{a.Rotation}:{a.Offset}");
+            if (expected.IntegralPart != a.IntegralPart) diff.Add($"integral '{expected.IntegralPart}'/'{a.IntegralPart}'");
+            if (!Same(expected.Dependencies, a.Guards)) diff.Add($"guards [{List(Live(expected.Dependencies))}]/[{Natives(a.Guards)}]");
+            if (!Same(expected.Coupled, a.Coupled)) diff.Add($"coupled [{List(Live(expected.Coupled))}]/[{Natives(a.Coupled)}]");
+            if (!Same(expected.LoadCloses, a.LoadCloses)) diff.Add("load-closed latches");
+            // A fitted panel's home and carried resources are prefab facts; a removed one is remembered by the model only.
+            if (a.IntegralPart != "" && (expected.IntegralHome != a.IntegralHome || !expected.Carries.SequenceEqual(a.Carries.Select(j => ids[j]).OrderBy(x => x.Value))))
+                diff.Add($"panel home/carried [{List(expected.Carries)}]/[{Natives(a.Carries)}]");
+            if (diff.Count > 0)
+                throw new InvalidDataException($"PC {pc.Id}: unconfirmed assembly state at {a.Binding} (shared/native: {string.Join("; ", diff)}).");
         }
     }
 
@@ -232,7 +286,8 @@ internal sealed class NativeAssembly : IAssemblyNative
             var values = new List<bool>(); foreach (var value in flags) values.Add((bool)value);
             w.Put(values.Count); foreach (var value in values) w.Put(value);
         }
-        Flags(save.casePciCovers); Flags(save.miscCaseSlots); Flags(save.optionalCaseSlots);
+        // Case-panel presence (miscCaseSlots/optionalCaseSlots) is a shared resource fact since 4d; PCI covers stay here.
+        Flags(save.casePciCovers);
         var bespoke = new List<string>(); if (save.m_bespokeCaseSlots != null) foreach (var name in save.m_bespokeCaseSlots) bespoke.Add(name);
         w.Put(bespoke.Count); foreach (var name in bespoke.OrderBy(n => n, StringComparer.Ordinal)) w.Put(name);
         var connectors = internalConnectors.ToHashSet(StringComparer.Ordinal);
@@ -313,6 +368,15 @@ internal sealed class NativeAssembly : IAssemblyNative
             }
             return (caseId, mesh.transform);
         }
+        // A refitted panel is a new object named after its part prefab (C4d07: 'Lid_Left' at load, 'Case_MSI_6' after a
+        // refit). Paths inside a fitted case panel use one fixed token, so what it carries keeps its identity.
+        var panels = new HashSet<IntPtr>();
+        foreach (var observed in nativeSlots)
+        {
+            var fitted = observed.GetComponent();
+            if (fitted != null && !Preview(fitted) && observed.m_slotType is Slot.SlotType.CASE_PART_REQUIRED or Slot.SlotType.CASE_PART_OPTIONAL && Integral(fitted) != "")
+                panels.Add(fitted.transform.Pointer);
+        }
         var rows = new List<Row>();
         void Add(Component native, AssemblyResourceKind kind, NetObjectId occupant, long occupantMesh, bool open = false, float rotation = 0, float offset = 0)
         {
@@ -320,7 +384,7 @@ internal sealed class NativeAssembly : IAssemblyNative
             var indices = kind == AssemblyResourceKind.Slot ? native.gameObject.GetComponents<Slot>().Select(c => c.Pointer).ToArray()
                 : kind == AssemblyResourceKind.Screw ? native.gameObject.GetComponents<Screw>().Select(c => c.Pointer).ToArray()
                 : native.gameObject.GetComponents<CPin>().Select(c => c.Pointer).ToArray();
-            var key = kind + ":" + RelativePath(native.transform, owner.Root) + "#" + Array.IndexOf(indices, native.Pointer);
+            var key = kind + ":" + RelativePath(native.transform, owner.Root, panels) + "#" + Array.IndexOf(indices, native.Pointer);
             rows.Add(new(native, owner.Root, owner.Id, key, kind, occupant, occupantMesh, open, rotation, offset));
         }
         foreach (var slot in nativeSlots)
@@ -329,6 +393,7 @@ internal sealed class NativeAssembly : IAssemblyNative
             if (Preview(c)) throw new InvalidDataException("A component preview is still present.");
             Add(slot, AssemblyResourceKind.Slot, Part(c), c == null ? 0 : c.Pointer.ToInt64());
             rows[^1].IntegralPart = Integral(c);
+            if (rows[^1].IntegralPart != "" && slot.m_slotType is Slot.SlotType.CASE_PART_REQUIRED or Slot.SlotType.CASE_PART_OPTIONAL) rows[^1].Panel = c;
         }
         foreach (var pin in mesh.GetComponentsInChildren<CPin>(true))
         {
@@ -362,20 +427,22 @@ internal sealed class NativeAssembly : IAssemblyNative
         }
         var templates = rows.Select((r, i) =>
         {
-            var guards = new List<Component>(); var coupled = new List<Component>();
+            var guards = new List<Component>(); var coupled = new List<Component>(); var loadCloses = new List<Component>();
             var slot = r.Native.TryCast<Slot>(); var pin = r.Native.TryCast<Pin>(); var screw = r.Native.TryCast<Screw>();
             if (slot != null)
             {
                 if (slot.blockedBy != null) foreach (var c in slot.blockedBy) guards.Add(c);
-                if (slot.m_dynamicBlockedBy != null) foreach (var c in slot.m_dynamicBlockedBy) if (c != null && c.Slot != null) guards.Add(c.Slot);
-                if (slot.m_dynamicComponentCollidesWith != null) foreach (var c in slot.m_dynamicComponentCollidesWith) if (c != null && c.Slot != null) guards.Add(c.Slot);
+                // m_dynamicBlockedBy / m_dynamicComponentCollidesWith are live caches the game fills only once someone
+                // works on that PC on that game (C4d06: an empty list at capture, the water block after work mode).
+                // They are not shared structure; live blockers are checked by the host's game when an edit is validated.
                 if (slot.closePins != null) coupled.AddRange(slot.closePins.Select(c => (Component)c));
                 if (slot.mustBeOpenPins != null) guards.AddRange(slot.mustBeOpenPins.Select(c => (Component)c));
                 if (slot.DynamicClosePins != null) foreach (var c in slot.DynamicClosePins) coupled.Add(c);
                 if (slot.DynamicMustBeOpenPins != null) foreach (var c in slot.DynamicMustBeOpenPins) guards.Add(c);
                 if (slot.fillSlots != null) coupled.AddRange(slot.fillSlots.Select(c => (Component)c));
+                // 4b N3: the native load closes these clips while the slot holds a stick.
                 foreach (var ram in ramGroups[slot.Pointer])
-                    if (ram.pins != null) foreach (var clip in ram.pins) coupled.Add(clip);
+                    if (ram.pins != null) foreach (var clip in ram.pins) { coupled.Add(clip); loadCloses.Add(clip); }
                 var component = slot.GetComponent();
                 if (component != null && !Preview(component))
                     foreach (var attached in component.GetScrews()) coupled.Add(attached);
@@ -396,15 +463,22 @@ internal sealed class NativeAssembly : IAssemblyNative
             // adapter; there is no separate case CBlocker resource to confuse with its installed descendants.
             guards.RemoveAll(g => g != null && g.TryCast<Case>() != null);
             return new AssemblyTemplate(r.Parent, r.Key, r.Native.GetIl2CppType().FullName, r.Kind, r.Occupant, r.Open, r.Rotation, r.Offset,
-                Resolve(guards, i), Resolve(coupled, i)) { IntegralPart = r.IntegralPart };
+                Resolve(guards, i), Resolve(coupled, i))
+            {
+                IntegralPart = r.IntegralPart, LoadCloses = Resolve(loadCloses, i),
+                IntegralHome = r.Panel != null ? r.IntegralPart : "",
+                Carries = r.Panel == null ? Array.Empty<int>() : rows.Select((x, j) => (x, j))
+                    .Where(x => x.j != i && x.x.Native.transform.IsChildOf(r.Panel.transform)).Select(x => x.j).ToArray(),
+            };
         }).ToArray();
         return (rows, templates);
     }
 
-    private static string RelativePath(Transform node, Transform root)
+    private static string RelativePath(Transform node, Transform root, HashSet<IntPtr> panels = null)
     {
         var rows = new List<string>();
-        for (var t = node; t != null && t.Pointer != root.Pointer; t = t.parent) rows.Add(t.name + "[" + t.GetSiblingIndex() + "]");
+        for (var t = node; t != null && t.Pointer != root.Pointer; t = t.parent)
+            rows.Add(panels != null && panels.Contains(t.Pointer) ? "@panel" : t.name + "[" + t.GetSiblingIndex() + "]");
         rows.Reverse(); return rows.Count == 0 ? "." : string.Join("/", rows);
     }
 

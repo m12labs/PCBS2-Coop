@@ -319,7 +319,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** HW component/slot/screw/latch/blocker factors; PW target/tool activity; SS transaction/callback risks.
 
-**Status: Implementing (4a–4c complete; 4d next).** Focused audit: [docs/audit/phase-4.md](docs/audit/phase-4.md). Existing owner decisions apply: two players may edit different parts of the same PC, conflicting resources are exclusive, and an actively used PC cannot move. Work starts with the current default Free Build workshop; the phase 3 deferrals for specialist tool benches, DLC layouts and career locations retain their assigned phases. No new UI or interaction flow is selected here.
+**Status: Implementing (4a–4c complete; 4d implemented in 0.13 and owner-checked; 4e next, code first).** Focused audit: [docs/audit/phase-4.md](docs/audit/phase-4.md). Existing owner decisions apply: two players may edit different parts of the same PC, conflicting resources are exclusive, and an actively used PC cannot move. Work starts with the current default Free Build workshop; the phase 3 deferrals for specialist tool benches, DLC layouts and career locations retain their assigned phases. No new UI or interaction flow is selected here.
 
 #### 4a. Focused evidence and component transaction boundaries
 
@@ -361,13 +361,14 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 4d. Host-ordered screws, latches and case access
 
-- **Status:** Not started.
+- **Status:** Implemented (0.13), October 27, 2026: latches, case panels and the unshared-edit gate; model-tested and owner-checked in runs C4d01–C4d08. Remaining manual cases are folded into the owner's later whole-assembly testing.
+- **Owner decisions (October 27, 2026):** 4d covers click-toggled latches (RAM clips, CPU levers/LGA shield, M.2 covers, PCI cover locks, heatsink pins, hinged doors) and, after the first runs, integral case panels (side/front/top panels, filters, built-in bays); PCI shields stay in 4e; screw-held covers are refused with a notice until probed; every other install/removal is refused in co-op until 4e. Clips over installed sticks follow the game: they close before every host save and snapshot (even mid-work) and when their PC leaves the bench. Screws and standoffs are automatic inside edits (4b) and need no command. From now on the owner wants whole features coded and model-tested first, then tests them in game.
 - **Outcome and audit IDs:** both peers agree on access and mechanical state required for standard building (HW-009–013/041/068–070; PW-008–011/058–059/065–066; SS-018/020–027/031/033–035).
 - **Dependencies and decisions:** 4b–4c. Minimum understandable physical feedback belongs here; detailed character/tool/audio parity remains phase 13.
 - **Scope and evidence:** verified `Screw`, `Pin`, socket/retention and cover/hinge entry points, their dependencies and native save projections.
 - **Work:** intercept outer gestures, acquire resources before native mutation, validate on the host and apply confirmed state once on both peers. Keep local input/state stacks separate from observer projection; prevent observer callbacks from resubmitting commands. Invalidate obsolete callbacks and release claims on cancellation/departure.
 - **Acceptance:** independent mechanical actions coexist; a contested screw/latch resolves once. Interrupted holds, partial assembly, pause, late join, save/Continue and disconnect preserve the accepted physical state and blockers. Projection failures report out of sync.
-- **Completion evidence:** pending model tests and owned two-instance visual/state checks.
+- **Completion evidence:** [task 4d audit](docs/audit/phase-4.md#task-4d-host-ordered-latches): command types 7 (`MechanismWorld`) and 8 (`CasePanelWorld`), gesture-bounded interception, host save/snapshot settle, load-closed latch lists, dormant panel resources, the unshared-edit gate and the dynamic-blocker manifest fix; **466/466** model/network checks; Release 0 warnings/errors; owner-checked runs C4d01–C4d08 (late join, toggles both ways, stale/race/blocked refusals, panel remove/refit, refusals, save settle, `/sync`).
 
 #### 4e. Transactional standard component installation and removal
 

@@ -76,8 +76,11 @@ public sealed class PcTransfers : ICommandHandler
         if (Plan(ctx.Op.Actor, c, tolerant: !_authority, out var moves) is { } error) throw new InvalidDataException("PC transfer no longer applies: " + error);
         if (moves.Count == 0) return; // only host-only PCs this guest never saw
         var to = moves.ToDictionary(m => m.Pc, m => m.To);
+        // A PC leaving its bench is next shown by a native load, which closes latches over installed parts (4b N3).
+        var leaving = moves.Where(m => m.From.Place == PcPlace.Bench).Select(m => m.Pc).ToHashSet();
         _objects.Replace(_objects.WorldId, _objects.NextId, _objects.Locations,
-            _objects.Pcs.Select(x => to.TryGetValue(x.Id, out var l) ? x with { Location = l } : x).ToArray(), _objects.Retired);
+            _objects.Pcs.Select(x => to.TryGetValue(x.Id, out var l)
+                ? (leaving.Contains(x.Id) ? AssemblyResources.SettleLoad(x) : x) with { Location = l } : x).ToArray(), _objects.Retired);
         _native.Moved(ctx, c, moves);
     }
 

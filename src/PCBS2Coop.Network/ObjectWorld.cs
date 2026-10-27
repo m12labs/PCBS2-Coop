@@ -86,7 +86,8 @@ public sealed class ObjectWorld : IWorldState
                     if (oldResources.TryGetValue(r.Id, out var old) && (r.Version < old.Version ||
                         (r.Version == old.Version && (r.Occupant != old.Occupant || r.Open != old.Open ||
                             r.Rotation != old.Rotation || r.Offset != old.Offset || r.IntegralPart != old.IntegralPart ||
-                            !r.Dependencies.SequenceEqual(old.Dependencies) || !r.Coupled.SequenceEqual(old.Coupled)))))
+                            !r.Dependencies.SequenceEqual(old.Dependencies) || !r.Coupled.SequenceEqual(old.Coupled) ||
+                            !r.LoadCloses.SequenceEqual(old.LoadCloses) || r.IntegralHome != old.IntegralHome || !r.Carries.SequenceEqual(old.Carries)))))
                         Bad("An assembly change must advance its resource version.");
         }
         CheckBindings?.Invoke(candidate);

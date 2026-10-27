@@ -2,9 +2,9 @@
 
 Build PCs together in **PC Building Simulator 2**. PCBS2 Co-op is an unofficial two-player mod that puts you and a friend in the same Free Build workshop over LAN or Steamworks when available.
 
-Built for BepInEx 6 IL2CPP. **Current version: 0.12** (early development). Both players need the same mod version; a different version is refused when joining. Version 0.12 changes co-op save data: older co-op saves are refused pending migration support. Keep their original files; use a fresh co-op world for this build.
+Built for BepInEx 6 IL2CPP. **Current version: 0.13** (early development). Both players need the same mod version; a different version is refused when joining. Version 0.13 changes co-op save data: older co-op saves are refused pending migration support. Keep their original files; use a fresh co-op world for this build.
 
-> **Early development.** You share one workshop, and whole PCs are shared: creating and deleting PCs and moving them between benches, your hands and the storage cupboard show up for both players. Building inside a PC isn't shared yet. Version 0.12 refuses normal co-op saves containing unconfirmed component/mechanical changes; `/sync` explicitly repairs from the host's current game. Shared building is the next milestone. See [what works](#sync-progress).
+> **Early development.** You share one workshop, and whole PCs are shared: creating and deleting PCs and moving them between benches, your hands and the storage cupboard show up for both players. Building inside a PC isn't shared yet; version 0.13 shares latches (RAM clips, CPU levers, M.2 covers) and case panels, and refuses other part installs and removals in co-op until they are shared. Normal co-op saves refuse unconfirmed component/mechanical changes; `/sync` explicitly repairs from the host's current game. Shared building is the next milestone. See [what works](#sync-progress).
 
 > **Unofficial fan project.** PCBS2 Co-op is not affiliated with the developers or publishers of PC Building Simulator 2. This repository contains no game code or game assets.
 
@@ -84,7 +84,7 @@ To remove the loader again, run `.\scripts\Uninstall-Loader.ps1`. It restores or
 Start the game, then open `<GameDir>\BepInEx\LogOutput.log` and look for:
 
 ```text
-[Info   :PCBS2 Coop] PCBS2 Coop 0.12 loaded.
+[Info   :PCBS2 Coop] PCBS2 Coop 0.13 loaded.
 ```
 
 The main menu also gains a **Multiplayer** panel below Free Build.

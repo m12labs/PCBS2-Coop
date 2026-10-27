@@ -27,6 +27,8 @@ internal static class NativeProjection
         // A completed native load can still be unwinding its queued work. Keep the autosave pending until the
         // host's capture barrier is ready, rather than dropping it when CreateSaveGame refuses that frame.
         if (CoopController.Instance is { WorldReady: false, Session.Role: PCBS2Coop.Network.Role.Host }) return;
+        // A latch still moving (4d) or a held selection would refuse the save; keep it pending until they settle.
+        if (CoopController.Instance is { Session.Role: PCBS2Coop.Network.Role.Host } && !NativeAssembly.CanCapture) return;
         _autosaveDeferred = false;
         try { Object.FindObjectOfType<SaveLoadSystem>()?.FreebuildSave(); }
         catch (Exception e) { Plugin.Logger.LogError("[objects] deferred autosave failed: " + e); }

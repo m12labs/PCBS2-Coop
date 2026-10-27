@@ -53,6 +53,8 @@ internal sealed partial class CoopController
     public NativePcLifecycle Lifecycle { get; private set; }
     public NativePcTransfers Transfers { get; private set; }
     public NativeWorkstations Workstations { get; private set; }
+    public NativeMechanisms Mechanisms { get; private set; }
+    public NativeCaseAccess Panels { get; private set; }
     private string _notice;
     private float _noticeUntil;
     public string ActiveNotice => _notice != null && Time.realtimeSinceStartup < _noticeUntil ? _notice : null;
@@ -295,7 +297,7 @@ internal sealed partial class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); NativeProjection.Update(); }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); NativeProjection.Update(); }
 
         UpdateRemoteView(inWorkshop);
     }
@@ -376,6 +378,9 @@ internal sealed partial class CoopController
         var saves = Object.FindObjectOfType<SaveLoadSystem>();
         var level = Object.FindObjectOfType<LevelLoadPersistency>();
         if (saves == null) return;
+        // Owner decision (4d): a joining guest's load closes clips over installed sticks; close them here first.
+        try { Mechanisms?.SettleForCapture(); }
+        catch (InvalidOperationException e) { Plugin.Logger.LogInfo("[world] snapshot waits: " + e.Message); return; }
         try
         {
             Lifecycle?.ExtendHost(); Lifecycle?.ObserveHost(force: true);
@@ -467,6 +472,8 @@ internal sealed partial class CoopController
             if (_syncSaving)
                 foreach (var id in Objects.RecoverUnshown(Session.LocalIdentity.Player))
                     AddChat($"Sync: PC {id.Value} wasn't shown on your game; it's in the storage cupboard.");
+            // Owner decision (4d): what a reload closes (clips over installed sticks) is closed on both games first.
+            if (!_syncSaving) Mechanisms?.SettleForCapture();
             if (!_syncSaving) Objects.Assembly.BindMissing();
             Objects.CaptureHost(Session.LocalIdentity.Player, repair: _syncSaving);
             // A /sync save takes what the host's game shows; any other save must match the shared peripherals.
@@ -613,6 +620,8 @@ internal sealed partial class CoopController
         Lifecycle = new NativePcLifecycle(this, world);
         Transfers = new NativePcTransfers(this, world);
         Workstations = new NativeWorkstations(this, world);
+        Mechanisms = new NativeMechanisms(this, world);
+        Panels = new NativeCaseAccess(this, world);
         world.Register(CommandTypes.DiagnosticMarker, Markers);
         world.RegisterState(Markers);
         world.RegisterState(Objects);
@@ -622,6 +631,8 @@ internal sealed partial class CoopController
         world.Register(CommandTypes.PcTransfer, Transfers.Handler);
         world.Register(CommandTypes.PeripheralSwap, Workstations.Model);
         world.Register(CommandTypes.AssemblyManifest, Objects.Assembly.Handler);
+        world.Register(CommandTypes.Mechanism, Mechanisms.Handler);
+        world.Register(CommandTypes.CasePanel, Panels.Handler);
         // Optional: saves from before 0.10 have no workstation state; the host binds it from its loaded world.
         world.RegisterState(Workstations, optional: true);
         world.Rejected += (OperationId op, RejectReason reason, string text) => Plugin.Logger.LogWarning($"[world] {op} refused: {reason} {text}");

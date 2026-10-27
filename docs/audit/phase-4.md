@@ -341,3 +341,125 @@ The actual captured default-board manifests also passed the model's disjoint-RAM
 Current model/network suite: **418/418** checks, including shared-read-guard snapshot restoration, host-only first-load manifest publication with held/replayed mutations, integral presence and profile round-trip, same-SKU parent retirement, exact callback authority, explicit repair versions and rejection of a compressible oversized manifest before allocation. Release solution build against real interop: **0 warnings, 0 errors**. Latest logs are `.local/phase4c-tests-final.log` and `.local/phase4c-build.log`.
 
 Preview-barrier and fresh-process results are recorded in `.local/phase4-C4c12/preview-result.json` and `fresh-result.json`; the first process's reports were retained under `pre-resume-host`. All owned C4c01–C4c12 runs are finalized, with owner-save hashes unchanged. No commit or push. The remaining broader category/variant, native commit/cancel, callback, inventory and presentation acceptance belongs to 4d–4f; custom-loop/cable-accessory editing remains the owner's explicitly deferred gap.
+
+## Task 4d: host-ordered latches
+
+October 27, 2026. Started at the owner's request after 4c was committed. **Status: implemented (version 0.13); model-tested and owner-checked in runs C4d01–C4d08** ([results](#owned-game-checks-c4d01c4d08-october-27-2026)). The scope grew to [case panels and an unshared-edit gate](#case-access-and-the-unshared-edit-gate-owner-decisions-october-27-2026). Other component install/remove is refused in co-op until 4e.
+
+### Owner decisions (October 27, 2026)
+
+- **Scope:** 4d covers every click-toggled latch: RAM clips, AM3/AM4 CPU levers, the LGA shield, M.2 covers, PCI cover locks, heatsink pins and hinged doors. Side/front panels and PCI shields are removals through the component edit lifecycle, so they belong to 4e. Screw-held covers (`ScrewPin`) are refused with a notice until a case that has one is probed. The default workshop and the C4b03 Kolink case have none.
+- **Open clips over installed sticks:** follow the game. The native load closes them (4b N3), so they are live-only state. Before every host save and snapshot, the host closes them on both games. A PC that leaves its bench has them closed in the shared state, because its next load closes them natively. A clip on an empty slot stays open across saves and moves.
+
+### Native findings this task depends on
+
+All of these were read in the decompile; none is running-game evidence yet.
+
+- **One gesture.** The player's latch click is `WorkingOnComputerState.PinTick`, and in the Cable tool `LayCableState.PinTick`. On a press, `PinTick` calls `IPin.TogglePin` directly, or for a latch whose `RespondsToLongClick` is true it registers a `GameController.DoAfterLongPress` callback (`<>c__DisplayClass51_0/32_0.<PinTick>b__0`) that calls `TogglePin` later. No other method dispatches `IPin.TogglePin`. `SaveLoadSystem.LoadComputerToSlotAsync`/`OpenPins` use `IsOpen`/`PopOpen`, and the vacuum's `GetPanelAsPin` only reads.
+- **Toggle semantics.** `Pin.TogglePin` does nothing when `IsBlocked()` or its animation coroutine is still set; otherwise it starts `PinAnimation`. `AM3Slot.TogglePin` checks `IsBlocked`, then starts `OpenSocket` or `CloseSocket` unless it is animating. `LGASlot.TogglePin` checks `IsBlocked` and sets the opening/closing flags its `Update` animates. Every refusal is silent, which matches 4b's "a toggle call is an attempt, not a result". `IsBlocked` reads live state: blocking components, water connectors and USB blocking.
+- **Direct state.** `Pin.Close()` closes instantly (it sets the transform and clears the open flag). `PopOpen()` opens through the animation enumerator without input. Neither socket class has a direct close.
+- **Latch classes.** `CPin` subclasses are `Pin`, `ScrewPin : Pin`, `AM3Slot` and `LGASlot`; each declares its own `TogglePin`.
+- **Internal toggles.** The game's internal `TogglePin` calls (an install closing its clips, the load's closure of clips over installed RAM) run outside `PinTick`, so they pass through unchanged.
+
+### Implemented contracts
+
+- [`MechanismWorld`](../../src/PCBS2Coop.Network/Mechanisms.cs), command type **7**:
+  - **Toggle** names the actor epoch, PC, latch resource, the version the requester saw and the state asked for. The host refuses it in these cases:
+    - the requester is not working on that PC, or the PC is not on a bench;
+    - the resource is not a pin or socket, or is a linked latch (coupled child pins, none in the default workshop);
+    - the version is stale ("That latch was just changed");
+    - the PC has a pending move;
+    - another player's edit claim covers the latch or a part it guards (that claim's holder may still toggle it);
+    - the host's game reports the latch missing, moving, blocked, shown differently or screw-held.
+  - **Settle** is host-only. It lists exact (PC, latch, version) rows of open latches over occupied slots and closes them. It is refused while any pending claim covers one of them.
+  - On both peers, `Apply` repeats the model checks against the same revision; a difference is a divergence.
+- [`AssemblyResource.LoadCloses`](../../src/PCBS2Coop.Network/AssemblyResources.cs): a slot lists the latches the native load closes while it is occupied. `NativeAssembly` fills it from the slot's `RAMSlot` clip groups, the exact set 4b N3 observed. It is validated (slots only, pin/socket members of the same PC, distinct) and serialized in object state and manifests. Changing it requires a version advance. `AssemblyResources.SettleLoad` closes them deterministically; `PcTransfers.Apply` uses it for every PC leaving a bench.
+- [`NativeMechanisms`](../../src/PCBS2Coop.Plugin/NativeMechanisms.cs):
+  - **Gesture boundary.** A Harmony prefix/finalizer on the two `PinTick`s and their long-press callbacks marks the gesture (each native function hooked once). Every `TogglePin` implementation is hooked once. A toggle inside a gesture that would do nothing natively (blocked or still moving) passes through. Otherwise it becomes a request and the native call is skipped. Repeats of a held button while that latch is pending or still being shown are dropped silently.
+  - **Showing an accepted toggle.** Both games run the native animated toggle inside `NativeProjection.Run`. Where it is blocked on that game only, the state is set directly (`PopOpen`/`Close`). A toggle that can't be shown within 5 s reports `ProjectionFailed`. A newer accepted state replaces one still being shown, and a settle that arrives during an animation waits for it, then closes.
+  - **Save and snapshot barrier.** A pending or still-moving latch makes `NativeAssembly.CanCapture` false and `CheckStable` refuse: snapshots wait, and a refused save is not reported as out of sync. The deferred drop autosave waits too. `BeforeHostSave` and `TakeSnapshot` call `SettleForCapture` before the capture. `/sync` keeps its existing native close (`PrepareReload`) and repair capture.
+  - **Rebind check.** `NativeAssembly.Update` no longer faults when a freshly loaded PC is still running the native load's latch animation; it checks again later.
+- Probe (opt-in, `PCBS2COOP_PROBE=3`/`4`): `latch-report` writes every latch's shared and native state, plus the object hash. `latch-request:<pc>:<latch>[:version[:open]]` submits a pinned request for race and stale cases (not gesture evidence).
+
+### Model evidence
+
+`dotnet run --project tests/PCBS2Coop.Network.Tests -c Release --no-restore`: **466/466** checks (26 in `MechanismTests`, 22 in `PanelTests`). They cover:
+
+- requester and observer showing a toggle once;
+- a contested lever and disjoint latches on one PC;
+- refusals: not working, linked, a slot named as a latch, another PC, stale epoch;
+- claim interaction (the other player's claim refuses, its holder is allowed);
+- a host-native refusal, malformed and trailing payloads, duplicate delivery, hold/replay after the snapshot mark;
+- settle: host-only, waits for a claim, closes only occupied-slot clips on both games, refuses a stale repeat;
+- pickup settling clips, and a carried PC's latches refused;
+- `LoadCloses` round-trip and validation.
+
+Release solution build against real interop: **0 warnings, 0 errors** (deployment disabled). Version **0.13**: new command type and object/manifest field; older co-op pairs are refused until phase 8 migration.
+
+### Planned owned game checks (as first planned; results below)
+
+Two owned instances, disposable saves, companion-style (the owner clicks; Claude launches, reads `latch-report`/`summary-report` and logs).
+
+| Check | What passes |
+| --- | --- |
+| D1 bind/join | Both games' `latch-report` and object hashes match after late join; no `[hooks]` error; startup logs which gesture/toggle functions share code. |
+| D2 toggles by hand | Each player opens and closes a RAM clip, an M.2 cover, the LGA shield and an AM4 lever. The other game shows the animation, and both reports match. One toggle from the Cable tool. |
+| D3 contested/stale | Both players click one lever together, or a pinned stale `latch-request`: one change lands and the other player sees the refusal notice. Repeated held clicks send one request. |
+| D4 blocked | An M.2 cover under a GPU: no request, no change. A pinned request for a blocked latch is refused by the host. |
+| D5 settle | Open a clip over an installed stick, then a host save, late join and pick up/drop: the clip closes on both games, a clip on an empty slot stays open, and the save/sidecar pair and Continue match. |
+| D6 interruptions | A toggle during the other player's join, a disconnect mid-animation, fresh-process Continue and `/sync` after a forced fault; out-of-sync is reported only for real faults. |
+
+### Risks to watch
+
+- `PinTick` runs every frame in work mode; the prefix/finalizer only adjust a counter.
+- The host as requester runs the native toggle re-entrantly inside its own intercepted `TogglePin` (accepted synchronously).
+- A native autosave that does not go through the deferred path is refused while a latch moves (SAVE FAILED until the next save).
+- An install's automatic clip closing is a component edit and stays unsynchronized until 4e, so captures still refuse it, as in 4c.
+- `LoadCloses` covers only `RAMSlot` clip groups. Other `closePins` load behavior is unprobed.
+
+### Case access and the unshared-edit gate (owner decisions, October 27, 2026)
+
+The first game runs showed that RAM clips and M.2 covers are reached by taking a side panel off, and an unshared panel removal put the host out of sync (C4d01, C4d02). The owner then decided:
+
+- **Case panels are shared in 4d.** This covers the integral parts in `CASE_PART_REQUIRED`/`CASE_PART_OPTIONAL` slots: side, front and top panels, filters and the drive bays some cases build in. PCI covers (`PCI_COVER`) stay in 4e.
+- **Every other install or removal is refused in co-op** with a notice, before it starts, until 4e shares it.
+- **Clips over installed sticks still close at every host save,** even while someone works on that PC (owner: keep as is).
+
+Implementation:
+
+- [`CasePanelWorld`](../../src/PCBS2Coop.Network/CasePanels.cs), command type **8**: remove, or refit with the slot's own panel SKU, naming the version the requester saw. Refused when:
+  - the requester isn't working on that PC, or the slot isn't a panel slot (no `IntegralHome`);
+  - the version is stale, or the SKU belongs to another slot;
+  - something is mounted on the panel;
+  - another player's claim covers the panel or anything it carries or guards, or the PC is moving;
+  - the host's game can't do it (`CanBeUninstalled`, `IsUninstallingPathBlocked`, `CanFillWithItem`, panel asset not loaded).
+- **Model.** `AssemblyResource.IntegralHome` (the panel SKU) and `Carries` (the screws, latches and slots physically on the panel, from `Transform.IsChildOf`). While a panel is off, what it carries is **dormant**: kept with its IDs, expected absent natively, restored on refit with fresh mechanical state and advanced versions. A latch on a removed panel can't be toggled. `/sync` repair keeps a removed panel's home and dormant resources.
+- **Bindings.** Inside a fitted panel, paths use a fixed `@panel` token: a refitted panel is a new object named after its part prefab (`Lid_Left` at load, `Case_MSI_6` after a refit; C4d07).
+- **Showing a change.** The requester re-runs the game's own long-press callback (animation, automatic screws, inventory) if its work state is unchanged. The other game changes the panel directly:
+  - removal: `OnChangePart` → `SetComponentNull` → `DestroyImmediate` → `UpdateGameStatus`/`PostChangePart`, plus `AddItemToInventory`;
+  - refit (the load path, `DoAutoInstantiation`): the part from Removed Components or a new instance → `InstantiatePreloadedPart(LoadingPC: true)` → `SetComponent` → `OnChangePart` → `RebuildSlots`/`FixupBlockers` → `UpdateGameStatus`/`PostChangePart`.
+  - The PC is rebound only after the slot shows the result and no edit state is running (the requester's edit starts as a coroutine; C4d03), with a 20 s limit.
+- **Gate** ([`NativeCaseAccess`](../../src/PCBS2Coop.Plugin/NativeCaseAccess.cs)): Harmony prefixes on the long-press callbacks, each native function hooked once.
+  - `DisassemblyTick` b__0/1/2 (removal) and b__3 (water pipe): a panel removal becomes a request; anything else is refused.
+  - `AssemblyTick` b__0 (install commit): a panel refit becomes a request; anything else is refused.
+  - `ItemDisplay.InstallButtonClicked` while working on a case: only that case's removed panels can be selected. Peripheral swaps and case spawns are untouched.
+- **Manifest fix (affects 4c).** `Slot.m_dynamicBlockedBy` and `m_dynamicComponentCollidesWith` are live caches the game fills only after someone works on that PC on that game. C4d06 reproduced a host save refused at bench 2's CPU slot: the host had captured an empty list at startup, and after work mode the water block appeared. They are no longer manifest guards. Live blockers are checked by the host's game when a request is validated; 4e needs its own live blocker check for component edits.
+- **Mismatch messages** now name the differing field (shared vs native).
+
+Version **0.13**: command types 7 and 8, `LoadCloses`, `IntegralHome`, `Carries` and the `@panel` binding change object state and manifests.
+
+### Owned game checks C4d01–C4d08 (October 27, 2026)
+
+Two owned instances on disposable saves. The owner did the in-game actions; Claude launched the instances and read the reports. The owner's 12 save files were unchanged at every stop.
+
+| Run | Result |
+| --- | --- |
+| C4d01 | **D1 passed** (late join, identical object/activity hashes, 25 latches). Guest M.2 cover and RAM clip toggles shown on the host. Then the host's game removed bench 2's side panel by accident (unshared), and the save check refused it. |
+| C4d02 | D1 passed again. **D2:** guest clip open/close and M.2 cover, and a host DDR3 bracket, all shown on both games. The Cable tool does not toggle RAM brackets (latches use the Remove tool). Panel removals on both games were unshared, so the host's save check refused them; this led to the scope change. |
+| C4d03 | First panel build: the host's projection worked, but the guest rebound before its own animated removal ran (fixed: wait for the result). |
+| C4d04 | **Guest panel removal shown on the host;** both clips; RAM removal and GPU selection refused with notices. A host save then failed at bench 2's CPU slot. |
+| C4d05–C4d06 | Solo reproduction: projected removal and work mode alone passed; leaving work mode after working on bench 2 reproduced the failure, which named the dynamic-blocker guard (fixed above). C4d05 also locked the UI by starting probe work mode under the welcome dialog (probe setup error, not the mod). |
+| C4d07 | With the fix, the same sequence saved cleanly with clips settled. **D3:** a stale latch request was refused, and a same-moment race on one cover produced one change and one refusal. **D4:** the cover under the GPU was refused by the host. The first refit then failed on the renamed panel object (fixed with `@panel`). |
+| C4d08 | **Guest removed, refitted, removed and refitted the left panel; both clips; three refusals** (RAM, GPU), with no fault and matching hashes. Host removed bench 3's left panel and opened a bracket, then **`/sync`**: both games reloaded at generation 2 with matching hashes, the full assembly check passed on both, the panel stayed off with its carried resources kept, and the clips were closed. |
+
+Not run, by owner decision (from now on, code first and the owner tests the whole feature later): a refit by the host after `/sync`, a disconnect mid-animation, fresh-process Continue with a panel off, held-button repeats, screw-held covers (none in the default workshop) and AM4/LGA levers by hand (blocked by the installed coolers).

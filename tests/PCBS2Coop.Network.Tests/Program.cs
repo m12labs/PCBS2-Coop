@@ -12,6 +12,8 @@ AssemblyResourceTests.Run(t);
 PcLifecycleTests.Run(t);
 PcTransferTests.Run(t);
 WorkstationTests.Run(t);
+MechanismTests.Run(t);
+PanelTests.Run(t);
 WorldSyncTests.Run(t);
 SnapshotTests.Run(t);
 TransportTests.Run(t);

@@ -21,6 +21,14 @@ public sealed record AssemblyResource(NetObjectId Id, NetObjectId Parent, string
     /// <summary>Integral panels/covers and generated radiator fans may have ephemeral native PartInstances.
     /// Nonempty is the installed child SKU; absence is empty. They are not standalone saved part records.</summary>
     public string IntegralPart { get; init; } = "";
+    /// <summary>Slots only: latches the native load closes while this slot is occupied (4b N3: RAM clips). An open
+    /// one is live-only state; saves, snapshots and a PC leaving its bench settle it closed (owner decision, 4d).</summary>
+    public IReadOnlyList<NetObjectId> LoadCloses { get; init; } = Array.Empty<NetObjectId>();
+    /// <summary>Integral case-panel slots: the panel SKU this slot holds when fitted (kept while it is removed).</summary>
+    public string IntegralHome { get; init; } = "";
+    /// <summary>Resources physically on that panel (its screws, latches, nested slots). While the panel is removed they
+    /// are dormant: kept with their IDs, absent natively, restored on refit (task 4d case access).</summary>
+    public IReadOnlyList<NetObjectId> Carries { get; init; } = Array.Empty<NetObjectId>();
 }
 
 public sealed record AssemblyClaimResources(IReadOnlyList<NetObjectId> Writes, IReadOnlyList<NetObjectId> All);
@@ -38,7 +46,9 @@ public static class AssemblyResources
     internal static IReadOnlyList<AssemblyResource> Freeze(IReadOnlyList<AssemblyResource> resources) =>
         Array.AsReadOnly(resources.OrderBy(r => r.Id.Value).Select(r => r with
         { Dependencies = Array.AsReadOnly(r.Dependencies.OrderBy(d => d.Value).ToArray()),
-            Coupled = Array.AsReadOnly(r.Coupled.OrderBy(d => d.Value).ToArray()) }).ToArray());
+            Coupled = Array.AsReadOnly(r.Coupled.OrderBy(d => d.Value).ToArray()),
+            LoadCloses = Array.AsReadOnly(r.LoadCloses.OrderBy(d => d.Value).ToArray()),
+            Carries = Array.AsReadOnly(r.Carries.OrderBy(d => d.Value).ToArray()) }).ToArray());
 
     internal static void Validate(PcFact pc, Action<NetObjectId> add)
     {
@@ -68,6 +78,19 @@ public static class AssemblyResources
             if (new[] { r.Dependencies, r.Coupled }.Any(ds => ds.Count > MaxClaimResources || ds.Distinct().Count() != ds.Count ||
                 ds.Any(d => d == r.Id || (!parts.Contains(d) && !resources.ContainsKey(d)))))
                 Bad("Invalid assembly dependency.");
+            if (r.LoadCloses.Count > 0 && (r.Kind != AssemblyResourceKind.Slot || r.LoadCloses.Count > MaxClaimResources ||
+                r.LoadCloses.Distinct().Count() != r.LoadCloses.Count ||
+                r.LoadCloses.Any(d => !resources.TryGetValue(d, out var pin) || pin.Kind is not (AssemblyResourceKind.Pin or AssemblyResourceKind.Socket))))
+                Bad("Invalid load-closed latch list.");
+            if (r.IntegralHome != "")
+            {
+                Text(r.IntegralHome);
+                if (r.Kind != AssemblyResourceKind.Slot || (r.IntegralPart != "" && r.IntegralPart != r.IntegralHome)) Bad("Invalid integral panel home.");
+            }
+            else if (r.IntegralPart != "" && r.Carries.Count > 0) Bad("Invalid integral panel home.");
+            if (r.Carries.Count > 0 && (r.IntegralHome == "" || r.Carries.Count > MaxClaimResources || r.Carries.Distinct().Count() != r.Carries.Count ||
+                r.Carries.Any(d => d == r.Id || !resources.ContainsKey(d))))
+                Bad("Invalid panel-carried resource list.");
         }
         // A generated/proxy part can have multiple containing slots; every ownership branch must be acyclic.
         var parents = pc.Resources.Where(r => !r.Occupant.IsNone).GroupBy(r => r.Occupant)
@@ -159,6 +182,33 @@ public static class AssemblyResources
         return Convert.ToHexString(SHA256.HashData(w.CopyData()));
     }
 
+    /// <summary>Resources on removed panels: kept in the model, absent natively.</summary>
+    public static HashSet<NetObjectId> Dormant(PcFact pc)
+    {
+        var resources = pc.Resources.ToDictionary(r => r.Id);
+        var dormant = new HashSet<NetObjectId>();
+        void Add(AssemblyResource slot)
+        { foreach (var id in slot.Carries) if (dormant.Add(id) && resources[id].Carries.Count > 0) Add(resources[id]); }
+        foreach (var slot in pc.Resources.Where(r => r.IntegralHome != "" && r.IntegralPart == "")) Add(slot);
+        return dormant;
+    }
+
+    /// <summary>Open latches the native load would close (their slot is occupied), in ID order.</summary>
+    public static NetObjectId[] LoadClosed(PcFact pc)
+    {
+        var resources = pc.Resources.ToDictionary(r => r.Id);
+        return pc.Resources.Where(r => !r.Occupant.IsNone).SelectMany(r => r.LoadCloses)
+            .Where(id => resources[id].Open).Distinct().OrderBy(id => id.Value).ToArray();
+    }
+
+    /// <summary>The same PC with those latches closed, each advancing its version. Deterministic on both peers.</summary>
+    public static PcFact SettleLoad(PcFact pc)
+    {
+        var closing = LoadClosed(pc).ToHashSet();
+        return closing.Count == 0 ? pc : pc with { Resources = pc.Resources.Select(r => closing.Contains(r.Id)
+            ? r with { Open = false, Version = checked(r.Version + 1) } : r).ToArray() };
+    }
+
     internal static void Write(NetDataWriter w, AssemblyResource r)
     {
         w.Put((byte)r.Kind); r.Id.Write(w); r.Parent.Write(w); w.Put(r.Binding); w.Put(r.NativeType); w.Put(r.Version);
@@ -166,6 +216,8 @@ public static class AssemblyResources
         w.Put(r.Dependencies.Count); foreach (var d in r.Dependencies) d.Write(w);
         w.Put(r.Coupled.Count); foreach (var d in r.Coupled) d.Write(w);
         w.Put(r.IntegralPart);
+        w.Put(r.LoadCloses.Count); foreach (var d in r.LoadCloses) d.Write(w);
+        w.Put(r.IntegralHome); w.Put(r.Carries.Count); foreach (var d in r.Carries) d.Write(w);
     }
 
     internal static AssemblyResource Read(NetDataReader r)
@@ -177,8 +229,14 @@ public static class AssemblyResources
         var dependencies = new NetObjectId[n]; for (var i = 0; i < n; i++) dependencies[i] = NetObjectId.Read(r);
         var c = r.GetInt(); if (c is < 0 or > MaxClaimResources) Bad("Invalid coupled resource count.");
         var linked = new NetObjectId[c]; for (var i = 0; i < c; i++) linked[i] = NetObjectId.Read(r);
+        var integral = r.GetString(1024);
+        var l = r.GetInt(); if (l is < 0 or > MaxClaimResources) Bad("Invalid load-closed latch count.");
+        var closes = new NetObjectId[l]; for (var i = 0; i < l; i++) closes[i] = NetObjectId.Read(r);
+        var home = r.GetString(1024);
+        var cn = r.GetInt(); if (cn is < 0 or > MaxClaimResources) Bad("Invalid panel-carried resource count.");
+        var carries = new NetObjectId[cn]; for (var i = 0; i < cn; i++) carries[i] = NetObjectId.Read(r);
         return new(id, parent, binding, type, kind, occupant, open, rotation, offset, dependencies)
-            { Version = version, Coupled = linked, IntegralPart = r.GetString(1024) };
+            { Version = version, Coupled = linked, IntegralPart = integral, LoadCloses = closes, IntegralHome = home, Carries = carries };
     }
 
     private static void Text(string s)

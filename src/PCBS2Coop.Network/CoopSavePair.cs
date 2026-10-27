@@ -48,7 +48,8 @@ public static class CoopSavePair
             var r = new NetDataReader(data);
             if (r.GetULong() != Magic) throw new InvalidDataException("Unsupported co-op save format.");
             var version = r.GetString(128);
-            // 0.12 adds per-PC assembly resources and edit binding stamps to the world state. The older
+            // 0.12 adds per-PC assembly resources and edit binding stamps to the world state; 0.13 adds the latches
+            // a native load closes. The older
             // object/activity codecs are incompatible; migration belongs to phase 8, never implicit ID minting.
             if (version != ModVersion.Value) throw new InvalidDataException("Unsupported co-op save version. This build requires a matching-version co-op save; older saves need migration.");
             var size = r.GetInt(); var hash = new byte[32]; r.GetBytes(hash, hash.Length);

@@ -32,11 +32,19 @@ internal static class GamePatches
             transfers.PatchAll(typeof(NativeProjection.AutosaveDeferral));
             new Harmony(Plugin.Guid + ".workstations").PatchAll(typeof(NativeWorkstations.SwapIntercept));
             new Harmony(Plugin.Guid + ".assembly-preview").PatchAll(typeof(NativeAssembly.PreviewTrace));
+            var latches = new Harmony(Plugin.Guid + ".latches");
+            latches.PatchAll(typeof(NativeMechanisms.GestureScope));
+            latches.PatchAll(typeof(NativeMechanisms.ToggleIntercept));
+            var panels = new Harmony(Plugin.Guid + ".panels");
+            panels.PatchAll(typeof(NativeCaseAccess.RemovalIntercept));
+            panels.PatchAll(typeof(NativeCaseAccess.PipeRemovalIntercept));
+            panels.PatchAll(typeof(NativeCaseAccess.InstallIntercept));
+            panels.PatchAll(typeof(NativeCaseAccess.SelectionIntercept));
             foreach (var method in Harmony.GetAllPatchedMethods())
                 if (FoldedWith(method) is { } other)
                     Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");
             Ready = true;
-            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers, peripherals).");
+            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
     }

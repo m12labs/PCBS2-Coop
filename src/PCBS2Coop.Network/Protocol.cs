@@ -122,6 +122,10 @@ public static class CommandTypes
     /// <summary>Host-ordered peripheral replacement at a workstation (<see cref="WorkstationWorld"/>).</summary>
     public const ushort PeripheralSwap = 5;
     public const ushort AssemblyManifest = 6;
+    /// <summary>Host-ordered latch toggles and the host's load settle of latches (<see cref="MechanismWorld"/>).</summary>
+    public const ushort Mechanism = 7;
+    /// <summary>Host-ordered removal and refitting of integral case panels (<see cref="CasePanelWorld"/>).</summary>
+    public const ushort CasePanel = 8;
 }
 
 /// <summary>World-space snapshot of one player. Position is the feet (bottom of the character controller).</summary>

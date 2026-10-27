@@ -257,6 +257,36 @@ internal sealed class Phase3Probe
             world.Submit(Network.CommandTypes.PeripheralSwap, Network.WorkstationWorld.Swap(coop.Activity.Get(world.Local)!.Epoch, bench, slot, from, bits[3]), out var op);
             Event("direct-request", new { purpose = "pinned peripheral intent for race validation, not gesture evidence", command, op = op.ToString() });
         }
+        else if (command == "latch-report")
+        {
+            var coop = runner.Coop;
+            var result = new { mechanisms = coop.Mechanisms.Report(), busy = coop.Mechanisms.Busy, objects = Convert.ToHexString(SHA256.HashData(coop.Objects.Model.ToBytes())) };
+            File.WriteAllText(Path.Combine(_dir, "latch-report.json"), JsonSerializer.Serialize(result)); Event("latch-report", result);
+        }
+        else if (command.StartsWith("latch-request:", StringComparison.Ordinal))
+        {
+            // Pinned intent (optionally a stale version) for race/refusal checks; bypasses the gesture deliberately.
+            var coop = runner.Coop; var world = coop.Session.World; var bits = command.Split(':');
+            if (bits.Length is < 3 or > 5) throw new ArgumentException("latch-request:<pc>:<latch>[:version[:open]]");
+            var pc = new Network.NetObjectId(ulong.Parse(bits[1])); var id = new Network.NetObjectId(ulong.Parse(bits[2]));
+            var latch = coop.Objects.Model.Pcs.Single(p => p.Id == pc).Resources.Single(r => r.Id == id);
+            var version = bits.Length >= 4 ? ulong.Parse(bits[3]) : latch.Version;
+            var open = bits.Length == 5 ? bool.Parse(bits[4]) : !latch.Open;
+            world.Submit(Network.CommandTypes.Mechanism, Network.MechanismWorld.Toggle(coop.Activity.Get(world.Local)!.Epoch, pc, id, version, open), out var op);
+            Event("direct-request", new { purpose = "pinned latch intent for race validation, not gesture evidence", command, op = op.ToString() });
+        }
+        else if (command.StartsWith("panel-request:", StringComparison.Ordinal))
+        {
+            // Pinned case-panel intent (empty part = remove); bypasses the gesture deliberately, so both games project directly.
+            var coop = runner.Coop; var world = coop.Session.World; var bits = command.Split(':');
+            if (bits.Length is < 3 or > 4) throw new ArgumentException("panel-request:<pc>:<slot>[:part]");
+            var pc = new Network.NetObjectId(ulong.Parse(bits[1])); var id = new Network.NetObjectId(ulong.Parse(bits[2]));
+            var slot = coop.Objects.Model.Pcs.Single(p => p.Id == pc).Resources.Single(r => r.Id == id);
+            var epoch = coop.Activity.Get(world.Local)!.Epoch;
+            world.Submit(Network.CommandTypes.CasePanel, bits.Length == 4 ? Network.CasePanelWorld.Refit(epoch, pc, id, slot.Version, bits[3])
+                : Network.CasePanelWorld.Remove(epoch, pc, id, slot.Version), out var op);
+            Event("direct-request", new { purpose = "pinned case-panel intent, not gesture evidence", command, op = op.ToString() });
+        }
         else if (command.StartsWith("perif-swap:", StringComparison.Ordinal))
         {
             // The native SwapPerif call the inventory's install button makes, so the production intercept handles it.
