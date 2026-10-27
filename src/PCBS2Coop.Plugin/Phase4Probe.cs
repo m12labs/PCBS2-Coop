@@ -19,6 +19,7 @@ internal sealed class Phase4Probe
     private readonly int _thread = Environment.CurrentManagedThreadId;
     private string _lastState;
     private bool _sampling, _autoNext, _manualNext;
+    private readonly List<(Slot Slot, ComponentPC Preview)> _directPreviews = new();
     private long _manualState;
     private bool _blockInput = true;
     private readonly List<(Rewired.Controller Controller, bool Enabled)> _controllers = new();
@@ -109,9 +110,80 @@ internal sealed class Phase4Probe
                 break;
             case "p4-report":
                 Report(bits.Length > 1 ? bits[1] : "capture", bits.Length > 2 && bits[2] == "save"); break;
+            case "p4-assembly":
+            {
+                var objects = runner.Coop.Objects;
+                objects.Assembly.CheckMeshes();
+                objects.CheckProjection(runner.Coop.Session.World.Local, runner.Coop.Session.LocalIdentity.Player);
+                Emit("assembly-check", new { passed = true, pcs = objects.Model.Pcs.Select(pc => new
+                {
+                    id = pc.Id.Value, resources = pc.Resources.Count, integral = pc.Resources.Count(r => r.IntegralPart != ""),
+                    mechanics = pc.Resources.Count(r => r.Kind != PCBS2Coop.Network.AssemblyResourceKind.Slot),
+                    slots = pc.Resources.Where(r => r.Kind == PCBS2Coop.Network.AssemblyResourceKind.Slot).Select(r => new
+                        { id = r.Id.Value, parent = r.Parent.Value, r.Binding, occupant = r.Occupant.Value, r.IntegralPart })
+                }) });
+                break;
+            }
             case "p4-catalog":
                 Write("catalog.json", CareerStatus.Get().GetInventory().ToArray().Where(p => p != null)
                     .Select(p => new { sku = p.GetPartId(), type = p.GetPart()?.m_type.ToString(), nativeType = p.GetIl2CppType().FullName }).ToArray()); break;
+            case "p4-preview":
+            case "p4-clear-preview":
+            {
+                var work = GameController.Get().GetCurrentState()?.TryCast<WorkingOnComputerState>() ?? throw new InvalidOperationException("Work on a PC first.");
+                var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                if (bits[0] == "p4-preview")
+                {
+                    var part = PartInstance.NewPartInstance(bits[1], 0, null);
+                    if (bits.Length > 2 && bits[2] == "direct")
+                    {
+                        if (!PartsDatabase.s_instance.HasLoadedPart(part.GetPart(), out var loaded)) throw new InvalidOperationException("Preload this asset first.");
+                        var slot = work.Case.ssdSlots.First(s => s != null && s.GetComponent() == null);
+                        Direct(command, "native InstantiatePreloadedPart Placeholder=true on an empty SSD slot; bypasses inventory eligibility and does not commit");
+                        var preview = slot.InstantiatePreloadedPart(part, loaded, false, true, false, false);
+                        _directPreviews.Add((slot, preview));
+                        Emit("preview-mode", new { present = NativeAssembly.HasPreview });
+                        break;
+                    }
+                    Direct(command, "native PopulatePlaceholders selection path, no component commit or inventory gesture");
+                    GameController.Get().selectedItem = part;
+                    typeof(WorkingOnComputerState).GetMethod("PopulatePlaceholders", flags).Invoke(work, new object[] { part.ShallowCopy() });
+                }
+                else
+                {
+                    Direct(command, "native ClearPlaceholders teardown, no component mutation");
+                    foreach (var (slot, preview) in _directPreviews)
+                        if (preview != null && NativeAssembly.IsPreview(preview))
+                        {
+                            if (slot != null && slot.GetComponent()?.Pointer == preview.Pointer) slot.RemoveComponent();
+                            if (preview != null) Object.Destroy(preview.gameObject);
+                        }
+                    _directPreviews.Clear();
+                    typeof(WorkingOnComputerState).GetMethod("ClearPlaceholders", flags).Invoke(work, null);
+                    GameController.Get().selectedItem = null;
+                }
+                Emit("preview-mode", new { present = NativeAssembly.HasPreview });
+                break;
+            }
+            case "p4-create":
+            {
+                var part = CareerStatus.Get().GetInventory().ToArray().First(p => p != null && p.GetPartId() == bits[1] && p.GetPart().m_type == PartDesc.Type.CASE);
+                Direct(command, "pinned catalog creation intent through the existing host-ordered lifecycle; bypasses inventory click");
+                runner.Coop.Lifecycle.RequestCreate(part);
+                break;
+            }
+            case "p4-disconnect":
+            {
+                var mesh = Object.FindObjectOfType<SaveLoadSystem>().benchSlots[int.Parse(bits[1])].GetCaseInSlot();
+                if (mesh == null) throw new InvalidOperationException("No PC on this bench.");
+                var connectors = mesh.GetComponentsInChildren<PowerConnector>(true).Select(c => c.Pointer).ToHashSet();
+                var cable = mesh.currentCables.ToArray().First(c => c != null && c.m_start != null && c.m_end != null &&
+                    connectors.Contains(c.m_start.Pointer) && connectors.Contains(c.m_end.Pointer));
+                Direct(command, "native internal-cable disconnect for capture-integrity negative; not phase 5 synchronization");
+                Emit("disconnect-fixture", new { from = cable.m_start.id, to = cable.m_end.id });
+                cable.Uninstall(false, true);
+                break;
+            }
             case "p4-preload":
             {
                 var part = CareerStatus.Get().GetInventory().ToArray().First(p => p != null && p.GetPartId() == bits[1]);

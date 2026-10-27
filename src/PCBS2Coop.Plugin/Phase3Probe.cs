@@ -362,7 +362,7 @@ internal sealed class Phase3Probe
             var host = runner.Coop.Session.LocalIdentity.Player;
             var pcs = expected.Pcs.Select(x => x.Location.Place == Network.PcPlace.Carrier &&
                 (x.Location.Actor != Network.ActorSlot.Host || x.Location.Player != host)
-                ? new Network.PcFact(x.Id, x.Provenance, Network.PcLocation.Storage, x.Parts, x.Links) : x).ToArray();
+                ? x with { Location = Network.PcLocation.Storage } : x).ToArray();
             expected.Replace(expected.WorldId, expected.NextId, expected.Locations, pcs, expected.Retired);
             _identityExpected = expected.ToBytes(); _reloadCopyFixture = command == "identity-fixture-resume";
             File.WriteAllBytes(Path.Combine(_dir, "identity-expected.bin"), _identityExpected);
@@ -380,7 +380,7 @@ internal sealed class Phase3Probe
             var pc = model.Pcs.Last(x => x.Location.Place == Network.PcPlace.Bench);
             var bench = Object.FindObjectOfType<SaveLoadSystem>().benchSlots.Single(x => NativeObjectState.BenchKey(x) == pc.Location.Key);
             var save = bench.GetComputer(true); bench.DestroyComputer();
-            var fixturePc = new Network.PcFact(pc.Id, pc.Provenance, Network.PcLocation.Carried(Network.ActorSlot.Guest, Network.PlayerId.New()), pc.Parts, pc.Links);
+            var fixturePc = pc with { Location = Network.PcLocation.Carried(Network.ActorSlot.Guest, Network.PlayerId.New()) };
             model.Replace(model.WorldId, model.NextId, model.Locations, model.Pcs.Select(x => x.Id == pc.Id ? fixturePc : x), model.Retired);
             coop.Objects.BindCarrierPayload(pc.Id, save);
             Event("direct-setup", new { fixture = "remote actor carrier persistence", pc = pc.Id.Value, sku = save.caseID.GetPartId() });

@@ -121,6 +121,7 @@ public static class CommandTypes
     public const ushort PcTransfer = 4;
     /// <summary>Host-ordered peripheral replacement at a workstation (<see cref="WorkstationWorld"/>).</summary>
     public const ushort PeripheralSwap = 5;
+    public const ushort AssemblyManifest = 6;
 }
 
 /// <summary>World-space snapshot of one player. Position is the feet (bottom of the character controller).</summary>

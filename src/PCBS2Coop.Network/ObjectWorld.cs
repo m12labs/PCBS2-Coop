@@ -14,8 +14,17 @@ public sealed record PcLocation(PcPlace Place, string Key, ActorSlot Actor = Act
 public sealed record PartFact(NetObjectId Id, string Sku, string NativeType);
 /// <summary>Multiple paths may name one part inside a PC (native aliases). Different PCs never share a physical part ID.</summary>
 public sealed record PartLink(string Path, NetObjectId Part);
+/// <summary>Integrity of native assembly side effects that are absent from part topology: installed orientation,
+/// integral case membership and internal cable connections. Full native data remains in the paired game save.</summary>
+public sealed record PcBuildProfile(string Signature, IReadOnlyList<string> InternalConnectors);
 public sealed record PcFact(NetObjectId Id, InstanceProvenance Provenance, PcLocation Location,
-    IReadOnlyList<PartFact> Parts, IReadOnlyList<PartLink> Links);
+    IReadOnlyList<PartFact> Parts, IReadOnlyList<PartLink> Links)
+{
+    // Empty until the native adapter has published the prefab manifest. An empty list is not evidence
+    // that a case has no slots/mechanics, nor permission to synchronize component edits on that PC.
+    public IReadOnlyList<AssemblyResource> Resources { get; init; } = Array.Empty<AssemblyResource>();
+    public PcBuildProfile? BuildProfile { get; init; }
+}
 public sealed record LocationFact(NetObjectId Id, string Key);
 
 /// <summary>Host facts, independent of meshes and save-record pointers. Replace validates the entire candidate
@@ -41,7 +50,7 @@ public sealed class ObjectWorld : IWorldState
         Locations = Array.Empty<LocationFact>(); Pcs = Array.Empty<PcFact>(); Retired = Array.Empty<NetObjectId>();
     }
 
-    public ObjectLookup Lookup(NetObjectId id) => Pcs.Any(x => x.Id == id || x.Parts.Any(p => p.Id == id)) || Locations.Any(x => x.Id == id)
+    public ObjectLookup Lookup(NetObjectId id) => Pcs.Any(x => AssemblyResources.AllIds(x).Contains(id)) || Locations.Any(x => x.Id == id)
         ? ObjectLookup.Live : Retired.Contains(id) ? ObjectLookup.Retired : ObjectLookup.Unknown;
 
     public void Replace(Guid world, ulong next, IEnumerable<LocationFact> locations, IEnumerable<PcFact> pcs, IEnumerable<NetObjectId> retired)
@@ -53,16 +62,48 @@ public sealed class ObjectWorld : IWorldState
             Pcs = Array.AsReadOnly(pcs.OrderBy(x => x.Id.Value).Select(x => x with
             {
                 Parts = Array.AsReadOnly(x.Parts.OrderBy(p => p.Id.Value).ToArray()),
-                Links = Array.AsReadOnly(x.Links.OrderBy(p => p.Path, StringComparer.Ordinal).ToArray())
+                Links = Array.AsReadOnly(x.Links.OrderBy(p => p.Path, StringComparer.Ordinal).ToArray()),
+                Resources = AssemblyResources.Freeze(x.Resources),
+                BuildProfile = x.BuildProfile == null ? null : x.BuildProfile with
+                    { InternalConnectors = Array.AsReadOnly(x.BuildProfile.InternalConnectors.OrderBy(c => c, StringComparer.Ordinal).ToArray()) }
             }).ToArray()),
             Retired = Array.AsReadOnly(retired.OrderBy(x => x.Value).ToArray())
         };
         candidate.Validate();
         if (WorldId == world && (next < NextId || Retired.Any(x => !candidate.Retired.Contains(x))))
             Bad("An allocator/tombstone cannot move backwards in the same world.");
+        if (WorldId == world)
+        {
+            var oldIdentities = Identities().ToDictionary(x => x.Id, x => x.Identity);
+            foreach (var (id, identity) in candidate.Identities())
+                if (oldIdentities.TryGetValue(id, out var oldIdentity) && oldIdentity != identity)
+                    Bad("A live ID cannot change physical identity or object kind.");
+            // A prefab path belongs to this physical parent incarnation for its entire lifetime.
+            // A replacement must retire the old resource and allocate a new ID, even for the same SKU/path.
+            var oldResources = Pcs.SelectMany(pc => pc.Resources).ToDictionary(r => r.Id);
+            foreach (var pc in candidate.Pcs)
+                foreach (var r in pc.Resources)
+                    if (oldResources.TryGetValue(r.Id, out var old) && (r.Version < old.Version ||
+                        (r.Version == old.Version && (r.Occupant != old.Occupant || r.Open != old.Open ||
+                            r.Rotation != old.Rotation || r.Offset != old.Offset || r.IntegralPart != old.IntegralPart ||
+                            !r.Dependencies.SequenceEqual(old.Dependencies) || !r.Coupled.SequenceEqual(old.Coupled)))))
+                        Bad("An assembly change must advance its resource version.");
+        }
         CheckBindings?.Invoke(candidate);
         WorldId = candidate.WorldId; NextId = candidate.NextId;
         Locations = candidate.Locations; Pcs = candidate.Pcs; Retired = candidate.Retired;
+    }
+
+    private sealed record PhysicalIdentity(NetObjectId Pc, string Kind, string Key, string NativeType, NetObjectId Parent);
+    private IEnumerable<(NetObjectId Id, PhysicalIdentity Identity)> Identities()
+    {
+        foreach (var l in Locations) yield return (l.Id, new(default, "location", l.Key, "", default));
+        foreach (var pc in Pcs)
+        {
+            yield return (pc.Id, new(pc.Id, "pc", "", "", default));
+            foreach (var p in pc.Parts) yield return (p.Id, new(pc.Id, "part", p.Sku, p.NativeType, default));
+            foreach (var r in pc.Resources) yield return (r.Id, new(pc.Id, "resource:" + r.Kind, r.Binding, r.NativeType, r.Parent));
+        }
     }
 
     public void Validate()
@@ -106,6 +147,13 @@ public sealed class ObjectWorld : IWorldState
                 linked.Add(link.Part);
             }
             if (!parts.SetEquals(linked) || !paths.Contains("caseID")) Bad("Incomplete PC binding map.");
+            AssemblyResources.Validate(pc, Add);
+            if (pc.BuildProfile is { } profile)
+            {
+                if (profile.Signature.Length != 64 || profile.Signature.Any(c => !Uri.IsHexDigit(c)) || profile.InternalConnectors.Count > 4096 ||
+                    profile.InternalConnectors.Distinct(StringComparer.Ordinal).Count() != profile.InternalConnectors.Count) Bad("Invalid native assembly integrity profile.");
+                foreach (var connector in profile.InternalConnectors) Text(connector);
+            }
         }
         foreach (var id in Retired) Add(id);
         if ((ulong)ids.Count != NextId - 1) Bad("Allocator does not account for every issued ID.");
@@ -128,6 +176,8 @@ public sealed class ObjectWorld : IWorldState
             foreach (var part in pc.Parts) { part.Id.Write(w); w.Put(part.Sku); w.Put(part.NativeType); }
             w.Put(pc.Links.Count);
             foreach (var link in pc.Links) { w.Put(link.Path); link.Part.Write(w); }
+            w.Put(pc.Resources.Count); foreach (var resource in pc.Resources) AssemblyResources.Write(w, resource);
+            WriteProfile(w, pc.BuildProfile);
         }
         w.Put(Retired.Count); foreach (var id in Retired) id.Write(w);
     }
@@ -150,7 +200,9 @@ public sealed class ObjectWorld : IWorldState
                 for (var j = 0; j < parts.Length; j++) parts[j] = new(NetObjectId.Read(r), r.GetString(1024), r.GetString(1024));
                 var links = new PartLink[Count(r, MaxLinksPerPc)];
                 for (var j = 0; j < links.Length; j++) links[j] = new(r.GetString(1024), NetObjectId.Read(r));
-                pcs[i] = new(id, provenance, location, parts, links);
+                var resources = new AssemblyResource[Count(r, AssemblyResources.MaxPerPc)];
+                for (var j = 0; j < resources.Length; j++) resources[j] = AssemblyResources.Read(r);
+                pcs[i] = new(id, provenance, location, parts, links) { Resources = resources, BuildProfile = ReadProfile(r) };
             }
             var retired = new NetObjectId[Count(r, MaxObjects)];
             for (var i = 0; i < retired.Length; i++) retired[i] = NetObjectId.Read(r);
@@ -161,6 +213,18 @@ public sealed class ObjectWorld : IWorldState
     }
 
     private static int Count(NetDataReader r, int max) { var n = r.GetInt(); if (n < 0 || n > max) Bad("Invalid collection length."); return n; }
+    internal static void WriteProfile(NetDataWriter w, PcBuildProfile? profile)
+    {
+        w.Put(profile != null); if (profile == null) return;
+        w.Put(profile.Signature); w.Put(profile.InternalConnectors.Count); foreach (var id in profile.InternalConnectors) w.Put(id);
+    }
+    internal static PcBuildProfile? ReadProfile(NetDataReader r)
+    {
+        if (!r.GetBool()) return null;
+        var hash = r.GetString(128); var connectors = new string[Count(r, 4096)];
+        for (var i = 0; i < connectors.Length; i++) connectors[i] = r.GetString(1024);
+        return new(hash, connectors);
+    }
     private static void Text(string s) { if (string.IsNullOrEmpty(s) || s.Length > 1023 || s.Any(char.IsControl)) Bad("Invalid binding text."); }
     private static void Bad(string why) => throw new InvalidDataException(why);
 }

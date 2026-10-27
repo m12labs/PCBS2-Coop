@@ -3,7 +3,11 @@ using LiteNetLib.Utils;
 namespace PCBS2Coop.Network;
 
 public enum ActivityOperation : byte { Edit = 1, Move = 2 }
-public sealed record ActivityClaim(OperationId Token, ActivityOperation Kind, NetObjectId Pc, IReadOnlyList<NetObjectId> Targets);
+public sealed record ActivityClaim(OperationId Token, ActivityOperation Kind, NetObjectId Pc, IReadOnlyList<NetObjectId> Targets)
+{
+    public string BindingStamp { get; init; } = "";
+    public IReadOnlyList<NetObjectId> Writes { get; init; } = Array.Empty<NetObjectId>();
+}
 public sealed record ActorActivity(ActorSlot Actor, PlayerId Player, ulong Epoch, ulong Version, NetObjectId WorkingPc, ActivityClaim? Pending);
 
 /// <summary>Session activity, separate from committed object locations. Work is shared; resource claims are
@@ -39,13 +43,28 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
     }
     /// <summary>Revalidate immediately before a future commit. The acquisition token and epoch must still own
     /// exactly the requested resources; a cancellation/reconnect cannot authorize a delayed completion.</summary>
-    public bool Owns(ActorSlot actor, ulong epoch, OperationId token, NetObjectId pc, ActivityOperation kind, params NetObjectId[] targets) =>
-        Get(actor) is { } a && a.Epoch == epoch && a.Pending is { } p && p.Token == token && p.Pc == pc && p.Kind == kind &&
-        p.Targets.SequenceEqual(targets.OrderBy(x => x.Value)) && _objects.Pcs.SingleOrDefault(x => x.Id == pc) is { } current &&
-        (kind == ActivityOperation.Move || (a.WorkingPc == pc && current.Location.Place == PcPlace.Bench && targets.All(t => current.Parts.Any(part => part.Id == t))));
+    public bool Owns(ActorSlot actor, ulong epoch, OperationId token, NetObjectId pc, ActivityOperation kind, params NetObjectId[] targets)
+    {
+        if (Get(actor) is not { } a || a.Epoch != epoch || a.Pending is not { } p || p.Token != token || p.Pc != pc ||
+            p.Kind != kind || _objects.Pcs.SingleOrDefault(x => x.Id == pc) is not { } current) return false;
+        if (kind == ActivityOperation.Move) return targets.Length == 0 && p.Targets.Count == 0;
+        if (kind != ActivityOperation.Edit || a.WorkingPc != pc || current.Location.Place != PcPlace.Bench ||
+            targets.Length == 0 || targets.Distinct().Count() != targets.Length) return false;
+        try
+        {
+            var plan = AssemblyResources.Plan(current, targets);
+            return p.Targets.SequenceEqual(plan.All) && p.Writes.SequenceEqual(plan.Writes) && p.BindingStamp == Stamp(current, p.Writes);
+        }
+        catch (InvalidDataException) { return false; }
+    }
+
+    private string Stamp(PcFact pc, IEnumerable<NetObjectId> targets) => _objects.WorldId.ToString("N") + ":" + AssemblyResources.Stamp(pc, targets);
 
     private sealed record Request(Action Action, ActorSlot Seat, PlayerId Player, ulong Epoch, ulong Version,
-        NetObjectId Pc, ActivityOperation Kind, NetObjectId[] Targets, OperationId Token);
+        NetObjectId Pc, ActivityOperation Kind, NetObjectId[] Targets, OperationId Token)
+    {
+        public string BindingStamp { get; init; } = "";
+    }
     private static Request Parse(NetDataReader r, bool canonical)
     {
         var action = (Action)r.GetByte();
@@ -59,9 +78,10 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
         if (action == Action.Release) return new(action, default, default, e, v, default, default, Array.Empty<NetObjectId>(), new((ActorSlot)r.GetByte(), r.GetUInt()));
         if (action != Action.Reserve) throw new FormatException("Unknown activity action.");
         var pc = NetObjectId.Read(r); var kind = (ActivityOperation)r.GetByte(); var count = r.GetInt();
-        if (count is < 0 or > 32) throw new FormatException("Invalid resource count.");
+        if (count is < 0 or > AssemblyResources.MaxClaimResources) throw new FormatException("Invalid resource count.");
         var targets = new NetObjectId[count]; for (var i = 0; i < count; i++) targets[i] = NetObjectId.Read(r);
-        return new(action, default, default, e, v, pc, kind, targets, default);
+        return new(action, default, default, e, v, pc, kind, targets, default)
+        { BindingStamp = canonical && kind == ActivityOperation.Edit ? r.GetString(128) : "" };
     }
     public CommandVerdict Validate(in CommandContext ctx, NetDataReader payload)
     {
@@ -91,10 +111,18 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
                 error = r.Targets.Length != 0 ? "Movement claims have no part targets." : MovementBlock(r.Pc);
                 if (pc.Location.Place == PcPlace.Carrier && (pc.Location.Actor != a.Actor || pc.Location.Player != a.Player)) error = "PC belongs to another carrier.";
             }
-            else if (r.Kind != ActivityOperation.Edit || a.WorkingPc != pc.Id || r.Targets.Length == 0 ||
-                r.Targets.Distinct().Count() != r.Targets.Length || r.Targets.Any(t => !pc.Parts.Any(p => p.Id == t))) error = "Invalid edit resources or actor is not working on this PC.";
-            else if (_actors.Values.Any(x => x.Pending is { } p && p.Pc == pc.Id &&
-                (p.Kind == ActivityOperation.Move || p.Targets.Intersect(r.Targets).Any()))) error = "Resource already in use.";
+            else if (r.Kind != ActivityOperation.Edit || a.WorkingPc != pc.Id || pc.Location.Place != PcPlace.Bench || r.Targets.Length == 0 ||
+                r.Targets.Distinct().Count() != r.Targets.Length) error = "Invalid edit resources or actor is not working on this PC.";
+            else
+            {
+                try
+                {
+                    var targets = AssemblyResources.Plan(pc, r.Targets).Writes;
+                    if (_actors.Values.Any(x => x.Pending is { } p && p.Pc == pc.Id &&
+                        (p.Kind == ActivityOperation.Move || AssemblyResources.Conflicts(pc, p.Writes, targets)))) error = "Resource already in use.";
+                }
+                catch (InvalidDataException e) { error = e.Message; }
+            }
         }
         return error == null ? CommandVerdict.Accept : CommandVerdict.Reject(error);
     }
@@ -102,6 +130,17 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
     {
         var bytes = request.RawData.AsSpan(request.Position, request.AvailableBytes).ToArray();
         var r = Parse(request, false);
+        if (r.Action == Action.Reserve && r.Kind == ActivityOperation.Edit)
+        {
+            var pc = _objects.Pcs.Single(x => x.Id == r.Pc);
+            var targets = AssemblyResources.Plan(pc, r.Targets).Writes;
+            return Encode(w =>
+            {
+                w.Put((byte)r.Action); w.Put(r.Epoch); w.Put(r.Version); r.Pc.Write(w); w.Put((byte)r.Kind);
+                w.Put(targets.Count); foreach (var target in targets) target.Write(w);
+                w.Put(Stamp(pc, targets));
+            });
+        }
         return r.Action == Action.Presence ? bytes.Concat(BitConverter.GetBytes(NextEpoch)).ToArray() : bytes;
     }
     public void Apply(in MutationContext ctx, NetDataReader payload)
@@ -117,10 +156,19 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
         else
         {
             var a = _actors[ctx.Op.Actor];
+            if (a.Epoch != r.Epoch || a.Version != r.Version) throw new InvalidDataException("Actor activity changed before apply.");
+            if (r.Action == Action.Reserve && r.Kind == ActivityOperation.Edit)
+            {
+                var pc = _objects.Pcs.Single(x => x.Id == r.Pc);
+                if (!r.Targets.SequenceEqual(AssemblyResources.Plan(pc, r.Targets).Writes) || r.BindingStamp != Stamp(pc, r.Targets))
+                    throw new InvalidDataException("Edit resource binding differs from the host's acquisition.");
+            }
             _actors[a.Actor] = r.Action switch
             {
                 Action.Work => a with { Version = a.Version + 1, WorkingPc = r.Pc },
-                Action.Reserve => a with { Version = a.Version + 1, Pending = new(ctx.Op, r.Kind, r.Pc, Array.AsReadOnly(r.Targets.OrderBy(x => x.Value).ToArray())) },
+                Action.Reserve => a with { Version = a.Version + 1, Pending = new(ctx.Op, r.Kind, r.Pc,
+                    r.Kind == ActivityOperation.Edit ? AssemblyResources.Plan(_objects.Pcs.Single(x => x.Id == r.Pc), r.Targets).All : Array.Empty<NetObjectId>())
+                    { BindingStamp = r.BindingStamp, Writes = Array.AsReadOnly(r.Targets.OrderBy(x => x.Value).ToArray()) } },
                 Action.Release => a with { Version = a.Version + 1, Pending = null },
                 _ => throw new InvalidDataException("Invalid activity mutation.")
             };
@@ -136,6 +184,8 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
             if (a.Pending is not { } p) continue;
             w.Put((byte)p.Token.Actor); w.Put(p.Token.Sequence); w.Put((byte)p.Kind); p.Pc.Write(w);
             w.Put(p.Targets.Count); foreach (var t in p.Targets) t.Write(w);
+            w.Put(p.Writes.Count); foreach (var t in p.Writes) t.Write(w);
+            w.Put(p.BindingStamp);
         }
     }
     public void Read(NetDataReader r)
@@ -152,9 +202,11 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
             if (r.GetBool())
             {
                 var token = new OperationId((ActorSlot)r.GetByte(), r.GetUInt()); var kind = (ActivityOperation)r.GetByte(); var claimPc = NetObjectId.Read(r); var n = r.GetInt();
-                if (n is < 0 or > 32 || token.Actor != seat || token.Sequence == 0) throw new InvalidDataException("Invalid operation binding.");
+                if (n is < 0 or > AssemblyResources.MaxClaimResources || token.Actor != seat || token.Sequence == 0) throw new InvalidDataException("Invalid operation binding.");
                 var targets = new NetObjectId[n]; for (var t = 0; t < n; t++) targets[t] = NetObjectId.Read(r);
-                pending = new(token, kind, claimPc, Array.AsReadOnly(targets));
+                var countWrites = r.GetInt(); if (countWrites is < 0 or > AssemblyResources.MaxClaimResources) throw new InvalidDataException("Invalid write resource count.");
+                var writes = new NetObjectId[countWrites]; for (var t = 0; t < countWrites; t++) writes[t] = NetObjectId.Read(r);
+                pending = new(token, kind, claimPc, Array.AsReadOnly(targets)) { BindingStamp = r.GetString(128), Writes = Array.AsReadOnly(writes) };
             }
             rows.Add(new(seat, player, epoch, version, pc, pending));
         }
@@ -168,8 +220,16 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
         }
         foreach (var a in rows.Where(x => x.Pending != null))
         {
-            var p = a.Pending!; var verdict = candidate.Validate(new(p.Token, 1, 1), new(Reserve(candidate.Get(a.Actor)!, p.Pc, p.Kind, p.Targets.ToArray())));
+            var p = a.Pending!; var verdict = candidate.Validate(new(p.Token, 1, 1), new(Reserve(candidate.Get(a.Actor)!, p.Pc, p.Kind, p.Writes.ToArray())));
             if (!verdict.Accepted || !p.Targets.SequenceEqual(p.Targets.OrderBy(x => x.Value))) throw new InvalidDataException("Invalid/conflicting operation state.");
+            if (p.Kind == ActivityOperation.Edit)
+            {
+                var pc = _objects.Pcs.Single(x => x.Id == p.Pc);
+                var plan = AssemblyResources.Plan(pc, p.Writes);
+                if (!p.Targets.SequenceEqual(plan.All) || !p.Writes.SequenceEqual(plan.Writes) || p.BindingStamp != candidate.Stamp(pc, p.Writes))
+                    throw new InvalidDataException("Stale or incomplete edit resource binding.");
+            }
+            else if (p.BindingStamp != "" || p.Targets.Count != 0 || p.Writes.Count != 0) throw new InvalidDataException("Unexpected movement binding stamp.");
             candidate._actors[a.Actor] = a;
         }
         _actors.Clear(); foreach (var a in rows) _actors.Add(a.Actor, a); NextEpoch = next;

@@ -15,6 +15,16 @@ internal sealed class NativeObjectState : IWorldState
 {
     public string Name => "objects";
     public ObjectWorld Model { get; } = new();
+    public NativeAssembly Assembly { get; }
+    public NativeObjectState() => Assembly = new(this);
+    internal ComputerSave RecordFor(NetObjectId id) => _saveRoots.GetValueOrDefault(id) ?? _carrierRecords.GetValueOrDefault(id);
+    internal ComputerSave CaptureRecord(NetObjectId id)
+    {
+        var bench = FindBench(id);
+        if (bench != null) return bench.GetComputer(true);
+        if (IdOf(Workshop.GetCarriedCase()) == id) return Workshop.GetCarriedComputer();
+        return RecordFor(id);
+    }
     private readonly Dictionary<long, NetObjectId> _cases = new(), _saves = new();
     private readonly Dictionary<NetObjectId, ComputerSave> _saveRoots = new();
     private Dictionary<NetObjectId, string> _saveBindings = new();
@@ -49,6 +59,7 @@ internal sealed class NativeObjectState : IWorldState
     public void Reset()
     {
         CleanupCompletedLoads();
+        Assembly.Reset();
         Model.Reset(); _cases.Clear(); _saves.Clear(); _saveRoots.Clear(); _saveBindings.Clear(); _carrierRecords.Clear(); _spawnTickets.Clear(); _ticketBorn.Clear(); _retrieving.Clear(); _benchLoads.Clear(); _settleDrops.Clear();
         _catalog = null; Projections.Reset(Guid.Empty); ProjectionFault = null; FailNextRemoteLoad = false;
         // _loadBindings/_guestCarry bridge a paired native load to the subsequent generation/admission reset.
@@ -231,6 +242,7 @@ internal sealed class NativeObjectState : IWorldState
     /// <summary>Remove every local observation key/record of a retired PC so no stale pointer can resolve to it.</summary>
     internal void ForgetPc(NetObjectId id)
     {
+        Assembly.Forget(id);
         foreach (var k in _cases.Where(x => x.Value == id).Select(x => x.Key).ToArray()) _cases.Remove(k);
         foreach (var k in _saves.Where(x => x.Value == id).Select(x => x.Key).ToArray()) _saves.Remove(k);
         // Keep an in-flight callback's ticket until completion so AllowLoadCompletion can suppress its native work.
@@ -466,7 +478,7 @@ internal sealed class NativeObjectState : IWorldState
             if (o.Mesh != null) _cases.TryGetValue(o.Mesh.Pointer.ToInt64(), out id);
             if (id.IsNone) _saves.TryGetValue(o.Save.Pointer.ToInt64(), out id);
             var pc = id.IsNone ? null : Model.Pcs.SingleOrDefault(x => x.Id == id);
-            if (pc == null || pc.Provenance.Origin != InstanceOrigin.Catalog) continue;
+            if (pc == null || pc.Provenance.Origin != InstanceOrigin.Catalog || pc.Resources.Count != 0) continue;
             var native = Parts(o.Save);
             var known = new Dictionary<long, NetObjectId>(); var growth = true;
             foreach (var link in pc.Links)
@@ -508,12 +520,14 @@ internal sealed class NativeObjectState : IWorldState
         return new(parts, links);
     }
 
-    public void CaptureHost(PlayerId host)
+    public void CaptureHost(PlayerId host, bool repair = false)
     {
         if (_spawnTickets.Count > 0) throw new InvalidDataException("A native PC projection has not completed.");
         // Owner decision (3g): packages and physical notes aren't shared; never save or send a world holding them.
         if (NativeWorkstations.Unsupported() is { } unsupported)
             throw new InvalidDataException($"This world contains {unsupported}, which co-op doesn't share yet.");
+        NativeAssembly.CheckStable();
+        if (Initialized && !repair) Assembly.CheckMeshes();
         var observations = Observe(ActorSlot.Host, host);
         var allocator = new NetObjectIdAllocator { Next = Model.NextId };
         var locations = Model.Locations.ToList();
@@ -532,6 +546,12 @@ internal sealed class NativeObjectState : IWorldState
             if (id.IsNone) id = allocator.Allocate();
             if (!used.Add(id)) throw new InvalidDataException("The same logical PC was bound twice.");
             var prior = Model.Pcs.SingleOrDefault(x => x.Id == id);
+            if (Initialized && prior == null && !repair) throw new InvalidDataException("A native PC was created outside the accepted change stream.");
+            if (prior != null && o.Mesh != null && prior.Resources.Count == 0 && !repair)
+                throw new InvalidDataException($"PC {prior.Id}'s assembly has not been bound; its save was refused.");
+            if (prior != null && !repair) CheckParts(prior, o.Save);
+            if (prior != null && !repair) NativeAssembly.CheckProfile(prior, o.Save);
+            var replaced = prior != null && repair ? Assembly.ReplacedParts(prior, o.Mesh) : new HashSet<NetObjectId>();
             var parts = Parts(o.Save);
             var aliases = new Dictionary<long, NetObjectId>();
             var facts = new List<PartFact>(); var links = new List<PartLink>();
@@ -542,7 +562,7 @@ internal sealed class NativeObjectState : IWorldState
                     var previous = prior?.Links.FirstOrDefault(x => x.Path == path);
                     var fact = previous == null ? null : prior.Parts.Single(x => x.Id == previous.Part);
                     // Slot context survives SaveComputer allocating a new record; SKU equality alone never identifies a PC.
-                    partId = fact != null && fact.Sku == part.GetPartId() && fact.NativeType == part.GetIl2CppType().FullName
+                    partId = fact != null && !replaced.Contains(fact.Id) && fact.Sku == part.GetPartId() && fact.NativeType == part.GetIl2CppType().FullName
                         ? fact.Id : allocator.Allocate();
                     if (facts.Any(x => x.Id == partId)) throw new InvalidDataException("Native alias layout changed ambiguously.");
                     aliases.Add(part.Pointer.ToInt64(), partId);
@@ -551,28 +571,37 @@ internal sealed class NativeObjectState : IWorldState
                 links.Add(new(path, partId));
             }
             var provenance = prior?.Provenance ?? new InstanceProvenance(Initialized ? InstanceOrigin.NativeObserved : InstanceOrigin.Baseline, host, default);
-            pcs.Add(new(id, provenance, o.Location, facts, links)); bindings.Add(id, o.Key);
+            var captured = new PcFact(id, provenance, o.Location, facts, links)
+                { Resources = prior?.Resources ?? Array.Empty<AssemblyResource>(), BuildProfile = prior?.BuildProfile };
+            if ((!Initialized || repair) && o.Mesh != null)
+            {
+                captured = AssemblyManifest.Repair(captured, Assembly.Describe(captured, o.Mesh, o.Save), allocator);
+                captured = captured with { BuildProfile = NativeAssembly.CaptureProfile(captured, o.Mesh, o.Save) };
+            }
+            if (prior != null && !repair) Assembly.Validate(prior, o.Mesh, o.Save, rebind: false);
+            pcs.Add(captured); bindings.Add(id, o.Key);
             if (o.Location.Place == PcPlace.Carrier) records.Add(id, o.Save);
         }
         // Logical remote carriers have no native singleton on this peer. Their complete records are retained separately.
         foreach (var pc in Model.Pcs.Where(x => x.Location.Place == PcPlace.Carrier && x.Location.Actor == ActorSlot.Guest))
         {
             if (!used.Add(pc.Id) || !_carrierRecords.TryGetValue(pc.Id, out var record)) throw new InvalidDataException("Remote carrier payload is missing.");
+            CheckParts(pc, record); NativeAssembly.CheckProfile(pc, record);
             pcs.Add(pc); bindings.Add(pc.Id, "remote-carry:" + pc.Location.Actor); records.Add(pc.Id, record);
         }
         var live = locations.Select(x => x.Id).Concat(pcs.SelectMany(AllIds)).ToHashSet();
         // Since task 3e every supported creation/removal is a host-ordered change. A PC that vanished natively
         // without one is a projection fault or an unsupported path; say so instead of retiring it silently.
         foreach (var lost in Model.Pcs.Where(x => !live.Contains(x.Id)))
-            Plugin.Logger.LogWarning($"[objects] PC {lost.Id} ({lost.Location.Place}) is no longer present natively; retiring it at this capture.");
+            if (!repair) throw new InvalidDataException($"Accepted PC {lost.Id} is missing natively; repair its projection before saving.");
+            else Plugin.Logger.LogWarning($"[objects] /sync retires unrecoverable PC {lost.Id}.");
         var retired = Model.Retired.Concat(Model.Pcs.SelectMany(AllIds).Where(x => !live.Contains(x))).ToArray();
         Model.Replace(Initialized ? Model.WorldId : Guid.NewGuid(), allocator.Next, locations, pcs, retired);
         _saveBindings = bindings; _carrierRecords = records; _catalog = CatalogHash();
         BindObserved(observations, bindings, Model);
     }
 
-    private static IEnumerable<NetObjectId> AllIds(PcFact pc)
-    { yield return pc.Id; foreach (var part in pc.Parts) yield return part.Id; }
+    private static IEnumerable<NetObjectId> AllIds(PcFact pc) => AssemblyResources.AllIds(pc);
 
     private void BindObserved(List<Observation> observations, Dictionary<NetObjectId, string> bindings, ObjectWorld model)
     {
@@ -587,6 +616,8 @@ internal sealed class NativeObjectState : IWorldState
         {
             var o = observations.SingleOrDefault(x => x.Key == bindings[pc.Id]) ?? throw new InvalidDataException($"Missing native binding for {pc.Id}.");
             CheckParts(pc, o.Save);
+            NativeAssembly.CheckProfile(pc, o.Save);
+            Assembly.Validate(pc, o.Mesh, o.Save, rebind: true);
             if (!savePointers.Add(o.Save.Pointer.ToInt64()) || (o.Mesh != null && !meshPointers.Add(o.Mesh.Pointer.ToInt64())))
                 throw new InvalidDataException("Duplicate native PC save/mesh binding.");
             pending.Add((pc, o));
@@ -600,6 +631,7 @@ internal sealed class NativeObjectState : IWorldState
             {
                 _cases.Add(o.Mesh.Pointer.ToInt64(), pc.Id);
                 Projections.Complete(Projections.Begin(pc.Id), o.Mesh);
+                Assembly.Bind(pc, o.Mesh, o.Save);
             }
         }
     }
@@ -648,11 +680,13 @@ internal sealed class NativeObjectState : IWorldState
             if (o.Mesh != null && !o.Mesh.gameObject.activeInHierarchy) throw new InvalidDataException($"Native PC {id} at {o.Key} is hidden.");
             CheckPipes(id, o.Save);
             CheckParts(pc, o.Save);
+            Assembly.Validate(pc, o.Mesh, o.Save, rebind: false); NativeAssembly.CheckProfile(pc, o.Save);
         }
         foreach (var pc in Model.Pcs.Where(x => x.Location.Place == PcPlace.Carrier && x.Location.Actor != local))
         {
             if (!TryRemoteCarrier(pc, out var record) || !seen.Add(pc.Id)) throw new InvalidDataException($"Missing remote carrier {pc.Id}.");
             CheckParts(pc, record);
+            NativeAssembly.CheckProfile(pc, record);
         }
         if (seen.Count != Model.Pcs.Count) throw new InvalidDataException("Not every accepted PC has a native projection.");
         return seen.Count;
@@ -721,6 +755,7 @@ internal sealed class NativeObjectState : IWorldState
             {
                 if (_loadingCarriers == null || !_loadingCarriers.TryGetValue(pc.Id, out var record)) throw new InvalidDataException("Remote PC graph is missing.");
                 CheckParts(pc, record);
+                NativeAssembly.CheckProfile(pc, record);
             }
             _carrierRecords = _loadingCarriers == null ? new() : new(_loadingCarriers);
             if (catalog != CatalogHash()) throw new InvalidDataException("The saved Free Build catalog binding does not match.");
@@ -793,7 +828,7 @@ internal sealed class NativeObjectState : IWorldState
         _reading = false;
         // A fresh host has no admitted guest. Restore absent carriers to the shared cupboard, preserving IDs and payloads.
         var pcs = Model.Pcs.Select(x => x.Location.Place == PcPlace.Carrier &&
-            (x.Location.Actor != ActorSlot.Host || x.Location.Player != host) ? new PcFact(x.Id, x.Provenance, PcLocation.Storage, x.Parts, x.Links) : x).ToArray();
+            (x.Location.Actor != ActorSlot.Host || x.Location.Player != host) ? x with { Location = PcLocation.Storage } : x).ToArray();
         Model.Replace(Model.WorldId, Model.NextId, Model.Locations, pcs, Model.Retired);
         _saveBindings = _loadBindings ?? _saveBindings; _loadBindings = null; _loadingCarriers = null;
     }

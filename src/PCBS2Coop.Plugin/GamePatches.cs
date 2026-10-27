@@ -31,6 +31,7 @@ internal static class GamePatches
             transfers.PatchAll(typeof(NativePcTransfers.RetrieveIntercept));
             transfers.PatchAll(typeof(NativeProjection.AutosaveDeferral));
             new Harmony(Plugin.Guid + ".workstations").PatchAll(typeof(NativeWorkstations.SwapIntercept));
+            new Harmony(Plugin.Guid + ".assembly-preview").PatchAll(typeof(NativeAssembly.PreviewTrace));
             foreach (var method in Harmony.GetAllPatchedMethods())
                 if (FoldedWith(method) is { } other)
                     Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");

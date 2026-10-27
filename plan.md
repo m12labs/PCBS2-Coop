@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Auditing**, started at the owner's request on October 26, 2026; component edits remain unsynchronized. Phases 5–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4c are complete and 4d is next. Component edits remain unsynchronized. Phases 5–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -319,7 +319,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** HW component/slot/screw/latch/blocker factors; PW target/tool activity; SS transaction/callback risks.
 
-**Status: Auditing.** Focused audit: [docs/audit/phase-4.md](docs/audit/phase-4.md). Existing owner decisions apply: two players may edit different parts of the same PC, conflicting resources are exclusive, and an actively used PC cannot move. Work starts with the current default Free Build workshop; the phase 3 deferrals for specialist tool benches, DLC layouts and career locations retain their assigned phases. No new UI or interaction flow is selected here.
+**Status: Implementing (4a–4c complete; 4d next).** Focused audit: [docs/audit/phase-4.md](docs/audit/phase-4.md). Existing owner decisions apply: two players may edit different parts of the same PC, conflicting resources are exclusive, and an actively used PC cannot move. Work starts with the current default Free Build workshop; the phase 3 deferrals for specialist tool benches, DLC layouts and career locations retain their assigned phases. No new UI or interaction flow is selected here.
 
 #### 4a. Focused evidence and component transaction boundaries
 
@@ -351,13 +351,13 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 4c. Slot identity, mechanical state and edit claims
 
-- **Status:** Not started.
+- **Status:** Complete (0.12), October 27, 2026: model, native bindings and capture guard validated in owned disposable runs.
 - **Outcome and audit IDs:** represent empty and occupied slots, parent/child dependencies and mechanical resources without locking the entire PC (HW-001–004/007–014/053–054/065–066/068–070/073; SS-013–014/018/023–025/033–035/038).
 - **Dependencies and decisions:** 4b's verified mappings and partial-action save behavior; preserve both players' ability to work on independent resources.
-- **Scope and evidence:** `ObjectWorld`, `ActorActivity`, `NativeObjectState`, snapshot/paired-save state and model tests. Current edit targets accept only existing part IDs and current part facts contain no screw/latch state.
+- **Scope and evidence:** `ObjectWorld`, `AssemblyResources`, `AssemblyManifest`, `ActorActivity`, `NativeAssembly`, `NativeObjectState`, snapshot/paired-save state and model/native checks. Runtime mappings include standalone parts, integral case pieces, generated radiator fans, RAM blocker groups and actual standoff instances.
 - **Work:** add stable slot/mechanical identity scoped to the correct PC/parent incarnation; define atomic resource sets for empty destinations, multi-slot parts and parent removal; extend claim-token/epoch revalidation. Preserve same-SKU physical identity, aliases and full native part data. Stop normal save capture from silently adopting supported component edits outside the accepted mutation stream. Version the changed wire/save format before use.
 - **Acceptance:** disjoint slots on one PC can be claimed together; overlapping slots, blockers and parent/child edits conflict atomically. Stale parent incarnations, replaced identical parts and old callbacks cannot resolve to replacements. Snapshot/paired restore preserves topology and mechanics with no ID reuse; malformed state cannot partially replace the model.
-- **Completion evidence:** pending model/network tests and native binding checks.
+- **Completion evidence (October 27, 2026):** [model foundation](docs/audit/phase-4.md#task-4c-model-foundation) and [native binding/capture evidence](docs/audit/phase-4.md#task-4c-native-bindings-and-capture-guard). **418/418** model/network checks; Release **0 warnings/errors** against real interop. Native runs bound 330 resources across the two default PCs, published a new case's 60-resource manifest through a host mutation, preserved exact IDs across reload/late join and a two-peer storage/guest-drop cycle, and refused latch, identical-SKU replacement and cable-only changes without overwriting either save file. `/sync` repaired those host-reference baselines. A directly created native preview blocked capture without overwriting either file; cleanup restored normal saving without divergence. Fresh-process Continue preserved the exact model hash, world ID and allocator, with native bindings valid. Claims distinguish shared read guards from coupled writes so independent same-PC work remains possible. Version **0.12** changes wire/save data and explicitly refuses older pairs pending phase 8 migration. All owned runs closed; the owner's 12 save files stayed unchanged. Component/mechanical gameplay adapters and P4-01–08 acceptance remain 4d–4f.
 
 #### 4d. Host-ordered screws, latches and case access
 

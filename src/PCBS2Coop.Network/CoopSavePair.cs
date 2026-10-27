@@ -17,7 +17,6 @@ public static class CoopSavePair
     private const ulong Magic = 0x3152494150324350; // PC2PAIR1
     private const ulong BundleMagic = 0x31454C444E423250;
     private const int MaxMetadataBytes = Protocol.MaxModStateBytes + 2 * MaxCarrierBytes + 4096;
-    private static readonly string[] CompatibleOlder = { "0.8", "0.9", "0.10" };
 
     public static SaveMetadata Create(byte[] native, SnapshotPosition position, IReadOnlyList<CarrierPayload> carriers)
     {
@@ -49,11 +48,9 @@ public static class CoopSavePair
             var r = new NetDataReader(data);
             if (r.GetULong() != Magic) throw new InvalidDataException("Unsupported co-op save format.");
             var version = r.GetString(128);
-            // 0.9 added a transport only. 0.10 adds an optional workstation state, which the host recaptures from the
-            // loaded world when an older save lacks it. 0.11 changed only session messages (chat, /sync). The 0.8
-            // world/identity/carrier layout is otherwise unchanged.
-            // These are specific compatible readers, not permission to load other historical formats.
-            if (version != ModVersion.Value && !CompatibleOlder.Contains(version)) throw new InvalidDataException("Unsupported co-op save version.");
+            // 0.12 adds per-PC assembly resources and edit binding stamps to the world state. The older
+            // object/activity codecs are incompatible; migration belongs to phase 8, never implicit ID minting.
+            if (version != ModVersion.Value) throw new InvalidDataException("Unsupported co-op save version. This build requires a matching-version co-op save; older saves need migration.");
             var size = r.GetInt(); var hash = new byte[32]; r.GetBytes(hash, hash.Length);
             var generation = r.GetUInt(); var revision = r.GetULong(); var chain = r.GetULong();
             var state = Protocol.ReadBlob(r, Protocol.MaxModStateBytes, out _) ?? throw new InvalidDataException("Invalid world state length.");

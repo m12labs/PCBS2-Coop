@@ -315,7 +315,7 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
     private void Publish(IEnumerable<PcFact> pcs, IEnumerable<NetObjectId> retired, ulong next) =>
         _objects.Replace(_objects.WorldId, next, _objects.Locations, pcs.ToArray(), retired.ToArray());
 
-    private static IEnumerable<NetObjectId> AllIds(PcFact pc) => pc.Parts.Select(p => p.Id).Prepend(pc.Id);
+    private static IEnumerable<NetObjectId> AllIds(PcFact pc) => AssemblyResources.AllIds(pc);
     private static bool Text(string s) => !string.IsNullOrEmpty(s) && s.Length <= 1023 && !s.Any(char.IsControl);
     private static bool Valid(CatalogRef t) => Text(t.Sku) && Text(t.NativeType) && t.Ordinal is >= 0 and <= ObjectWorld.MaxObjects;
     private static bool Valid(PcTemplate t)

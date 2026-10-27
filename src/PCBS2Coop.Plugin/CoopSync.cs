@@ -200,6 +200,7 @@ internal sealed partial class CoopController
             case SyncStep.Saving:
                 if (now > _syncDeadline) { FailSync("the world didn't settle for saving"); return; }
                 if (!_readiness.Ready || Workstations?.Settled == false || _pairWrites.Count > 0 || _pendingFile != null || SaveLoadSystem.WaitingOnThread()) return;
+                if (!Objects.Assembly.PrepareReload()) return;
                 SaveForSync();
                 return;
             case SyncStep.Pairing:
@@ -242,6 +243,10 @@ internal sealed partial class CoopController
         if (saves == null) { FailSync("the save system isn't ready"); return; }
         string path = null;
         _saveError = null;
+        // Repair can replace resource incarnations. Release the old world's callback authority through the
+        // accepted stream before capturing the repaired baseline; stale claims must not enter its sidecar.
+        Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, default), out _);
+        Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Host, Session.LocalIdentity.Player), out _);
         _syncSaving = true;
         try { path = saves.CreateSaveGame(SaveLoadSystem.s_autoFreeBuildSaveName, false, ""); }
         catch (Exception e) { _saveError ??= e.Message; }

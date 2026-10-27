@@ -94,13 +94,9 @@ internal static class TransportTests
             var r = new NetDataReader(current); var w = new NetDataWriter();
             w.Put(r.GetULong()); r.GetString(); w.Put(version); w.Put(r.GetRemainingBytes()); return w.CopyData();
         }
-        foreach (var older in new[] { "0.8", "0.9", "0.10" })
-        {
-            var previous = CoopSavePair.Decode(Version(older)); CoopSavePair.Verify(native, previous);
-            t.Check(previous.Position == metadata.Position with { State = previous.Position.State } && previous.Position.State.SequenceEqual(metadata.Position.State) && previous.Carriers[0].Pc.Value == 8,
-                $"{older} paired save retains its hashed native bytes, world position and carried PC identity in {ModVersion.Value}");
-        }
         bool Rejects(string version) { try { CoopSavePair.Decode(Version(version)); return false; } catch (InvalidDataException) { return true; } }
+        foreach (var older in new[] { "0.8", "0.9", "0.10", "0.11" })
+            t.Check(Rejects(older), $"{older} paired save is explicitly refused before the incompatible assembly/activity codecs run");
         t.Check(Rejects("0.7") && Rejects("9.9"), "unknown and older incompatible paired saves still fail explicitly");
         long joinTime = 0;
         using var waiting = new CoopSession(() => joinTime);

@@ -284,6 +284,7 @@ internal sealed partial class CoopController
         Session.Poll();
         Objects.CleanupCompletedLoads();
         _readiness.Update(inWorkshop);
+        if (inWorkshop && Session.World is { Admitted: true } && Objects.Initialized) Objects.Assembly.Update();
         UpdateOutOfSync();
 
         // A guest whose session ended while its load was starting must not stay in a world nobody shares.
@@ -334,7 +335,8 @@ internal sealed partial class CoopController
             Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, Session.RemoteIdentity.Player), out _);
         if (_pairWrites.Count > 0 && !SaveLoadSystem.WaitingOnThread()) FinishPairWrites();
         if (_pendingFile is { } p) PollSnapshotFile(p);
-        else if (Session.GuestNeedsWorld && _hostWorldStarted && _readiness.Ready && Workstations?.Settled != false && _sync == SyncStep.None) TakeSnapshot();
+        else if (Session.GuestNeedsWorld && _hostWorldStarted && _readiness.Ready && Workstations?.Settled != false &&
+            _sync == SyncStep.None && NativeAssembly.CanCapture && OutOfSync == null) TakeSnapshot();
         else if (_copiesToSend.Count > 0 && Session.GuestState == GuestState.InWorld && !SaveLoadSystem.WaitingOnThread()) SendCopy(_copiesToSend.Dequeue());
     }
 
@@ -377,11 +379,12 @@ internal sealed partial class CoopController
         try
         {
             Lifecycle?.ExtendHost(); Lifecycle?.ObserveHost(force: true);
+            Objects.Assembly.BindMissing();
             Objects.CaptureHost(Session.LocalIdentity.Player);
             Workstations?.CheckNative();
             _saveCapture = (Session.World.CapturePosition(), Objects.CaptureCarriers());
         }
-        catch (Exception e) { LeaveToMenu("Could not capture co-op identities: " + e.Message, false); return; }
+        catch (Exception e) { ProjectionFailed("The host's native assembly differs from the accepted world; snapshot capture was refused", e); return; }
         CoopSaves.Recreate(CoopSaves.TransferDir);
         var saveName = level?.SaveName;
         var opened = saves.GetOpenedSaveName();
@@ -464,7 +467,8 @@ internal sealed partial class CoopController
             if (_syncSaving)
                 foreach (var id in Objects.RecoverUnshown(Session.LocalIdentity.Player))
                     AddChat($"Sync: PC {id.Value} wasn't shown on your game; it's in the storage cupboard.");
-            Objects.CaptureHost(Session.LocalIdentity.Player);
+            if (!_syncSaving) Objects.Assembly.BindMissing();
+            Objects.CaptureHost(Session.LocalIdentity.Player, repair: _syncSaving);
             // A /sync save takes what the host's game shows; any other save must match the shared peripherals.
             if (_syncSaving) Workstations?.CaptureHost(rebind: true); else Workstations?.CheckNative();
             _saveCapture = (Session.World.CapturePosition(), Objects.CaptureCarriers());
@@ -473,6 +477,8 @@ internal sealed partial class CoopController
         catch (Exception e)
         {
             _saveCapture = null; _saveError = LastFailure = "Co-op save was not written: " + e.Message;
+            if (e is InvalidDataException && NativeAssembly.CanCapture && !_syncSaving)
+                ProjectionFailed("Unconfirmed native assembly state was refused by the save guard", e);
             Plugin.Logger.LogError("[saves] " + LastFailure); return false;
         }
     }
@@ -602,6 +608,7 @@ internal sealed partial class CoopController
         Markers = new DiagnosticMarkerHandler();
         Objects = new NativeObjectState();
         Activity = new ActivityWorld(Objects.Model);
+        Objects.Assembly.Configure(Activity);
         _nativeActivity = new NativeActivity(this, world);
         Lifecycle = new NativePcLifecycle(this, world);
         Transfers = new NativePcTransfers(this, world);
@@ -614,6 +621,7 @@ internal sealed partial class CoopController
         world.Register(CommandTypes.PcLifecycle, Lifecycle.Handler);
         world.Register(CommandTypes.PcTransfer, Transfers.Handler);
         world.Register(CommandTypes.PeripheralSwap, Workstations.Model);
+        world.Register(CommandTypes.AssemblyManifest, Objects.Assembly.Handler);
         // Optional: saves from before 0.10 have no workstation state; the host binds it from its loaded world.
         world.RegisterState(Workstations, optional: true);
         world.Rejected += (OperationId op, RejectReason reason, string text) => Plugin.Logger.LogWarning($"[world] {op} refused: {reason} {text}");

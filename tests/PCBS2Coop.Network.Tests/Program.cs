@@ -8,6 +8,7 @@ var t = new Checker();
 IdentityTests.Run(t);
 ObjectWorldTests.Run(t);
 ActivityTests.Run(t);
+AssemblyResourceTests.Run(t);
 PcLifecycleTests.Run(t);
 PcTransferTests.Run(t);
 WorkstationTests.Run(t);
