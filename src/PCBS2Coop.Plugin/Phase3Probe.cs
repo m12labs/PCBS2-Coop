@@ -19,7 +19,9 @@ namespace PCBS2Coop;
 /// </summary>
 internal sealed class Phase3Probe
 {
-    public static bool Enabled => AutoTest.IsEnabled && Environment.GetEnvironmentVariable("PCBS2COOP_PROBE") == "3";
+    public static bool Enabled => AutoTest.IsEnabled && Environment.GetEnvironmentVariable("PCBS2COOP_PROBE") is "3" or "4";
+    internal static bool ComponentsEnabled => Enabled && Environment.GetEnvironmentVariable("PCBS2COOP_PROBE") == "4";
+    internal static string Phase => ComponentsEnabled ? "phase4" : "phase3";
     private static readonly Lazy<string> ProbeRunId = new(ReadRunId);
     public static string RunId => ProbeRunId.Value;
     private static Phase3Probe _current;
@@ -39,15 +41,18 @@ internal sealed class Phase3Probe
     private readonly WorldReadiness _reloadReadiness = new();
     private bool _reloadCopyFixture;
     private byte[] _identityExpected;
+    private readonly Phase4Probe _components;
+    internal string EvidenceDir => _dir;
 
     public Phase3Probe()
     {
         _current = this;
         var role = Environment.GetEnvironmentVariable("PCBS2COOP_AUTOTEST")?.Trim().ToLowerInvariant();
-        _dir = Path.Combine(Diagnostics.Dir, "phase3", RunId, role);
+        _dir = Path.Combine(Diagnostics.Dir, Phase, RunId, role);
         Directory.CreateDirectory(_dir);
         File.WriteAllText(Path.Combine(_dir, "commands.txt"), "");
         InstallHooks();
+        if (ComponentsEnabled) _components = new Phase4Probe(this);
         Event("enabled", new { run = RunId, role, version = Network.ModVersion.Value });
     }
 
@@ -59,8 +64,8 @@ internal sealed class Phase3Probe
         return value;
     }
 
-    private bool Safe => AutoTest.IsolatedSaveDir != null &&
-        Path.GetFullPath(AutoTest.IsolatedSaveDir).StartsWith(Path.GetFullPath(Path.Combine(Diagnostics.Dir, "phase3", RunId)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+    internal bool Safe => AutoTest.IsolatedSaveDir != null &&
+        Path.GetFullPath(AutoTest.IsolatedSaveDir).StartsWith(Path.GetFullPath(Path.Combine(Diagnostics.Dir, Phase, RunId)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
         IsWithin(SaveLoadSystem.s_saveDir ?? ".", AutoTest.IsolatedSaveDir);
 
     private static bool IsWithin(string path, string root)
@@ -77,6 +82,7 @@ internal sealed class Phase3Probe
         {
             if (!Safe || Time.realtimeSinceStartup < _nextPoll) return;
             _nextPoll = Time.realtimeSinceStartup + 0.1f;
+            _components?.Update();
             var state = State();
             if (state != _lastState) { Event("state", state); _lastState = state; }
             if (runner.Scene != _lastScene)
@@ -88,7 +94,13 @@ internal sealed class Phase3Probe
             if (runner.Coop.WorldReady && !_wasReady) Capture("ready");
             _wasReady = runner.Coop.WorldReady;
             var lines = File.ReadAllLines(Path.Combine(_dir, "commands.txt"));
-            while (_commandsRead < lines.Length) Command(lines[_commandsRead++].Trim(), runner);
+            while (_commandsRead < lines.Length)
+            {
+                var command = lines[_commandsRead].Trim();
+                if (ComponentsEnabled && command.StartsWith("p4-", StringComparison.Ordinal) && !runner.Coop.WorldReady) break;
+                _commandsRead++;
+                Command(command, runner);
+            }
             UpdateReloadCheck(runner);
         }
         catch (Exception e) { Plugin.Logger.LogError("PHASE3 probe: " + e); }
@@ -98,6 +110,7 @@ internal sealed class Phase3Probe
     {
         if (command.Length == 0) return;
         Event("operator-command", command);
+        if (_components?.Command(command, runner) == true) return;
         if (command == "capture") Capture("operator");
         else if (command == "package-fixture-save")
         {
@@ -830,7 +843,7 @@ internal sealed class Phase3Probe
         return name;
     }
 
-    private void Event(string kind, object detail)
+    internal void Event(string kind, object detail)
     {
         File.AppendAllText(Path.Combine(_dir, "events.jsonl"), JsonSerializer.Serialize(new { utc = DateTime.UtcNow.ToString("O"), frame = Time.frameCount, time = Time.realtimeSinceStartup, kind, detail }) + "\n");
         if (kind is "capture" or "scene" or "enabled" or "hook-error") Plugin.Logger.LogInfo($"PHASE3 {kind}: {JsonSerializer.Serialize(detail)}");

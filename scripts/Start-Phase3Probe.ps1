@@ -2,16 +2,36 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9-]{1,48}$')][string]$RunId,
     [ValidateSet('host', 'join')][string]$Role = 'host',
     [string]$GameDir,
-    [switch]$Deploy
+    [switch]$Deploy,
+    [ValidateSet('3', '4')][string]$Phase = '3',
+    # Relaunch a host on this run's own disposable saves (fresh-process Continue); the earlier process must have exited.
+    [switch]$Resume
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'LocalPaths.ps1')
 $probeGame = [IO.Path]::GetFullPath((Resolve-LocalPath -Value $GameDir -EnvName 'PCBS2_GAME_DIR' -PropName 'GameDir' -What 'game folder'))
 $probeWorkspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$probeRecordDir = Join-Path $probeWorkspace ".local/phase3-$RunId"
-$probeEvidenceDir = Join-Path $probeGame "BepInEx/PCBS2Coop-diag/phase3/$RunId"
-if (Test-Path -LiteralPath (Join-Path $probeRecordDir "$Role-process.json")) { throw 'That role already has a process record. Use a new run ID.' }
-if (Test-Path -LiteralPath (Join-Path $probeEvidenceDir "saves-$Role")) { throw 'That role already has disposable saves. Use a new run ID.' }
+$probeRecordDir = Join-Path $probeWorkspace ".local/phase$Phase-$RunId"
+$probeEvidenceDir = Join-Path $probeGame "BepInEx/PCBS2Coop-diag/phase$Phase/$RunId"
+$probeRecordFile = Join-Path $probeRecordDir "$Role-process.json"
+if ($Resume) {
+    if ($Role -ne 'host') { throw 'Only a host can resume a probe run.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $probeEvidenceDir "saves-$Role/Coop/autofreebuild.binary.zip"))) { throw 'Nothing to resume: this run has no disposable co-op save.' }
+    if (Test-Path -LiteralPath $probeRecordFile) {
+        $probePrevious = Get-Content -LiteralPath $probeRecordFile -Raw | ConvertFrom-Json
+        if (Get-Process -Id $probePrevious.id -ErrorAction SilentlyContinue | Where-Object { $_.StartTime.ToUniversalTime().ToString('O') -eq $probePrevious.startedUtc }) {
+            throw "The run's earlier process (PID $($probePrevious.id)) is still running. Stop it first."
+        }
+        # Keep the earlier record for the stop script's save check; the new launch takes the main record name.
+        $probeArchiveIndex = 1
+        while (Test-Path -LiteralPath (Join-Path $probeRecordDir "$Role-r$probeArchiveIndex-process.json")) { $probeArchiveIndex++ }
+        Move-Item -LiteralPath $probeRecordFile -Destination (Join-Path $probeRecordDir "$Role-r$probeArchiveIndex-process.json")
+    }
+}
+else {
+    if (Test-Path -LiteralPath $probeRecordFile) { throw 'That role already has a process record. Use a new run ID.' }
+    if (Test-Path -LiteralPath (Join-Path $probeEvidenceDir "saves-$Role")) { throw 'That role already has disposable saves. Use a new run ID.' }
+}
 
 # Refuse to deploy over, control or interfere with an owner's existing game.
 $probeKnown = @()
@@ -58,15 +78,16 @@ $probeDeployHashes = @(foreach ($probeFile in $probeFiles) {
 ConvertTo-Json -InputObject $probeDeployHashes | Set-Content -LiteralPath (Join-Path $probeRecordDir 'deployed-hashes.json') -Encoding UTF8
 
 $probeEnvironment = @{}
-foreach ($probeName in @('PCBS2COOP_AUTOTEST', 'PCBS2COOP_PROBE', 'PCBS2COOP_PROBE_RUN')) { $probeEnvironment[$probeName] = [Environment]::GetEnvironmentVariable($probeName) }
+foreach ($probeName in @('PCBS2COOP_AUTOTEST', 'PCBS2COOP_PROBE', 'PCBS2COOP_PROBE_RUN', 'PCBS2COOP_PROBE_RESUME')) { $probeEnvironment[$probeName] = [Environment]::GetEnvironmentVariable($probeName) }
 try {
     $env:PCBS2COOP_AUTOTEST = $Role
-    $env:PCBS2COOP_PROBE = '3'
+    $env:PCBS2COOP_PROBE = $Phase
     $env:PCBS2COOP_PROBE_RUN = $RunId
+    $env:PCBS2COOP_PROBE_RESUME = $(if ($Resume) { '1' } else { $null })
     # This is the interactive game under test, not a background helper window.
     $probeLaunched = Start-Process -FilePath (Join-Path $probeGame 'PCBS2.exe') -WorkingDirectory $probeGame -ArgumentList @('-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720') -PassThru
     $probeRecord = [pscustomobject]@{ id = $probeLaunched.Id; startedUtc = $probeLaunched.StartTime.ToUniversalTime().ToString('O'); game = $probeGame; run = $RunId; role = $Role }
-    $probeRecord | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $probeRecordDir "$Role-process.json") -Encoding UTF8
+    $probeRecord | ConvertTo-Json | Set-Content -LiteralPath $probeRecordFile -Encoding UTF8
     $probeRecord | ConvertTo-Json
 }
 finally {

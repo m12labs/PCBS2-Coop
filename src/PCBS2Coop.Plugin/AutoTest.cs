@@ -46,6 +46,9 @@ internal sealed class AutoTest
     public static bool IsEnabled => Role is "host" or "join";
     private static string Role => Environment.GetEnvironmentVariable("PCBS2COOP_AUTOTEST")?.Trim().ToLowerInvariant();
 
+    /// <summary>Probe host relaunch: reuse this run's disposable saves and press Continue instead of New world.</summary>
+    private static bool ProbeResume => Phase3Probe.Enabled && Environment.GetEnvironmentVariable("PCBS2COOP_PROBE_RESUME") == "1";
+
     /// <summary>The disposable save folder, set once the redirect is confirmed. Null means saves are not isolated.</summary>
     internal static string IsolatedSaveDir { get; private set; }
 
@@ -106,6 +109,15 @@ internal sealed class AutoTest
                 break;
             case 4:
                 if (!r.Menu.Dialog.IsOpen) { Fail("the dialog did not open from the button click."); break; }
+                if (ProbeResume && _role == "host")
+                {
+                    if (!r.Menu.Dialog.ContinueButton.GetComponent<UnityEngine.UI.Button>().interactable) { Fail("resume run has no world to continue."); break; }
+                    Plugin.Logger.LogInfo("AUTOTEST: resuming this probe run; clicking the dialog's 'Continue' button with pointer events.");
+                    Click(r.Menu.Dialog.ContinueButton);
+                    _deadline = now + 240;
+                    Next(now);
+                    break;
+                }
                 Plugin.Logger.LogInfo($"AUTOTEST: clicking the dialog's '{(_role == "host" ? "New world" : "Connect")}' button with pointer events.");
                 Click(r.Menu.Dialog.ApplyButton);
                 _deadline = now + 240;
@@ -401,10 +413,15 @@ internal sealed class AutoTest
         try
         {
             var dir = Phase3Probe.Enabled
-                ? Path.Combine(_dir, "phase3", Phase3Probe.RunId, $"saves-{_role}")
+                ? Path.Combine(_dir, Phase3Probe.Phase, Phase3Probe.RunId, $"saves-{_role}")
                 : Path.Combine(_dir, $"saves-{_role}");
-            // Audit runs use fresh, named folders and retain earlier evidence.
-            if (Phase3Probe.Enabled && Directory.Exists(dir)) throw new IOException("Use a fresh phase 3 run ID; its saves already exist.");
+            // Audit runs use fresh, named folders and retain earlier evidence. A resume reopens only its own run's folder.
+            if (ProbeResume)
+            {
+                if (_role != "host") throw new IOException("Only a probe host can resume a run.");
+                if (!File.Exists(Path.Combine(dir, "Coop", "autofreebuild.binary.zip"))) throw new IOException("Resume needs this run's existing co-op save.");
+            }
+            else if (Phase3Probe.Enabled && Directory.Exists(dir)) throw new IOException("Use a fresh probe run ID; its saves already exist.");
             if (!Phase3Probe.Enabled && Directory.Exists(dir)) Directory.Delete(dir, true);
             Directory.CreateDirectory(dir);
             var original = SaveLoadSystem.s_saveDir;

@@ -1,7 +1,8 @@
-param([Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9-]{1,48}$')][string]$RunId)
+param([Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9-]{1,48}$')][string]$RunId,
+    [ValidateSet('3', '4')][string]$Phase = '3')
 $ErrorActionPreference = 'Stop'
 $probeWorkspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$probeRecordDir = Join-Path $probeWorkspace ".local/phase3-$RunId"
+$probeRecordDir = Join-Path $probeWorkspace ".local/phase$Phase-$RunId"
 $probeRecords = @(Get-ChildItem -LiteralPath $probeRecordDir -Filter '*-process.json' -File | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json })
 if ($probeRecords.Count -eq 0) { throw 'No owned probe processes recorded.' }
 foreach ($probeRecord in $probeRecords) {

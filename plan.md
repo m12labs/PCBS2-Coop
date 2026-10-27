@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is next. Phases 4–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Auditing**, started at the owner's request on October 26, 2026; component edits remain unsynchronized. Phases 5–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -318,6 +318,76 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 **Exit:** two peers agree on parts, slot relations and mechanical state for every supported category, including duplicate identical parts; conflicting edits resolve according to policy; interrupted actions and restoration preserve inventory and topology.
 
 **Audit starting points:** HW component/slot/screw/latch/blocker factors; PW target/tool activity; SS transaction/callback risks.
+
+**Status: Auditing.** Focused audit: [docs/audit/phase-4.md](docs/audit/phase-4.md). Existing owner decisions apply: two players may edit different parts of the same PC, conflicting resources are exclusive, and an actively used PC cannot move. Work starts with the current default Free Build workshop; the phase 3 deferrals for specialist tool benches, DLC layouts and career locations retain their assigned phases. No new UI or interaction flow is selected here.
+
+#### 4a. Focused evidence and component transaction boundaries
+
+- **Status:** Complete (static audit; native/asset runtime gaps belong to 4b).
+- **Outcome and audit IDs:** identify standard component, mechanical, inventory and callback boundaries; map HW-001–015/041/044/051–054/065–066/068–070/073, PW-008–011/013/058–059/065–066 and the session/preservation dependencies to tasks in the focused audit.
+- **Dependencies and decisions:** phase 3 complete; accepted same-PC concurrency and Free Build inventory policy.
+- **Scope and evidence:** current object/activity/capture code; native `InstallingPartState`, `Slot`, `Screw`, `Pin`, case/slot rebuilding and save declarations. Separate inspected native excerpts from declaration-only paths and running-game results.
+- **Work:** record the mutation/cancel/save chain, empty-slot identity gap, same-SKU replacement risk, native hook aliases, required prefab bindings and concrete probe cases.
+- **Acceptance:** every selected factor has an owner task; uncertain callback branches and missing asset/runtime evidence have named follow-up work before dependent implementation.
+- **Completion evidence:** [focused audit](docs/audit/phase-4.md), matching installed binary/metadata hashes, inspected native lifecycle/setter/mechanical excerpts, explicit category/asset gaps and P4-01–08 acceptance matrix. Existing model/network suite passed **353/353**. No phase 4 game run, plugin build/deploy or gameplay implementation; no new product decision was uncovered.
+
+#### 4b. Owned native and asset probe
+
+- **Status:** Complete (owned native evidence, normal-control checks N1–N8 and [gap checks G1–G6](docs/audit/phase-4.md#gap-checks-with-normal-controls-c4b03); the owner deferred custom-loop and cable-accessory edits).
+- **Outcome and audit IDs:** establish actual start/commit/cancel and restoration behavior for standard slots and mechanics (HW-003–013/051/053–054/065–066/068–070/073; PW-009–011/058–059; SS-023/025–027/031/033).
+- **Dependencies and decisions:** 4a; use owned instances and disposable saves. Existing native UI/cameras stay per player.
+- **Scope and evidence:** real generated interop; `InstallingPartState` construction, update and teardown; slot loading/callbacks; screw/pin/case bindings; native inventory and save paths. `Slot.SetComponent` alone is not the install/remove transaction.
+- **Work:** add an opt-in phase 4 probe using the existing isolation pattern; census stable parent/slot/mechanical discriminators in actual prefabs; trace success, cancellation, partial screws/latches, delayed loads and save/reload. Record coverage per component category rather than extrapolating one RAM test to every slot subtype.
+- **Acceptance:** hook candidates are checked for shared native addresses; every category either has sufficient mapping/transaction evidence or a named unresolved gap. Demonstrate callback ownership and what native saves preserve for partial mechanical actions. Owner processes/saves remain untouched.
+- **Completion evidence:** [owned native results and category gaps](docs/audit/phase-4.md#subsequent-native-evidence), opt-in isolated probe/scripts, both cancellation branches, per-slot save aliases and mechanical reload evidence. [Normal-control checks](docs/audit/phase-4.md#desktop-checks-with-normal-controls-c4b01c4b02) established select/preview/commit/toggle/refusal rules, automatic screws (no reachable partial screw), Esc leaving a GPU with cables disconnected, live blocker evaluation, occupied-slot latch closure on load (same process and fresh Continue), single-record multi-slot AIO with aim-selected radiator mount, and fan direction decided at the end of an orientation step. [Gap checks](docs/audit/phase-4.md#gap-checks-with-normal-controls-c4b03) (C4b03) added:
+  - AM4 lever toggles with no native call on refused presses; a saved-open lever stays open.
+  - Air coolers have a two-position click-drag orientation that Esc cannot cancel and that persists.
+  - Standoffs are fully automatic inside the motherboard edit.
+  - Fitted PCI covers block GPU install until removed under a cover lock, and never return by themselves.
+  - The HDD needs the side panel off.
+  - Forced obsolete-callback negative: cold GPU loads take about 3 frames (cold RAM loads synchronously), and a same-frame edit or bench switch made the probe discard the late asset and place nothing.
+
+  **Deferred by the owner as a dependency gap:** custom-loop edits (Piping tool, pump/reservoir, water block) and cable-management accessories (combs, splitters, adapters, cable styles). No component synchronization is implemented.
+
+#### 4c. Slot identity, mechanical state and edit claims
+
+- **Status:** Not started.
+- **Outcome and audit IDs:** represent empty and occupied slots, parent/child dependencies and mechanical resources without locking the entire PC (HW-001–004/007–014/053–054/065–066/068–070/073; SS-013–014/018/023–025/033–035/038).
+- **Dependencies and decisions:** 4b's verified mappings and partial-action save behavior; preserve both players' ability to work on independent resources.
+- **Scope and evidence:** `ObjectWorld`, `ActorActivity`, `NativeObjectState`, snapshot/paired-save state and model tests. Current edit targets accept only existing part IDs and current part facts contain no screw/latch state.
+- **Work:** add stable slot/mechanical identity scoped to the correct PC/parent incarnation; define atomic resource sets for empty destinations, multi-slot parts and parent removal; extend claim-token/epoch revalidation. Preserve same-SKU physical identity, aliases and full native part data. Stop normal save capture from silently adopting supported component edits outside the accepted mutation stream. Version the changed wire/save format before use.
+- **Acceptance:** disjoint slots on one PC can be claimed together; overlapping slots, blockers and parent/child edits conflict atomically. Stale parent incarnations, replaced identical parts and old callbacks cannot resolve to replacements. Snapshot/paired restore preserves topology and mechanics with no ID reuse; malformed state cannot partially replace the model.
+- **Completion evidence:** pending model/network tests and native binding checks.
+
+#### 4d. Host-ordered screws, latches and case access
+
+- **Status:** Not started.
+- **Outcome and audit IDs:** both peers agree on access and mechanical state required for standard building (HW-009–013/041/068–070; PW-008–011/058–059/065–066; SS-018/020–027/031/033–035).
+- **Dependencies and decisions:** 4b–4c. Minimum understandable physical feedback belongs here; detailed character/tool/audio parity remains phase 13.
+- **Scope and evidence:** verified `Screw`, `Pin`, socket/retention and cover/hinge entry points, their dependencies and native save projections.
+- **Work:** intercept outer gestures, acquire resources before native mutation, validate on the host and apply confirmed state once on both peers. Keep local input/state stacks separate from observer projection; prevent observer callbacks from resubmitting commands. Invalidate obsolete callbacks and release claims on cancellation/departure.
+- **Acceptance:** independent mechanical actions coexist; a contested screw/latch resolves once. Interrupted holds, partial assembly, pause, late join, save/Continue and disconnect preserve the accepted physical state and blockers. Projection failures report out of sync.
+- **Completion evidence:** pending model tests and owned two-instance visual/state checks.
+
+#### 4e. Transactional standard component installation and removal
+
+- **Status:** Not started.
+- **Outcome and audit IDs:** shared install/remove for the phase's case, motherboard, CPU, RAM, GPU, storage/M.2, PSU, cooler, fan and accessory paths, including physical USB occupancy carried from phase 3 (HW-001–015/044/051–054/065–066/073; PW-008–011/013/058–059/065–066; SS-018–027/031/033–035/038).
+- **Dependencies and decisions:** 4b–4d; retain Free Build's reusable catalog semantics and full part data. Electrical editing remains phase 5 and USB software effects phase 6; required cross-domain side effects must be evidenced and handled before a path is called supported.
+- **Scope and evidence:** verified native install/remove lifecycle, typed slot overrides, asset loads, inventory side effects, topology publication and accepted projection. Do not select a hook from its method name alone.
+- **Work:** submit intent before native side effects; host-check slot incarnation, fit/blockers, resource ownership and inventory semantics; canonicalize part IDs/data and commit topology atomically. Project only the affected operation so another actor's independent work survives. Preserve inherited condition/orientation/subtype data and account for auto-generated children and multi-slot aliases. Coordinate snapshots/autosaves with pending loads and partially completed actions.
+- **Acceptance:** both actor directions for every supported category; duplicate identical parts and same-SKU replacement; concurrent disjoint work and contested destinations; parent removal versus child installation; incompatible parts; cancel before/after load and commit; duplicate requests and stale completions. Inventory and topology settle exactly once. Late join and save/restart reproduce accepted parts and mechanics.
+- **Completion evidence:** pending category matrix, model/network checks and owned two-instance runs.
+
+#### 4f. Combined phase 4 acceptance
+
+- **Status:** Not started.
+- **Outcome and audit IDs:** prove the phase exit criteria across all selected factors and cross-domain dependencies.
+- **Dependencies and decisions:** 4a–4e; unresolved standard-category evidence keeps the phase in validation.
+- **Scope and evidence:** repeatable disposable-save fixtures and owned host/guest instances; source/model results and runtime results recorded separately in the focused audit.
+- **Work:** combine same-PC disjoint/contested work with movement denial, delayed assets, departure, save/Continue, fresh-process restore, rejoin and changes held during admission. Compare logical part IDs, aliases, slot/parent topology, mechanical state, inventory outcomes and what both games visibly show. Run relevant network regressions and a Release build against real interop, choosing deployment deliberately.
+- **Acceptance:** every standard category and conflict/interruption/restore case has evidence; no silent host-capture adoption or stale callback can overwrite a confirmed edit; phase 3 PC transfers/peripherals and `/sync` still work; owner's saves remain unchanged. Update sync-progress only for implemented and verified coverage.
+- **Completion evidence:** pending; phase 4 remains open until the exit criteria pass.
 
 ### 5. Electrical cables, peripherals and physical power
 
