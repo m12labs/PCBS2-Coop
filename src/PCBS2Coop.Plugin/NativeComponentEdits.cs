@@ -1,0 +1,535 @@
+using HarmonyLib;
+using PCBS2Coop.Network;
+using UnityEngine;
+
+namespace PCBS2Coop;
+
+/// <summary>
+/// Native side of component edits (task 4e, owner decisions October 27, 2026). The editor's gesture becomes a host-ordered
+/// <c>Begin</c>; once accepted, the stored long-press callback runs the game's own edit here. This class follows that
+/// edit to its end (the <c>InstallingPartState</c> settling, or the removal coroutine stopping after Esc in the cable
+/// step) and commits what the game ended with. The other game replays it with <see cref="NativeEditReplay"/>. The host
+/// settles once its own game shows the result: it captures that PC (part identity by native instance, prefab resources
+/// by binding) and publishes it. Every PC is rebound after the settle, once no edit or replay is running there.
+/// </summary>
+internal sealed class NativeComponentEdits : IEditNative
+{
+    private sealed class Request
+    {
+        public NetObjectId Pc, Slot;
+        public EditGesture Gesture;
+        public string Sku = "";
+        public System.Action Replay;
+        public State Work;
+        public Slot NativeSlot;
+        public Case Mesh;
+        public int InventoryBefore;
+    }
+    /// <summary>The edit this player is running natively (one at a time).</summary>
+    private sealed class Local
+    {
+        public OperationId Token;
+        public Request Request;
+        public InstallingPartState State;
+        public bool Entered, Done, Committed;
+        public EditResult Result;
+        public float Since;
+    }
+
+    private readonly CoopController _coop;
+    private readonly WorldSync _world;
+    private readonly Dictionary<OperationId, Request> _pending = new();
+    private Request _submitting;
+    private Local _local;
+    private readonly List<OperationId> _cancel = new();
+    /// <summary>Host: native part instance → part ID of each edited PC before its edit, for the settle capture.</summary>
+    private readonly Dictionary<OperationId, Dictionary<long, NetObjectId>> _identities = new();
+    /// <summary>Host: edits whose result its game shows (or whose replay failed); settled next frame.</summary>
+    private readonly HashSet<OperationId> _ready = new();
+    /// <summary>Host: the edit whose settle is being submitted (the host's Submit resolves synchronously).</summary>
+    private OperationId? _settling;
+    /// <summary>The commit of this player's edit, until the host answers.</summary>
+    private OperationId? _commitOp;
+    public const float EditTimeout = 120f;
+    public ComponentEditWorld Handler { get; }
+    private static NativeComponentEdits Current => CoopController.Instance?.Edits;
+
+    /// <summary>Slot types whose edits are shared. Owner decision (October 27, 2026): custom-loop parts and cable
+    /// accessories are deferred; slot types not probed yet stay refused.</summary>
+    private static readonly HashSet<Slot.SlotType> Shared = new()
+    {
+        Slot.SlotType.MOTHERBOARD, Slot.SlotType.CPU, Slot.SlotType.CPU_COOLER, Slot.SlotType.RAM, Slot.SlotType.PCI,
+        Slot.SlotType.PCI_COVER, Slot.SlotType.STORAGE, Slot.SlotType.M2, Slot.SlotType.PSU, Slot.SlotType.CASE_COOLER,
+        Slot.SlotType.RADIATOR, Slot.SlotType.GPU_PROXY, Slot.SlotType.USB,
+    };
+
+    public NativeComponentEdits(CoopController coop, WorldSync world)
+    {
+        _coop = coop; _world = world;
+        Handler = new ComponentEditWorld(coop.Objects.Model, coop.Activity, this);
+        world.Accepted += (OperationId op, ulong revision) => { _pending.Remove(op); if (_commitOp == op) _commitOp = null; };
+        world.Rejected += OnRejected;
+        world.GenerationStarted += (uint generation, string reason) => Reset();
+    }
+
+    internal void Reset()
+    {
+        Handler.Reset(); _pending.Clear(); _local = null; _cancel.Clear(); _identities.Clear(); _ready.Clear(); _settling = null; _commitOp = null;
+    }
+
+    private bool Active => _world.Admitted && _world.Divergence == null && _coop.Objects.Initialized && _coop.Activity.Get(_world.Local) != null;
+    /// <summary>An edit is waiting, running or being shown: saves and snapshots wait for it.</summary>
+    internal bool Busy => Handler.Edits.Count > 0 || _pending.Count > 0 || _local != null || _ready.Count > 0;
+    /// <summary>An edit claim this game's model holds for an edit in progress (activity must not release it).</summary>
+    internal bool Holds(OperationId token) => Handler.Find(token) != null;
+    private static State CurrentState => GameController.Get()?.GetCurrentState();
+    private void Refuse(string why) => _coop.Notice("Refused: " + why.Replace(Handler.Name + ": ", ""));
+
+    private static int InventoryCount(string sku)
+    {
+        var inventory = CareerStatus.Get()?.GetInventory();
+        var n = 0;
+        if (inventory != null && sku != null) foreach (var p in inventory) if (p != null && p.GetPartId() == sku) n++;
+        return n;
+    }
+
+    /// <summary>The shared slot resource a native slot is, with why it can't be edited in co-op (or null).</summary>
+    private (PcFact Pc, AssemblyResource Slot, string Why) Find(Slot slot)
+    {
+        if (slot == null) return (null, null, "That slot isn't shared in co-op yet.");
+        if (!Shared.Contains(slot.m_slotType)) return (null, null, "Water-cooling, lighting and cable accessories aren't shared in co-op yet.");
+        var (pcId, id) = _coop.Objects.Assembly.Find(slot);
+        var pc = _coop.Objects.Model.Pcs.SingleOrDefault(p => p.Id == pcId);
+        var fact = pc?.Resources.SingleOrDefault(r => r.Id == id);
+        if (fact is not { Kind: AssemblyResourceKind.Slot }) return (null, null, "That slot isn't shared in co-op yet.");
+        if (Handler.Busy(pc.Id, _world.Local) is { } busy) return (null, null, busy);
+        return (pc, fact, null);
+    }
+
+    // ---------------- requests (local input) ----------------
+
+    /// <summary>An install commit (or a click on a placeholder). Returns whether the native install may run now.</summary>
+    internal bool RequestInstall(Slot slot, string sku, System.Action replay)
+    {
+        var (pc, fact, why) = Find(slot);
+        if (why != null) { Refuse(why); return false; }
+        if (string.IsNullOrEmpty(sku)) { Refuse("That part isn't known."); return false; }
+        return Submit(new Request { Pc = pc.Id, Slot = fact.Id, Gesture = EditGesture.Install, Sku = sku, Replay = replay, Work = CurrentState,
+                NativeSlot = slot, Mesh = slot.GetCase(), InventoryBefore = InventoryCount(sku) },
+            ComponentEditWorld.Begin(_coop.Activity.Get(_world.Local)!.Epoch, pc.Id, fact.Id, fact.Version, EditGesture.Install, sku, default),
+            $"install of {sku} into {slot.name}");
+    }
+
+    /// <summary>A removal long press. Returns whether the native removal may run now.</summary>
+    internal bool RequestRemove(ComponentPC comp, EditGesture gesture, System.Action replay)
+    {
+        var slot = comp?.Slot;
+        var (pc, fact, why) = Find(slot);
+        if (why != null) { Refuse(why); return false; }
+        if (comp.m_includesPipes) { Refuse("Water-cooling parts aren't shared in co-op yet."); return false; }
+        if (fact.Occupant.IsNone && fact.IntegralPart == "") { Refuse("That part isn't in the shared world."); return false; }
+        return Submit(new Request { Pc = pc.Id, Slot = fact.Id, Gesture = gesture, Replay = replay, Work = CurrentState, NativeSlot = slot, Mesh = slot.GetCase() },
+            ComponentEditWorld.Begin(_coop.Activity.Get(_world.Local)!.Epoch, pc.Id, fact.Id, fact.Version, gesture, "", fact.Occupant),
+            $"removal of {comp.name} from {slot.name}");
+    }
+
+    /// <summary>Inventory selection while working on a PC: refused while the other player changes that PC.</summary>
+    internal bool AllowSelection(Case forCase)
+    {
+        var id = _coop.Objects.IdOf(forCase);
+        if (!id.IsNone && Handler.Busy(id, _world.Local) is { } busy) { Refuse(busy); return false; }
+        return true;
+    }
+
+    private bool Submit(Request request, byte[] payload, string what)
+    {
+        if (!Active) { Refuse("The shared world isn't ready on this game yet."); return false; }
+        if (_local != null || _pending.Count > 0) { Refuse("Your previous change is still finishing."); return false; }
+        _submitting = request;
+        try
+        {
+            if (!_world.Submit(CommandTypes.ComponentEdit, payload, out var op)) { Refuse("Not connected to the host's world."); return false; }
+            if (!_world.IsAuthority && Handler.Find(op) == null) _pending[op] = request;
+            Plugin.Logger.LogInfo($"[edits] {what} requested ({op}).");
+        }
+        finally { _submitting = null; }
+        return false;
+    }
+
+    private void OnRejected(OperationId op, RejectReason reason, string text)
+    {
+        if (_settling is { } token && op.Actor == _world.Local)
+        {
+            _settling = null;
+            // The host's own capture was refused: its game and the model now differ. Drop the edit so the PC is free again.
+            _coop.ProjectionFailed($"The host could not settle component edit {token}", new InvalidDataException(text));
+            _cancel.Add(token);
+            return;
+        }
+        if (op.Actor != _world.Local) return;
+        if (_commitOp == op)
+        {
+            // This game already shows the edit; the shared world doesn't. Drop it so the PC is free, and say so.
+            _commitOp = null;
+            var mine = _local?.Token;
+            _local = null;
+            _coop.ProjectionFailed("The host refused this game's finished component edit", new InvalidDataException(text));
+            if (mine is { } t) _cancel.Add(t);
+            return;
+        }
+        if (_submitting != null || _pending.Remove(op)) Refuse(text);
+    }
+
+    // ---------------- IEditNative ----------------
+
+    public string CheckHost(in CommandContext ctx, PcFact pc, AssemblyResource fact, ComponentEdit edit)
+    {
+        var slot = _coop.Objects.Assembly.NativeFor(pc.Id, fact.Id)?.TryCast<Slot>();
+        if (slot == null) return "That slot is missing on the host's game.";
+        if (!Shared.Contains(slot.m_slotType)) return "Water-cooling, lighting and cable accessories aren't shared in co-op yet.";
+        if (CoopController.Instance?.Replays.Running(slot.GetCase()) == true) return "The host's game is still showing the previous change.";
+        var comp = slot.GetComponent();
+        if (comp != null && NativeAssembly.IsPreview(comp)) comp = null;
+        if (!edit.Install)
+        {
+            if (comp == null) return "The host's game shows that slot empty.";
+            if (!comp.CanBeUninstalled()) return "Something is in the way of that part.";
+            if (comp.m_includesPipes) return "Water-cooling parts aren't shared in co-op yet.";
+            if (!edit.Component.IsNone && pc.Parts.SingleOrDefault(p => p.Id == edit.Component)?.Sku != comp.GetPartInstance()?.GetPartId())
+                return "The host's game shows a different part there.";
+            return null;
+        }
+        if (comp != null) return "The host's game shows that slot filled.";
+        var part = PartInstance.NewPartInstance(edit.Part, 0, null);
+        if (part?.GetPart() == null) return "That part is unknown on the host's game.";
+        return slot.CanFillWithItem(part) ? null : "That part doesn't fit there on the host's game.";
+    }
+
+    public void Began(in MutationContext ctx, PcFact pc, ComponentEdit edit)
+    {
+        var what = $"{edit.Gesture} at slot {edit.Slot} on PC {pc.Id} by {ctx.Op}";
+        try
+        {
+            // The host remembers which native instance each part is before anything changes, for its settle capture.
+            if (_world.IsAuthority) _identities[edit.Token] = Identities(pc);
+            var request = ctx.FromLocalPlayer ? _submitting ?? _pending.GetValueOrDefault(ctx.Op) : null;
+            _pending.Remove(ctx.Op);
+            if (!ctx.FromLocalPlayer)
+            {
+                ClearPreviews(pc.Id);
+                Plugin.Logger.LogInfo($"[edits] {what}: the other player is editing.");
+                return;
+            }
+            if (request?.Replay == null || request.Work == null || CurrentState?.Pointer != request.Work.Pointer || request.NativeSlot == null)
+            {
+                Plugin.Logger.LogWarning($"[edits] {what}: this player's work state changed before the host answered; cancelling.");
+                _cancel.Add(edit.Token);
+                return;
+            }
+            _local = new Local { Token = edit.Token, Request = request, Since = Time.realtimeSinceStartup };
+            NativeProjection.Run(request.Replay);
+            Plugin.Logger.LogInfo($"[edits] {what}: running here.");
+        }
+        catch (Exception e)
+        {
+            _local = null;
+            _coop.ProjectionFailed($"The {what} was accepted, but this game could not start it", e);
+            if (ctx.FromLocalPlayer) _cancel.Add(edit.Token);
+        }
+    }
+
+    public void Committed(in MutationContext ctx, PcFact pc, ComponentEdit edit)
+    {
+        var token = edit.Token;
+        if (ctx.FromLocalPlayer)
+        {
+            if (_local?.Token == token) _local = null;
+            if (_world.IsAuthority) _ready.Add(token);
+            return;
+        }
+        var what = $"{edit.Gesture} at slot {edit.Slot} on PC {pc.Id} by {ctx.Op}";
+        try
+        {
+            var plan = Plan(pc, edit);
+            plan.Finished = error =>
+            {
+                if (error != null) _coop.ProjectionFailed($"The other player's {what} was accepted, but this game could not show it", new InvalidDataException(error));
+                if (_world.IsAuthority) _ready.Add(token);
+                if (error == null) Plugin.Logger.LogInfo($"[edits] {what}: shown here.");
+            };
+            CoopController.Instance.Replays.Start(plan);
+        }
+        catch (Exception e)
+        {
+            _coop.ProjectionFailed($"The other player's {what} was accepted, but this game could not show it", e);
+            if (_world.IsAuthority) _ready.Add(token);
+        }
+    }
+
+    public void Cancelled(in MutationContext ctx, ComponentEdit edit)
+    {
+        if (_local?.Token == edit.Token) _local = null;
+        _identities.Remove(edit.Token); _ready.Remove(edit.Token);
+        Plugin.Logger.LogInfo($"[edits] edit {edit.Token} cancelled.");
+    }
+
+    public void Settled(in MutationContext ctx, PcFact pc, ComponentEdit edit)
+    {
+        _identities.Remove(edit.Token); _ready.Remove(edit.Token);
+        if (_local?.Token == edit.Token) _local = null;
+        // Rebind once nothing runs on that PC here (this game's replay may still be playing).
+        _coop.Objects.Assembly.RequestRebind(pc.Id);
+        Plugin.Logger.LogInfo($"[edits] edit {edit.Token} settled on PC {pc.Id} ({pc.Parts.Count} parts, {pc.Resources.Count} resources).");
+    }
+
+    /// <summary>Host: the edited PC as its game shows it. A part keeps its ID while it is the same native instance.</summary>
+    public PcFact Capture(PcFact pc, ComponentEdit edit, NetObjectIdAllocator allocator)
+    {
+        if (!_coop.Objects.Projections.TryGet(pc.Id, out var mesh) || mesh == null) throw new InvalidDataException("That PC isn't shown on the host's game.");
+        if (!_identities.TryGetValue(edit.Token, out var identities)) throw new InvalidDataException("The host lost that PC's part identities.");
+        var record = _coop.Objects.CaptureRecord(pc.Id) ?? throw new InvalidDataException("That PC has no native record.");
+        var facts = new List<PartFact>(); var links = new List<PartLink>(); var aliases = new Dictionary<long, NetObjectId>();
+        var known = pc.Parts.ToDictionary(p => p.Id);
+        foreach (var (path, part) in NativeObjectState.Parts(record))
+        {
+            var pointer = part.Pointer.ToInt64();
+            if (!aliases.TryGetValue(pointer, out var id))
+            {
+                id = identities.TryGetValue(pointer, out var prior) && known.TryGetValue(prior, out var fact) &&
+                    fact.Sku == part.GetPartId() && fact.NativeType == part.GetIl2CppType().FullName ? prior : allocator.Allocate();
+                aliases.Add(pointer, id);
+                facts.Add(new(id, part.GetPartId(), part.GetIl2CppType().FullName));
+            }
+            links.Add(new(path, id));
+        }
+        var captured = new PcFact(pc.Id, pc.Provenance, pc.Location, facts, links) { Resources = pc.Resources, BuildProfile = pc.BuildProfile };
+        captured = AssemblyManifest.Repair(captured, _coop.Objects.Assembly.Describe(captured, mesh, record), allocator);
+        var added = facts.Where(f => !known.ContainsKey(f.Id)).Select(f => f.Sku); var removed = pc.Parts.Where(p => !aliases.ContainsValue(p.Id)).Select(p => p.Sku);
+        Plugin.Logger.LogInfo($"[edits] settle capture of PC {pc.Id}: added [{string.Join(", ", added)}], removed [{string.Join(", ", removed)}].");
+        return captured with { BuildProfile = NativeAssembly.CaptureProfile(captured, mesh, record) };
+    }
+
+    /// <summary>Native part instances of a PC (from its last record, or a fresh one if that no longer matches the model).</summary>
+    private Dictionary<long, NetObjectId> Identities(PcFact pc)
+    {
+        var record = _coop.Objects.RecordFor(pc.Id);
+        try { NativeObjectState.CheckParts(pc, record); }
+        catch (Exception) { record = _coop.Objects.CaptureRecord(pc.Id); NativeObjectState.CheckParts(pc, record); }
+        var result = new Dictionary<long, NetObjectId>();
+        foreach (var (path, part) in NativeObjectState.Parts(record)) result[part.Pointer.ToInt64()] = pc.Links.Single(l => l.Path == path).Part;
+        return result;
+    }
+
+    /// <summary>The other player's previews on that PC go away before their slots change underneath them.</summary>
+    private void ClearPreviews(NetObjectId pc)
+    {
+        var work = CurrentState?.TryCast<WorkingOnComputerState>();
+        if (work?.m_case == null || _coop.Objects.IdOf(work.m_case) != pc || !NativeAssembly.HasPreview) return;
+        NativeProjection.Run(work.ClearPlaceholders);
+        Plugin.Logger.LogInfo("[edits] cleared this player's part previews: the other player is changing that PC.");
+    }
+
+    /// <summary>The replay of a committed edit on this game.</summary>
+    private NativeEditReplay.Plan Plan(PcFact pc, ComponentEdit edit)
+    {
+        var slot = _coop.Objects.Assembly.NativeFor(pc.Id, edit.Slot)?.TryCast<Slot>() ?? throw new InvalidDataException("the slot is not bound on this game");
+        var r = edit.Result!;
+        var plan = new NativeEditReplay.Plan
+        {
+            Label = $"{edit.Gesture} {edit.Token} at {slot.name}", Case = slot.GetCase(), Bench = _coop.Objects.FindBench(pc.Id), Slot = slot,
+            Degrees = r.Degrees, Mode = r.Mode, Selected = r.Selected,
+            Cables = new NativeEditReplay.CableChoice { Type = r.CableType, Connector = r.CableConnector, Pins = r.Pins.ToArray() },
+        };
+        if (plan.Case == null) throw new InvalidDataException("the PC is not shown on this game");
+        if (edit.Install)
+        {
+            PartInstance part = null;
+            if (r.FromInventory)
+            {
+                var inventory = CareerStatus.Get()?.GetInventory();
+                if (inventory != null) foreach (var p in inventory) if (p != null && p.GetPartId() == edit.Part) { part = p; break; }
+                if (part == null) Plugin.Logger.LogWarning($"[edits] {plan.Label}: the editor used a {edit.Part} from its inventory, but this player's inventory has none; using a new one.");
+            }
+            part ??= PartInstance.NewPartInstance(edit.Part, 0, null) ?? throw new InvalidDataException($"part {edit.Part} is unknown");
+            if (part.IsFlipped() != r.Flipped) part.SetFlipped(r.Flipped);
+            plan.Part = part;
+            return plan;
+        }
+        var comp = slot.GetComponent();
+        if (comp == null || NativeAssembly.IsPreview(comp)) throw new InvalidDataException("the slot is empty on this game");
+        if (!edit.Component.IsNone && pc.Parts.SingleOrDefault(p => p.Id == edit.Component)?.Sku != comp.GetPartInstance()?.GetPartId())
+            throw new InvalidDataException("this game shows a different part in that slot");
+        plan.Component = comp;
+        plan.UnplugOnly = r.Outcome == EditOutcome.Unplugged;
+        plan.Direct = edit.Gesture == EditGesture.RemoveDirect;
+        return plan;
+    }
+
+    // ---------------- per frame ----------------
+
+    public void Update()
+    {
+        if (!_world.Admitted) return;
+        foreach (var token in _cancel.ToArray())
+        {
+            _cancel.Remove(token);
+            if (Handler.Find(token) is not { } edit) continue;
+            var actor = _coop.Activity.Get(_world.Local);
+            if (actor == null || (!_world.IsAuthority && edit.Actor != _world.Local)) continue;
+            _world.Submit(CommandTypes.ComponentEdit, ComponentEditWorld.Cancel(actor.Epoch, token), out _);
+        }
+        UpdateLocal();
+        if (_world.IsAuthority) UpdateHost();
+    }
+
+    private void UpdateLocal()
+    {
+        if (_local == null || _local.Committed) return;
+        if (Handler.Find(_local.Token) is not { Stage: EditStage.Running })
+        {
+            _local = null;
+            return;
+        }
+        if (_local.Done)
+        {
+            _local.Committed = true;
+            var actor = _coop.Activity.Get(_world.Local);
+            Plugin.Logger.LogInfo($"[edits] edit {_local.Token} finished here ({_local.Result.Outcome}, {_local.Result.Degrees} degrees, mode {_local.Result.Mode}); committing.");
+            if (actor != null && _world.Submit(CommandTypes.ComponentEdit, ComponentEditWorld.Commit(actor.Epoch, _local.Token, _local.Result), out var op))
+            {
+                if (!_world.IsAuthority) _commitOp = op;
+            }
+            else
+            {
+                _coop.ProjectionFailed($"This game's component edit {_local.Token} could not be sent to the host", new InvalidDataException("not connected"));
+                _local = null;
+            }
+            return;
+        }
+        if (Time.realtimeSinceStartup - _local.Since > EditTimeout)
+        {
+            var token = _local.Token; _local = null;
+            _coop.ProjectionFailed($"This game's component edit {token} did not finish", new TimeoutException($"still running after {EditTimeout} s"));
+            _cancel.Add(token);
+        }
+    }
+
+    private void UpdateHost()
+    {
+        foreach (var edit in Handler.Edits)
+        {
+            // An editor that left (its claim went with it) never commits: settle from the host's game as it is.
+            if (edit.Stage == EditStage.Running && edit.Actor != _world.Local && _coop.Activity.Get(edit.Actor)?.Pending?.Token != edit.Token)
+                _ready.Add(edit.Token);
+        }
+        foreach (var token in _ready.ToArray())
+        {
+            if (Handler.Find(token) is not { } edit) { _ready.Remove(token); continue; }
+            if (!Stable(edit.Pc)) continue;
+            _ready.Remove(token);
+            _settling = token;
+            try { _world.Submit(CommandTypes.ComponentEdit, ComponentEditWorld.Settle(token), out _); }
+            finally { _settling = null; }
+        }
+    }
+
+    /// <summary>Host: nothing is moving on that PC here (no edit state on it, no replay, no preview, no moving latch).</summary>
+    private bool Stable(NetObjectId pc)
+    {
+        if (!_coop.Objects.Projections.TryGet(pc, out var mesh) || mesh == null) return true; // not shown here: the capture refuses, and the edit is dropped
+        if (CoopController.Instance.Replays.Running(mesh)) return false;
+        var install = CurrentState?.TryCast<InstallingPartState>();
+        if (install?.m_case != null && install.m_case.Pointer == mesh.Pointer) return false;
+        foreach (var slot in mesh.GetComponentsInChildren<Slot>(true))
+            if (slot.GetComponent() is { } c && NativeAssembly.IsPreview(c)) return false;
+        foreach (var pin in mesh.GetComponentsInChildren<CPin>(true))
+            if (pin != null && pin.IsAnimating()) return false;
+        return true;
+    }
+
+    // ---------------- following this player's own edit ----------------
+
+    private void Entered(InstallingPartState state)
+    {
+        if (_local == null || _local.Entered || state == null) return;
+        // Only one edit of this player runs at a time, so the next edit state on that PC (or in that slot) is it. A
+        // removal state and a clicked placeholder may not carry the same slot object as the gesture.
+        var slot = state.m_slot; var mesh = state.m_case;
+        var match = (slot != null && slot.Pointer == _local.Request.NativeSlot.Pointer) ||
+            (mesh != null && _local.Request.Mesh != null && mesh.Pointer == _local.Request.Mesh.Pointer);
+        if (!match) return;
+        _local.Entered = true; _local.State = state;
+    }
+
+    private void Settling(InstallingPartState state)
+    {
+        if (_local?.State == null || state == null || state.Pointer != _local.State.Pointer || _local.Done) return;
+        var work = GameController.Get()?.GetPreviousState()?.TryCast<WorkingOnComputerState>();
+        var cables = NativeEditReplay.CableChoice.Current();
+        _local.Result = new EditResult(EditOutcome.Done, state.m_degrees, false, (byte)(int)(work?.m_mode ?? (WorkingOnComputerState.Mode)1),
+            (byte)(int)(work?.m_currentSelected ?? (WorkingOnComputerState.Mode)1), false, cables.Type ?? "", cables.Connector ?? "", cables.Pins ?? Array.Empty<int>());
+    }
+
+    private void Settled(InstallingPartState state)
+    {
+        if (_local?.State == null || state == null || state.Pointer != _local.State.Pointer || _local.Done || _local.Result == null) return;
+        var install = _local.Request.Gesture == EditGesture.Install;
+        _local.Result = _local.Result with
+        {
+            Flipped = install && state.m_part?.IsFlipped() == true,
+            FromInventory = install && _local.Request.InventoryBefore > InventoryCount(_local.Request.Sku),
+        };
+        _local.Done = true;
+    }
+
+    /// <summary>The removal coroutine stopped without starting the part step: the editor left during the cable step.</summary>
+    private void RemovalStopped()
+    {
+        if (_local == null || _local.Entered || _local.Done || _local.Request.Gesture != EditGesture.Remove) return;
+        var cables = NativeEditReplay.CableChoice.Current();
+        _local.Result = new EditResult(EditOutcome.Unplugged, float.NaN, false, 0, 0, false, cables.Type ?? "", cables.Connector ?? "", cables.Pins ?? Array.Empty<int>());
+        _local.Done = true;
+        Plugin.Logger.LogInfo($"[edits] edit {_local.Token}: the removal stopped during its cable step (cables only).");
+    }
+
+    private static bool Ours => !NativeEditReplay.Active && Current?._local != null;
+
+    [HarmonyPatch(typeof(GameController), nameof(GameController.SetCurrentState))]
+    internal static class EnterTrace
+    {
+        private static void Postfix(State state)
+        {
+            if (!Ours) return;
+            try { Current.Entered(state?.TryCast<InstallingPartState>()); }
+            catch (Exception e) { Plugin.Logger.LogError("[edits] state trace failed: " + e); }
+        }
+    }
+
+    [HarmonyPatch(typeof(InstallingPartState), nameof(InstallingPartState.OnStateDestroy))]
+    internal static class SettleTrace
+    {
+        private static void Prefix(InstallingPartState __instance)
+        {
+            if (!Ours) return;
+            try { Current.Settling(__instance); }
+            catch (Exception e) { Plugin.Logger.LogError("[edits] settle trace failed: " + e); }
+        }
+        private static void Postfix(InstallingPartState __instance)
+        {
+            if (!Ours) return;
+            try { Current.Settled(__instance); }
+            catch (Exception e) { Plugin.Logger.LogError("[edits] settle trace failed: " + e); }
+        }
+    }
+
+    [HarmonyPatch(typeof(WorkingOnComputerState._Uninstall_d__72), nameof(WorkingOnComputerState._Uninstall_d__72.MoveNext))]
+    internal static class RemovalTrace
+    {
+        private static void Postfix(bool __result)
+        {
+            if (__result || !Ours) return;
+            try { Current.RemovalStopped(); }
+            catch (Exception e) { Plugin.Logger.LogError("[edits] removal trace failed: " + e); }
+        }
+    }
+}

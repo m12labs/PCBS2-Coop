@@ -126,6 +126,8 @@ public static class CommandTypes
     public const ushort Mechanism = 7;
     /// <summary>Host-ordered removal and refitting of integral case panels (<see cref="CasePanelWorld"/>).</summary>
     public const ushort CasePanel = 8;
+    /// <summary>Host-ordered component installs and removals with the game's own animations (<see cref="ComponentEditWorld"/>).</summary>
+    public const ushort ComponentEdit = 9;
 }
 
 /// <summary>World-space snapshot of one player. Position is the feet (bottom of the character controller).</summary>

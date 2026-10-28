@@ -106,14 +106,16 @@ internal static class PanelTests
             R(go, 11).Version == 2 && l.GuestRejected.Last().Text.Contains("just changed") && Same(),
             "two refits of one panel: the first lands, restoring the same carried IDs, and the other is refused");
 
-        // The other player's edit reading the panel (a slot behind it) holds it; disjoint panels stay free.
+        // Owner decision (4e): while the other player's edit holds part of a PC, the other player waits on that whole PC.
         var claim = Send(l.Guest, ActivityWorld.Reserve(G(), Id(2), ActivityOperation.Edit, Id(15)), CommandTypes.ActorActivity);
         rev = l.Host.Revision;
         Send(l.Host, Remove(H(), 10, ho));
-        t.Check(l.Host.Revision == rev && l.HostRejected.Last().Text.Contains("using that part"), "a panel guarding the other player's edit can't be removed");
+        t.Check(l.Host.Revision == rev && l.HostRejected.Last().Text.Contains("changing a part of that PC"), "a panel guarding the other player's edit can't be removed");
         Send(l.Host, Remove(H(), 17, ho));
-        t.Check(l.Host.Revision == rev + 1 && R(go, 17).IntegralPart == "" && Same(), "a different panel on the same PC can be removed meanwhile");
+        t.Check(l.Host.Revision == rev && l.HostRejected.Last().Text.Contains("changing a part of that PC"), "nor can a different panel on the same PC while that edit runs");
         Send(l.Guest, ActivityWorld.Release(G(), claim), CommandTypes.ActorActivity);
+        Send(l.Host, Remove(H(), 17, ho));
+        t.Check(R(go, 17).IntegralPart == "" && Same(), "once the edit is released, the other panel can be removed");
 
         var mounted = Fixture(host); var withFan = mounted with { Resources = mounted.Resources.Select(r => r.Id == Id(14) ? r with { Occupant = Id(5) } :
             r.Id == Id(18) ? r with { Occupant = default } : r).ToArray() };

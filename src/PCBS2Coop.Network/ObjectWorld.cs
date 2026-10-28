@@ -53,7 +53,15 @@ public sealed class ObjectWorld : IWorldState
     public ObjectLookup Lookup(NetObjectId id) => Pcs.Any(x => AssemblyResources.AllIds(x).Contains(id)) || Locations.Any(x => x.Id == id)
         ? ObjectLookup.Live : Retired.Contains(id) ? ObjectLookup.Retired : ObjectLookup.Unknown;
 
-    public void Replace(Guid world, ulong next, IEnumerable<LocationFact> locations, IEnumerable<PcFact> pcs, IEnumerable<NetObjectId> retired)
+    public void Replace(Guid world, ulong next, IEnumerable<LocationFact> locations, IEnumerable<PcFact> pcs, IEnumerable<NetObjectId> retired) =>
+        Replace(world, next, locations, pcs, retired, dryRun: false);
+
+    /// <summary>Every check <see cref="Replace(Guid, ulong, IEnumerable{LocationFact}, IEnumerable{PcFact}, IEnumerable{NetObjectId})"/>
+    /// makes against this world, without publishing (and without the plugin's binding check).</summary>
+    internal void CheckReplace(Guid world, ulong next, IEnumerable<LocationFact> locations, IEnumerable<PcFact> pcs, IEnumerable<NetObjectId> retired) =>
+        Replace(world, next, locations, pcs, retired, dryRun: true);
+
+    private void Replace(Guid world, ulong next, IEnumerable<LocationFact> locations, IEnumerable<PcFact> pcs, IEnumerable<NetObjectId> retired, bool dryRun)
     {
         var candidate = new ObjectWorld
         {
@@ -90,6 +98,7 @@ public sealed class ObjectWorld : IWorldState
                             !r.LoadCloses.SequenceEqual(old.LoadCloses) || r.IntegralHome != old.IntegralHome || !r.Carries.SequenceEqual(old.Carries)))))
                         Bad("An assembly change must advance its resource version.");
         }
+        if (dryRun) return;
         CheckBindings?.Invoke(candidate);
         WorldId = candidate.WorldId; NextId = candidate.NextId;
         Locations = candidate.Locations; Pcs = candidate.Pcs; Retired = candidate.Retired;
@@ -168,19 +177,36 @@ public sealed class ObjectWorld : IWorldState
         w.Put(Locations.Count);
         foreach (var l in Locations) { l.Id.Write(w); w.Put(l.Key); }
         w.Put(Pcs.Count);
-        foreach (var pc in Pcs)
-        {
-            pc.Id.Write(w); w.Put((byte)pc.Provenance.Origin); pc.Provenance.Creator.Write(w);
-            w.Put((byte)pc.Provenance.Operation.Actor); w.Put(pc.Provenance.Operation.Sequence);
-            w.Put((byte)pc.Location.Place); w.Put(pc.Location.Key); w.Put((byte)pc.Location.Actor); pc.Location.Player.Write(w);
-            w.Put(pc.Parts.Count);
-            foreach (var part in pc.Parts) { part.Id.Write(w); w.Put(part.Sku); w.Put(part.NativeType); }
-            w.Put(pc.Links.Count);
-            foreach (var link in pc.Links) { w.Put(link.Path); link.Part.Write(w); }
-            w.Put(pc.Resources.Count); foreach (var resource in pc.Resources) AssemblyResources.Write(w, resource);
-            WriteProfile(w, pc.BuildProfile);
-        }
+        foreach (var pc in Pcs) WritePc(w, pc);
         w.Put(Retired.Count); foreach (var id in Retired) id.Write(w);
+    }
+
+    /// <summary>One PC fact in the object-state encoding (also used by component edits to publish a settled PC).</summary>
+    internal static void WritePc(NetDataWriter w, PcFact pc)
+    {
+        pc.Id.Write(w); w.Put((byte)pc.Provenance.Origin); pc.Provenance.Creator.Write(w);
+        w.Put((byte)pc.Provenance.Operation.Actor); w.Put(pc.Provenance.Operation.Sequence);
+        w.Put((byte)pc.Location.Place); w.Put(pc.Location.Key); w.Put((byte)pc.Location.Actor); pc.Location.Player.Write(w);
+        w.Put(pc.Parts.Count);
+        foreach (var part in pc.Parts) { part.Id.Write(w); w.Put(part.Sku); w.Put(part.NativeType); }
+        w.Put(pc.Links.Count);
+        foreach (var link in pc.Links) { w.Put(link.Path); link.Part.Write(w); }
+        w.Put(pc.Resources.Count); foreach (var resource in pc.Resources) AssemblyResources.Write(w, resource);
+        WriteProfile(w, pc.BuildProfile);
+    }
+
+    internal static PcFact ReadPc(NetDataReader r)
+    {
+        var id = NetObjectId.Read(r);
+        var provenance = new InstanceProvenance((InstanceOrigin)r.GetByte(), PlayerId.Read(r), new((ActorSlot)r.GetByte(), r.GetUInt()));
+        var location = new PcLocation((PcPlace)r.GetByte(), r.GetString(1024), (ActorSlot)r.GetByte(), PlayerId.Read(r));
+        var parts = new PartFact[Count(r, MaxPartsPerPc)];
+        for (var j = 0; j < parts.Length; j++) parts[j] = new(NetObjectId.Read(r), r.GetString(1024), r.GetString(1024));
+        var links = new PartLink[Count(r, MaxLinksPerPc)];
+        for (var j = 0; j < links.Length; j++) links[j] = new(r.GetString(1024), NetObjectId.Read(r));
+        var resources = new AssemblyResource[Count(r, AssemblyResources.MaxPerPc)];
+        for (var j = 0; j < resources.Length; j++) resources[j] = AssemblyResources.Read(r);
+        return new(id, provenance, location, parts, links) { Resources = resources, BuildProfile = ReadProfile(r) };
     }
 
     public void Read(NetDataReader r)
@@ -192,19 +218,7 @@ public sealed class ObjectWorld : IWorldState
             var locations = new LocationFact[Count(r, 1024)];
             for (var i = 0; i < locations.Length; i++) locations[i] = new(NetObjectId.Read(r), r.GetString(1024));
             var pcs = new PcFact[Count(r, MaxPcs)];
-            for (var i = 0; i < pcs.Length; i++)
-            {
-                var id = NetObjectId.Read(r);
-                var provenance = new InstanceProvenance((InstanceOrigin)r.GetByte(), PlayerId.Read(r), new((ActorSlot)r.GetByte(), r.GetUInt()));
-                var location = new PcLocation((PcPlace)r.GetByte(), r.GetString(1024), (ActorSlot)r.GetByte(), PlayerId.Read(r));
-                var parts = new PartFact[Count(r, MaxPartsPerPc)];
-                for (var j = 0; j < parts.Length; j++) parts[j] = new(NetObjectId.Read(r), r.GetString(1024), r.GetString(1024));
-                var links = new PartLink[Count(r, MaxLinksPerPc)];
-                for (var j = 0; j < links.Length; j++) links[j] = new(r.GetString(1024), NetObjectId.Read(r));
-                var resources = new AssemblyResource[Count(r, AssemblyResources.MaxPerPc)];
-                for (var j = 0; j < resources.Length; j++) resources[j] = AssemblyResources.Read(r);
-                pcs[i] = new(id, provenance, location, parts, links) { Resources = resources, BuildProfile = ReadProfile(r) };
-            }
+            for (var i = 0; i < pcs.Length; i++) pcs[i] = ReadPc(r);
             var retired = new NetObjectId[Count(r, MaxObjects)];
             for (var i = 0; i < retired.Length; i++) retired[i] = NetObjectId.Read(r);
             if (r.AvailableBytes != 0) Bad("Trailing object state bytes.");

@@ -55,6 +55,10 @@ internal sealed partial class CoopController
     public NativeWorkstations Workstations { get; private set; }
     public NativeMechanisms Mechanisms { get; private set; }
     public NativeCaseAccess Panels { get; private set; }
+    /// <summary>The game's own install/removal animations for the other player's edits (task 4e).</summary>
+    public NativeEditReplay Replays { get; } = new();
+    /// <summary>Host-ordered component installs and removals (task 4e, command 9).</summary>
+    public NativeComponentEdits Edits { get; private set; }
     private string _notice;
     private float _noticeUntil;
     public string ActiveNotice => _notice != null && Time.realtimeSinceStartup < _noticeUntil ? _notice : null;
@@ -297,7 +301,8 @@ internal sealed partial class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); NativeProjection.Update(); }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Replays.Update(); NativeProjection.Update(); }
+        else if (Replays.Busy) Replays.Reset();
 
         UpdateRemoteView(inWorkshop);
     }
@@ -614,6 +619,7 @@ internal sealed partial class CoopController
     {
         Markers = new DiagnosticMarkerHandler();
         Objects = new NativeObjectState();
+        Replays.Reset();
         Activity = new ActivityWorld(Objects.Model);
         Objects.Assembly.Configure(Activity);
         _nativeActivity = new NativeActivity(this, world);
@@ -622,6 +628,7 @@ internal sealed partial class CoopController
         Workstations = new NativeWorkstations(this, world);
         Mechanisms = new NativeMechanisms(this, world);
         Panels = new NativeCaseAccess(this, world);
+        Edits = new NativeComponentEdits(this, world);
         world.Register(CommandTypes.DiagnosticMarker, Markers);
         world.RegisterState(Markers);
         world.RegisterState(Objects);
@@ -633,11 +640,12 @@ internal sealed partial class CoopController
         world.Register(CommandTypes.AssemblyManifest, Objects.Assembly.Handler);
         world.Register(CommandTypes.Mechanism, Mechanisms.Handler);
         world.Register(CommandTypes.CasePanel, Panels.Handler);
+        world.Register(CommandTypes.ComponentEdit, Edits.Handler);
         // Optional: saves from before 0.10 have no workstation state; the host binds it from its loaded world.
         world.RegisterState(Workstations, optional: true);
         world.Rejected += (OperationId op, RejectReason reason, string text) => Plugin.Logger.LogWarning($"[world] {op} refused: {reason} {text}");
         world.Diverged += (string why) => { Plugin.Logger.LogError($"[world] OUT OF SYNC: {why}"); AnnounceOutOfSync(why); };
-        world.GenerationStarted += (uint gen, string why) => { Plugin.Logger.LogInfo($"[world] generation {gen}: {why}"); ClearProjectionFault(); };
+        world.GenerationStarted += (uint gen, string why) => { Plugin.Logger.LogInfo($"[world] generation {gen}: {why}"); Replays.Reset(); ClearProjectionFault(); };
         world.WorldReplaced += (string why) => LeaveToMenu("The host loaded a different world.", failAdmission: false);
     }
 

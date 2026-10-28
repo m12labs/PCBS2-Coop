@@ -40,11 +40,23 @@ internal static class GamePatches
             panels.PatchAll(typeof(NativeCaseAccess.PipeRemovalIntercept));
             panels.PatchAll(typeof(NativeCaseAccess.InstallIntercept));
             panels.PatchAll(typeof(NativeCaseAccess.SelectionIntercept));
+            var replay = new Harmony(Plugin.Guid + ".edit-replay");
+            replay.PatchAll(typeof(NativeEditReplay.PreviousGuard));
+            replay.PatchAll(typeof(NativeEditReplay.LastDifferentGuard));
+            replay.PatchAll(typeof(NativeEditReplay.EnterGuard));
+            replay.PatchAll(typeof(NativeEditReplay.PreviousStateGuard));
+            replay.PatchAll(typeof(NativeEditReplay.InputGuard));
+            replay.PatchAll(typeof(NativeEditReplay.OrientationGuard));
+            replay.PatchAll(typeof(NativeEditReplay.SelectableGuard));
+            var edits = new Harmony(Plugin.Guid + ".edits");
+            edits.PatchAll(typeof(NativeComponentEdits.EnterTrace));
+            edits.PatchAll(typeof(NativeComponentEdits.SettleTrace));
+            edits.PatchAll(typeof(NativeComponentEdits.RemovalTrace));
             foreach (var method in Harmony.GetAllPatchedMethods())
                 if (FoldedWith(method) is { } other)
                     Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");
             Ready = true;
-            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels).");
+            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
     }

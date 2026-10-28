@@ -59,6 +59,26 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
     }
 
     private string Stamp(PcFact pc, IEnumerable<NetObjectId> targets) => _objects.WorldId.ToString("N") + ":" + AssemblyResources.Stamp(pc, targets);
+    internal string EditStamp(PcFact pc, IEnumerable<NetObjectId> targets) => Stamp(pc, AssemblyResources.Plan(pc, targets).Writes);
+
+    /// <summary>Component edits (command 9) take their edit claim inside their own host-validated command, so the
+    /// claim and the edit record change in one revision. The caller has checked the actor, PC and conflicts.</summary>
+    internal void SetEditClaim(OperationId token, ActorSlot actor, PcFact pc, IReadOnlyList<NetObjectId> targets)
+    {
+        if (Get(actor) is not { Pending: null } a || a.WorkingPc != pc.Id || a.Version == ulong.MaxValue)
+            throw new InvalidDataException("The edit claim's actor changed.");
+        var plan = AssemblyResources.Plan(pc, targets);
+        _actors[actor] = a with { Version = a.Version + 1, Pending = new(token, ActivityOperation.Edit, pc.Id, plan.All)
+            { BindingStamp = Stamp(pc, plan.Writes), Writes = plan.Writes } };
+    }
+
+    /// <summary>Release a claim if that actor still holds it (it may have left meanwhile). Deterministic on both peers.</summary>
+    internal bool ClearClaim(ActorSlot actor, OperationId token)
+    {
+        if (Get(actor) is not { } a || a.Pending?.Token != token) return false;
+        _actors[actor] = a with { Version = a.Version + 1, Pending = null };
+        return true;
+    }
 
     private sealed record Request(Action Action, ActorSlot Seat, PlayerId Player, ulong Epoch, ulong Version,
         NetObjectId Pc, ActivityOperation Kind, NetObjectId[] Targets, OperationId Token)

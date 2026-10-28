@@ -28,7 +28,11 @@ internal sealed class NativeActivity
         var desired = Observe();
         byte[] request;
         if (actor.Pending is { Kind: ActivityOperation.Edit } pending && desired != actor.WorkingPc)
+        {
+            // A component edit keeps its claim until the host settles it, even when the player walks away (4e).
+            if (_coop.Edits?.Holds(pending.Token) == true) return;
             request = ActivityWorld.Release(actor, pending.Token);
+        }
         else
         {
             if (desired == actor.WorkingPc || actor.Pending != null) return;

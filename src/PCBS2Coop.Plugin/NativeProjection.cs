@@ -12,11 +12,13 @@ internal static class NativeProjection
     public static bool Active { get; private set; }
     private static bool _autosaveDeferred;
 
-    public static void Run(Action call)
+    public static void Run(Action call) => Run(() => { call(); return true; });
+
+    public static T Run<T>(Func<T> call)
     {
         var outer = Active;
         Active = true;
-        try { call(); }
+        try { return call(); }
         finally { Active = outer; }
     }
 

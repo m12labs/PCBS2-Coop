@@ -161,14 +161,17 @@ internal sealed class NativeAssembly : IAssemblyNative
         if (GameController.Get()?.GetCurrentState()?.TryCast<InstallingPartState>() != null)
             throw new InvalidDataException("A component edit is still running.");
         if (LatchesBusy) throw new InvalidDataException("A latch is still moving.");
+        if (CoopController.Instance?.Replays.Busy == true) throw new InvalidDataException("The other player's component edit is still being shown.");
+        if (CoopController.Instance?.Edits?.Busy == true) throw new InvalidDataException("A component edit is still being shared.");
         if (CoopController.Instance?.Panels?.Busy == true || CoopController.Instance?.Objects?.Assembly?.RebindPending == true)
             throw new InvalidDataException("A case panel is still being changed.");
     }
     /// <summary>A shared latch toggle is waiting for the host or still being shown (task 4d).</summary>
     private static bool LatchesBusy => CoopController.Instance?.Mechanisms?.Busy == true;
     internal static bool CanCapture => CanCaptureNative && !LatchesBusy && CoopController.Instance?.Objects?.Assembly?.RebindPending != true &&
-        CoopController.Instance?.Panels?.Busy != true;
-    private static bool CanCaptureNative => !HasPreview && GameController.Get()?.GetCurrentState()?.TryCast<InstallingPartState>() == null;
+        CoopController.Instance?.Panels?.Busy != true && CoopController.Instance?.Edits?.Busy != true;
+    private static bool CanCaptureNative => !HasPreview && GameController.Get()?.GetCurrentState()?.TryCast<InstallingPartState>() == null &&
+        CoopController.Instance?.Replays.Busy != true;
 
     /// <summary>C4b02 N3: native load closes clips over installed RAM after reopening saved pins. /sync uses
     /// that persisted result as its reference, so close those clips synchronously before its repair capture.</summary>

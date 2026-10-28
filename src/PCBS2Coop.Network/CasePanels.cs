@@ -79,9 +79,9 @@ public sealed class CasePanelWorld : ICommandHandler
             return "Remove what's mounted on that panel first.";
         var targets = slot.Carries.Prepend(slot.Id).ToArray(); var on = pc;
         foreach (var other in _activity.Actors)
-            if (other.Pending is { } p && p.Pc == on.Id && (p.Kind == ActivityOperation.Move ||
-                (other.Actor != requester && AssemblyResources.Conflicts(on, p.Writes, targets))))
-                return p.Kind == ActivityOperation.Move ? "That PC is being moved." : "The other player is using that part.";
+            // Owner decision (4e): while the other player's edit runs on a PC, nothing else on it changes.
+            if (other.Pending is { } p && p.Pc == on.Id && (p.Kind == ActivityOperation.Move || other.Actor != requester))
+                return p.Kind == ActivityOperation.Move ? "That PC is being moved." : "The other player is changing a part of that PC.";
         return null;
     }
 

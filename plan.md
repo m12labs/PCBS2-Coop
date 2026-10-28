@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4c are complete and 4d is next. Component edits remain unsynchronized. Phases 5–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phases 5–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -319,7 +319,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** HW component/slot/screw/latch/blocker factors; PW target/tool activity; SS transaction/callback risks.
 
-**Status: Implementing (4a–4c complete; 4d implemented in 0.13 and owner-checked; 4e next, code first).** Focused audit: [docs/audit/phase-4.md](docs/audit/phase-4.md). Existing owner decisions apply: two players may edit different parts of the same PC, conflicting resources are exclusive, and an actively used PC cannot move. Work starts with the current default Free Build workshop; the phase 3 deferrals for specialist tool benches, DLC layouts and career locations retain their assigned phases. No new UI or interaction flow is selected here.
+**Status: Implementing (4a–4c complete; 4d implemented in 0.13 and owner-checked; 4e complete in 0.14 and owner-tested in game).** Focused audit: [docs/audit/phase-4.md](docs/audit/phase-4.md). Existing owner decisions apply: conflicting resources are exclusive and an actively used PC cannot move. Since 4e (owner decision, October 27, 2026), while one player's component edit runs on a PC the other player waits on that whole PC. Work starts with the current default Free Build workshop; the phase 3 deferrals for specialist tool benches, DLC layouts and career locations retain their assigned phases. No new UI or interaction flow is selected here.
 
 #### 4a. Focused evidence and component transaction boundaries
 
@@ -372,13 +372,14 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 4e. Transactional standard component installation and removal
 
-- **Status:** Not started.
+- **Status:** Complete (0.14), October 27, 2026: code and model tests, then the owner's two-instance game test, which the owner reported passed.
+- **Owner decisions (October 27, 2026):** the other game shows an edit with the game's own animations (replayed); while an edit runs on a PC the other player waits on that whole PC; inventory mirrors, catalog parts are never taken away; Esc during a removal's cable step shares what the editor's game ends with. Custom loops and cable accessories stay deferred.
 - **Outcome and audit IDs:** shared install/remove for the phase's case, motherboard, CPU, RAM, GPU, storage/M.2, PSU, cooler, fan and accessory paths, including physical USB occupancy carried from phase 3 (HW-001–015/044/051–054/065–066/073; PW-008–011/013/058–059/065–066; SS-018–027/031/033–035/038).
 - **Dependencies and decisions:** 4b–4d; retain Free Build's reusable catalog semantics and full part data. Electrical editing remains phase 5 and USB software effects phase 6; required cross-domain side effects must be evidenced and handled before a path is called supported.
 - **Scope and evidence:** verified native install/remove lifecycle, typed slot overrides, asset loads, inventory side effects, topology publication and accepted projection. Do not select a hook from its method name alone.
 - **Work:** submit intent before native side effects; host-check slot incarnation, fit/blockers, resource ownership and inventory semantics; canonicalize part IDs/data and commit topology atomically. Project only the affected operation so another actor's independent work survives. Preserve inherited condition/orientation/subtype data and account for auto-generated children and multi-slot aliases. Coordinate snapshots/autosaves with pending loads and partially completed actions.
 - **Acceptance:** both actor directions for every supported category; duplicate identical parts and same-SKU replacement; concurrent disjoint work and contested destinations; parent removal versus child installation; incompatible parts; cancel before/after load and commit; duplicate requests and stale completions. Inventory and topology settle exactly once. Late join and save/restart reproduce accepted parts and mechanics.
-- **Completion evidence:** pending category matrix, model/network checks and owned two-instance runs.
+- **Completion evidence:** [task 4e audit](docs/audit/phase-4.md#task-4e-shared-component-installs-and-removals): command 9 (`ComponentEditWorld`: begin, commit, host settle, cancel), the replay engine traced in runs C4e01–C4e05 (GPU removal/reinstall, fan orientation), **493/493** model/network checks, Release 0 warnings/errors; the owner ran the category checklist in game and reported it passed (October 27, 2026).
 
 #### 4f. Combined phase 4 acceptance
 

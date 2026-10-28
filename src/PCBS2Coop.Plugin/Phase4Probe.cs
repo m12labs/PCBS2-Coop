@@ -288,6 +288,40 @@ internal sealed class Phase4Probe
                 runner.StartCoroutine(iterator);
                 break;
             }
+            case "p4-replay-install":
+            case "p4-replay-remove":
+            {
+                // 4e milestone 2: the detached replay engine on this game alone (no second player, no network).
+                var slot = Find<Slot>(long.Parse(bits[1]));
+                var mesh = slot.GetCase() ?? throw new InvalidOperationException("That slot is not in a case.");
+                var bench = Object.FindObjectOfType<SaveLoadSystem>().benchSlots.FirstOrDefault(b => b != null && b.GetCaseInSlot()?.Pointer == mesh.Pointer)
+                    ?? throw new InvalidOperationException("That case is not on a bench.");
+                var plan = new NativeEditReplay.Plan { Label = command, Case = mesh, Bench = bench, Slot = slot, Cables = NativeEditReplay.CableChoice.Current() };
+                if (bits[0] == "p4-replay-install")
+                {
+                    if (slot.GetComponent() != null) throw new InvalidOperationException("Destination occupied.");
+                    plan.Part = PartInstance.NewPartInstance(bits[2], 0, null) ?? throw new InvalidOperationException("Unknown SKU.");
+                    if (bits.Length > 3) plan.Degrees = float.Parse(bits[3], System.Globalization.CultureInfo.InvariantCulture);
+                    plan.Mode = 1; plan.Selected = 1;
+                }
+                else
+                {
+                    plan.Component = slot.GetComponent() ?? throw new InvalidOperationException("Empty slot.");
+                    plan.UnplugOnly = bits.Length > 2 && bits[2] == "unplug";
+                    plan.Mode = 0; plan.Selected = 0;
+                }
+                var started = Time.realtimeSinceStartup;
+                plan.Finished = error =>
+                {
+                    if (!Safe) return;
+                    Emit("replay-finished", new { command, error, seconds = Time.realtimeSinceStartup - started, state = StateInfo(),
+                        slotNow = Describe(slot != null ? slot.GetComponent() : null) });
+                };
+                Direct(command, "detached InstallingPartState replay (4e engine); this player's state machine is not entered");
+                runner.Coop.Replays.Start(plan);
+                Emit("replay-started", new { command, state = StateInfo(), workingOnThisCase = GameController.Get()?.GetCurrentState()?.TryCast<WorkingOnComputerStateBase>()?.m_case?.Pointer == mesh.Pointer });
+                break;
+            }
             case "p4-cancel":
             {
                 _autoNext = false;

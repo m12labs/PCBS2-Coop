@@ -104,9 +104,9 @@ public sealed class MechanismWorld : ICommandHandler
         if (latch.Version != c.Version || latch.Open == c.Open) return "That latch was just changed.";
         var id = latch.Id; var on = pc;
         foreach (var other in _activity.Actors)
-            if (other.Pending is { } p && p.Pc == on.Id && (p.Kind == ActivityOperation.Move ||
-                (other.Actor != requester && AssemblyResources.Conflicts(on, p.Writes, new[] { id }))))
-                return p.Kind == ActivityOperation.Move ? "That PC is being moved." : "The other player is using that part.";
+            // Owner decision (4e): while the other player's edit runs on a PC, nothing else on it changes.
+            if (other.Pending is { } p && p.Pc == on.Id && (p.Kind == ActivityOperation.Move || other.Actor != requester))
+                return p.Kind == ActivityOperation.Move ? "That PC is being moved." : "The other player is changing a part of that PC.";
         return null;
     }
 

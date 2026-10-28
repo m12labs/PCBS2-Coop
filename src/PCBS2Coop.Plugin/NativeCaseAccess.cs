@@ -6,11 +6,10 @@ using Object = UnityEngine.Object;
 namespace PCBS2Coop;
 
 /// <summary>
-/// Native side of case access (task 4d) and the co-op gate for component edits that aren't shared yet (owner decisions,
-/// October 27, 2026). Removals start in <c>WorkingOnComputerState.DisassemblyTick</c>'s long-press callbacks; installs
+/// Native side of case access (task 4d) and the co-op gate for component edits (owner decisions, October 27, 2026). Removals start in <c>WorkingOnComputerState.DisassemblyTick</c>'s long-press callbacks; installs
 /// commit in <c>AssemblyTick</c>'s callback after <c>ItemDisplay.InstallButtonClicked</c> placed previews. In co-op an
 /// integral case panel becomes a host-ordered request (the requester runs the game's own animated removal or install
-/// afterwards); every other install or removal is refused with a notice before it starts. The other game shows a panel
+/// afterwards); every other install or removal is a component edit (<see cref="NativeComponentEdits"/>, task 4e). The other game shows a panel
 /// change directly, the way the game builds panels when it loads a save, so that player's own work state is untouched.
 /// </summary>
 internal sealed class NativeCaseAccess : IPanelNative
@@ -60,12 +59,13 @@ internal sealed class NativeCaseAccess : IPanelNative
 
     // ---------------- requests (local input) ----------------
 
-    /// <summary>A removal long press. Returns whether the native removal may run now.</summary>
-    internal bool RequestRemove(ComponentPC comp, System.Action replay)
+    /// <summary>A removal long press. Returns whether the native removal may run now. Anything but a case panel is a
+    /// component edit (task 4e).</summary>
+    internal bool RequestRemove(ComponentPC comp, EditGesture gesture, System.Action replay)
     {
         var slot = comp?.Slot;
         var (pc, fact) = Shared(slot);
-        if (fact == null) { Refuse("Removing parts isn't shared in co-op yet."); return false; }
+        if (fact == null) return _coop.Edits.RequestRemove(comp, gesture, replay);
         if (fact.IntegralPart == "") { Refuse("That panel is already off in the shared world."); return false; }
         return Submit(new Request { Pc = pc.Id, Slot = fact.Id, Remove = true, Replay = replay, Work = CurrentState },
             CasePanelWorld.Remove(_coop.Activity.Get(_world.Local)!.Epoch, pc.Id, fact.Id, fact.Version), $"removal of {slot.name}");
@@ -76,20 +76,13 @@ internal sealed class NativeCaseAccess : IPanelNative
     {
         var (pc, fact) = Shared(slot);
         var sku = slot?.GetComponent()?.GetPartInstance()?.GetPartId();
-        if (fact == null || sku == null || sku != fact.IntegralHome) { Refuse("Installing parts isn't shared in co-op yet."); return false; }
+        if (fact == null || sku == null || sku != fact.IntegralHome) return _coop.Edits.RequestInstall(slot, sku, replay);
         return Submit(new Request { Pc = pc.Id, Slot = fact.Id, Remove = false, Replay = replay, Work = CurrentState },
             CasePanelWorld.Refit(_coop.Activity.Get(_world.Local)!.Epoch, pc.Id, fact.Id, fact.Version, sku), $"refit of {slot.name} with {sku}");
     }
 
-    /// <summary>Inventory selection while working on a PC: only a removed panel of that case may show its previews.</summary>
-    internal bool AllowSelection(Case forCase, PartInstance item)
-    {
-        var id = _coop.Objects.IdOf(forCase); var sku = item?.GetPartId();
-        var pc = _coop.Objects.Model.Pcs.SingleOrDefault(p => p.Id == id);
-        if (pc != null && sku != null && pc.Resources.Any(r => r.IntegralHome == sku && r.IntegralPart == "")) return true;
-        Refuse("Installing parts isn't shared in co-op yet.");
-        return false;
-    }
+    /// <summary>Inventory selection while working on a PC: refused while the other player changes that PC (task 4e).</summary>
+    internal bool AllowSelection(Case forCase, PartInstance item) => _coop.Edits.AllowSelection(forCase);
 
     private bool Submit(Request request, byte[] payload, string what)
     {
@@ -251,7 +244,9 @@ internal sealed class NativeCaseAccess : IPanelNative
         }
     }
 
-    /// <summary>Removal long presses on a part (the three <c>DisassemblyTick</c> callbacks).</summary>
+    /// <summary>Long presses on a part in disassembly mode (the three <c>DisassemblyTick</c> callbacks, decompile 4e):
+    /// b__0 installs a clicked placeholder (<c>m_isPlaceholder</c>), b__1 removes directly and b__2 runs the
+    /// <c>Uninstall</c> coroutine (cables unplug first).</summary>
     [HarmonyPatch]
     internal static class RemovalIntercept
     {
@@ -266,7 +261,13 @@ internal sealed class NativeCaseAccess : IPanelNative
             {
                 if (Current == null) return NotReady();
                 var closure = __instance; var method = __originalMethod;
-                return Current.RequestRemove(closure.comp, () => method.Invoke(closure, null));
+                System.Action replay = () => method.Invoke(closure, null);
+                return method.Name switch
+                {
+                    "_DisassemblyTick_b__0" => Current.RequestRefit(closure.comp?.Slot, replay),
+                    "_DisassemblyTick_b__1" => Current.RequestRemove(closure.comp, EditGesture.RemoveDirect, replay),
+                    _ => Current.RequestRemove(closure.comp, EditGesture.Remove, replay),
+                };
             }
             catch (Exception e) { Plugin.Logger.LogError("[panels] removal request failed: " + e); return false; }
         }

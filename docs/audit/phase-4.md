@@ -463,3 +463,51 @@ Two owned instances on disposable saves. The owner did the in-game actions; Clau
 | C4d08 | **Guest removed, refitted, removed and refitted the left panel; both clips; three refusals** (RAM, GPU), with no fault and matching hashes. Host removed bench 3's left panel and opened a bracket, then **`/sync`**: both games reloaded at generation 2 with matching hashes, the full assembly check passed on both, the panel stayed off with its carried resources kept, and the clips were closed. |
 
 Not run, by owner decision (from now on, code first and the owner tests the whole feature later): a refit by the host after `/sync`, a disconnect mid-animation, fresh-process Continue with a panel off, held-button repeats, screw-held covers (none in the default workshop) and AM4/LGA levers by hand (blocked by the installed coolers).
+
+## Task 4e: shared component installs and removals
+
+### Owner decisions (October 27, 2026)
+
+- **What the other player sees:** the game's own animations, replayed on their game ("directly copy the original game's actions … so users see same animations and style as single player"). A whole-PC reload was offered and declined.
+- **Same PC while an edit runs:** the other player waits. Their edits, latch clicks and panel changes on that PC are refused with a notice until the edit finishes. Other PCs are unaffected. This replaces the earlier phase 4 rule that two players may edit different parts of one PC.
+- **Inventory:** mirrored, as for 4d panels. Free Build catalog parts are never taken away.
+- **Esc during a removal's cable step:** share whatever the editor's game ends with (the part stays, its cables are off).
+- **Workflow:** code and model tests first. The owner then tests host and guest and reports issues. Custom loops and cable accessories stay deferred.
+
+### Native findings this task depends on (decompile, unless marked as traced)
+
+- **Gestures.** `DisassemblyTick` registers one of three long-press callbacks on `<>c__DisplayClass68_0`:
+  - b__0, when the clicked component is a placeholder (`m_isPlaceholder`): destroys it, then constructs `InstallingPartState(case, camera, part, slot)` (an install);
+  - b__1: the direct removal (`Case.OnChangePart(part, true, false)`, `Slot.HandleMGPUBridge(true)` for part types 6/24, `UninstallState`, `SetCurrentState`);
+  - b__2: the `Uninstall` coroutine (unplug cables, wait, then the same removal).
+  `AssemblyTick` b__0 is the install commit (`ClearPlaceholders`, the install constructor, `SetCurrentState`).
+- **Replay engine** (`NativeEditReplay`, milestones 1–3 in this task): runs the native state **detached** (never current) and calls its `m_updateFn` each frame, with guards on `GoToPreviousState`/`GoToLastDifferentState`, `SetCurrentState`, `GetPreviousState`, input reads, the work selection list and the orientation step. Traced in game, runs C4e01–C4e05 (one owned host, owner watching):
+  - a GPU removal (1.13 s) and reinstall (0.66 s, the same as a hand install) gave the original record back;
+  - a fan replay with 180° matched its neighbours; `m_degrees` is the rotation about the fan's own axis.
+- **Settlement.** `OnStateDestroy` connects cables only when the previous state is a work state in assembly mode. The replay passes a stand-in work state with the editor's tool mode, and the editor's cable choice around it. In Free Build the native settlement adds a removed part to the inventory only when it has no catalog entry, so the replay mirrors inventory by itself.
+
+### Implemented contracts (version 0.14)
+
+- **Command 9, `ComponentEditWorld`** ([`ComponentEdits.cs`](../../src/PCBS2Coop.Network/ComponentEdits.cs)):
+  - `Begin` (editor): the slot and the version it saw, the gesture (`Install`, `Remove`, `RemoveDirect`), the SKU or the part being removed. The host checks the actor, the PC, the slot, its own game (`IEditNative.CheckHost`) and the waiting rule, then claims the PC for the editor in the same revision (`ActivityWorld.SetEditClaim`, stamped like a 4c claim).
+  - `Commit` (editor): what its game ended with (`EditResult`: outcome `Done` or `Unplugged`, orientation angle, airflow flip, tool mode/selection, inventory source, cable type/connector/pins). The other game replays it.
+  - `Settle` (host, once its own game shows the result): the PC captured from the host's game, compressed. A part keeps its ID while it is the same native instance, prefab resources keep theirs by binding (`AssemblyManifest.Repair`), removed IDs are retired and the claim is released. Validation dry-runs the full world check (`ObjectWorld.CheckReplace`), so a bad capture is refused instead of diverging.
+  - `Cancel`: the editor drops an edit that never ran; the host drops one it can't settle. An editor that leaves mid-edit loses its claim; the host settles from its own game.
+- **Waiting rule** in `CasePanelWorld`, `MechanismWorld` and `ComponentEditWorld.Busy`: another actor's pending edit claim on a PC blocks the whole PC ("The other player is changing a part of that PC.").
+- **Plugin** ([`NativeComponentEdits`](../../src/PCBS2Coop.Plugin/NativeComponentEdits.cs)):
+  - The 4d gate now sends every non-panel install/removal here. Shared slot types: motherboard, CPU, CPU cooler, RAM, PCI, PCI cover, storage, M.2, PSU, case fan, radiator, GPU proxy, USB. Reservoirs, water blocks (`m_includesPipes`), LED strips, power splitters/adapters, VRM and heat-sink slots stay refused.
+  - The editor's stored callback runs after acceptance if its work state is unchanged; otherwise it cancels.
+  - The edit is followed natively: `SetCurrentState` (its `InstallingPartState`), `OnStateDestroy` (result values) and the `Uninstall` coroutine's `MoveNext` (stopped before the part step = `Unplugged`).
+  - The other game replays the edit (from its own inventory when the editor used an inventory item), after clearing its own previews on that PC.
+  - The host remembers part instances at `Begin` and settles when the PC is still: no edit state, replay, preview or moving latch.
+  - Every PC is rebound after its settle.
+  - Saves and snapshots wait while any edit is pending (`NativeAssembly.CanCapture`/`CheckStable`). `NativeActivity` doesn't release a claim an edit holds.
+- **Replay additions:** `Plan.Direct` (the b__1 removal). The editor's flip is applied to the part instance before install.
+
+### Model evidence
+
+**493/493** model/network checks (`ComponentEditTests`, plus the updated 4d latch/panel tests for the waiting rule): begin/commit/settle in both directions; the claim and the waiting rule for edits, latches, panels and moves; refusals (filled slot, wrong part, case panel, latch as slot, stale version, host-native refusal, a second edit, a commit by the other player, an install ending unplugged, an infinite angle, a guest settle); new IDs for a stick and its screw; retirement of a removed card and its screws; Esc mid-cable keeping the card; an integral PCI cover; cancel before/after commit; departure after commit; a settle that moves the PC or changes a kept part's identity (refused, no divergence); malformed/trailing bytes; a duplicated commit applied once; round-trip of the settled world. Release build: 0 warnings, 0 errors.
+
+### Owner game test (October 27, 2026)
+
+The owner ran this two-instance checklist as host and guest and reported it passed ("all is good to go"). No logs were collected for this report: GPU, RAM (clips), CPU (direct removal), air cooler (orientation), fans (intake/exhaust: is the flip carried?), AIO (radiator + pump, proxies), motherboard (standoffs, children), drives/M.2, PSU (cables), a PCI cover, USB, Esc during a GPU's cable step, inventory both ways, the waiting rule, late join and save/restart after edits, and `/sync`.

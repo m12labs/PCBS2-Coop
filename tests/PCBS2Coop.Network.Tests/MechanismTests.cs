@@ -107,16 +107,19 @@ internal static class MechanismTests
             why[0].Contains("Linked") && why[1].Contains("Unknown latch") && why[2].Contains("not working") && why[3].Contains("presence"),
             "a linked latch, a slot named as a latch, a latch on another PC and a stale epoch are refused");
 
-        // The other player's edit holding a RAM slot also holds its clips; the claim holder may still use them.
+        // The other player's edit holding a RAM slot: the other player waits on that whole PC (owner decision, 4e);
+        // the claim holder may still use the clips it holds.
         var claim = Send(l.Guest, ActivityWorld.Reserve(G(), Id(2), ActivityOperation.Edit, Id(10)), CommandTypes.ActorActivity);
         rev = l.Host.Revision;
         Send(l.Host, Toggle(H(), 14, ho));
-        t.Check(l.Host.Revision == rev && l.HostRejected.Last().Text.Contains("using that part"), "a latch inside the other player's edit claim is refused");
+        t.Check(l.Host.Revision == rev && l.HostRejected.Last().Text.Contains("changing a part of that PC"), "a latch inside the other player's edit claim is refused");
         Send(l.Host, Toggle(H(), 15, ho));
-        t.Check(l.Host.Revision == rev + 1 && !R(go, 15).Open && Same(), "a latch outside that claim stays available");
+        t.Check(l.Host.Revision == rev && l.HostRejected.Last().Text.Contains("changing a part of that PC"), "so is a latch elsewhere on that PC");
         Send(l.Guest, Toggle(G(), 14, go));
-        t.Check(l.Host.Revision == rev + 2 && !R(go, 14).Open && Same(), "the claim holder can toggle the latches it holds");
+        t.Check(l.Host.Revision == rev + 1 && !R(go, 14).Open && Same(), "the claim holder can toggle the latches it holds");
         Send(l.Guest, ActivityWorld.Release(G(), claim), CommandTypes.ActorActivity);
+        Send(l.Host, Toggle(H(), 15, ho));
+        t.Check(l.Host.Revision == rev + 3 && !R(go, 15).Open && Same(), "after the release the other latch is available again");
 
         rev = l.Host.Revision;
         hn.Host = (_, _) => "Something is blocking that latch.";
