@@ -99,6 +99,16 @@ public sealed record Wiring(IReadOnlyList<string> Removed, IReadOnlyList<CableFa
 /// <summary><see cref="Unplugged"/>: the editor pressed Esc during a removal's cable step, so only the cables came off
 /// and the part stayed in (4b N2; owner decision: share whatever the editor's game ends with).</summary>
 public enum EditOutcome : byte { Done = 1, Unplugged = 2 }
+
+/// <summary>How far the editor's own edit got while it runs, so the other game plays along instead of waiting for the end
+/// (owner decision, October 30, 2026). <see cref="Started"/>: the editor's game began the edit (an install's part exists,
+/// so where it came from and its airflow flip are known). <see cref="PartStep"/>: a removal passed its cable step and the
+/// part is coming out (Esc can no longer keep it in).</summary>
+public enum EditProgress : byte { Started = 1, PartStep = 2 }
+
+/// <summary>An install as the editor's game started it: whether the part came out of the editor's inventory (rather than
+/// the Free Build catalog) and its airflow flip.</summary>
+public sealed record EditStart(bool FromInventory, bool Flipped);
 public enum EditStage : byte { Running = 1, Committed = 2 }
 
 /// <summary>What the editor's game ended with, so the other game replays the same thing: the orientation-step angle
@@ -134,6 +144,10 @@ public sealed record ComponentEdit(OperationId Token, ActorSlot Actor, ulong Epo
     public bool WholePc => ComponentEditWorld.IsWholePc(Gesture);
     public EditStage Stage { get; init; } = EditStage.Running;
     public EditResult? Result { get; init; }
+    /// <summary>Set once the editor's game started a part edit (<see cref="EditProgress.Started"/>).</summary>
+    public EditStart? Start { get; init; }
+    /// <summary>A removal passed its cable step (<see cref="EditProgress.PartStep"/>).</summary>
+    public bool PartStep { get; init; }
 }
 
 /// <summary>Native side of component edits. CheckHost and Capture run on the host and only read. Began, Committed,
@@ -146,6 +160,8 @@ public interface IEditNative
     /// <paramref name="allocator"/>.</summary>
     PcFact Capture(PcFact pc, ComponentEdit edit, NetObjectIdAllocator allocator);
     void Began(in MutationContext ctx, PcFact pc, ComponentEdit edit);
+    /// <summary>The editor reported how far its own edit got (<see cref="ComponentEdit.Start"/>, <see cref="ComponentEdit.PartStep"/>).</summary>
+    void Progressed(in MutationContext ctx, PcFact pc, ComponentEdit edit, EditProgress progress);
     void Committed(in MutationContext ctx, PcFact pc, ComponentEdit edit);
     void Cancelled(in MutationContext ctx, ComponentEdit edit);
     void Settled(in MutationContext ctx, PcFact pc, ComponentEdit edit);
@@ -158,8 +174,10 @@ public interface IEditNative
 /// <item><b>Begin</b> (editor): the host checks the slot and its own game, then claims the PC for the editor. While an
 /// edit runs, the other player's edits, latch clicks and panel changes on that PC wait (they are refused).</item>
 /// <item>The editor's game runs the game's own edit (animation, screws, orientation, cables, inventory).</item>
-/// <item><b>Commit</b> (editor): what its game ended with. The other game replays the same edit with the game's
-/// own animations.</item>
+/// <item><b>Progress</b> (editor, part edits): its game started the edit, and a removal passed its cable step. The other
+/// game plays the same edit with the game's own animations from here on.</item>
+/// <item><b>Commit</b> (editor): what its game ended with (orientation, tool, cables, Esc). The other game finishes its
+/// replay with it (or replays the whole edit now if it never started one).</item>
 /// <item><b>Settle</b> (host, once its game shows the result): the PC's new parts, links, resources and assembly
 /// profile, captured from the host's game, and the claim's release. Unchanged parts and resources keep their IDs.</item>
 /// </list>
@@ -168,7 +186,7 @@ public interface IEditNative
 /// </summary>
 public sealed class ComponentEditWorld : ICanonicalCommandHandler
 {
-    private enum Step : byte { Begin = 1, Commit = 2, Cancel = 3, Settle = 4, Chunk = 5 }
+    private enum Step : byte { Begin = 1, Commit = 2, Cancel = 3, Settle = 4, Chunk = 5, Progress = 6 }
     public const int MaxText = 255;
     private readonly ObjectWorld _objects;
     private readonly ActivityWorld _activity;
@@ -210,6 +228,13 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     {
         w.Put((byte)Step.Chunk); w.Put(epoch); Token(w, token); w.Put(index); w.Put(total); Protocol.WriteBlob(w, data);
     });
+    /// <summary>Editor, part edits only: how far its own edit got. <paramref name="start"/> describes an install at
+    /// <see cref="EditProgress.Started"/> (removals send none).</summary>
+    public static byte[] Progress(ulong epoch, OperationId token, EditProgress progress, EditStart? start = null) => Encode(w =>
+    {
+        w.Put((byte)Step.Progress); w.Put(epoch); Token(w, token); w.Put((byte)progress);
+        w.Put(start?.FromInventory ?? false); w.Put(start?.Flipped ?? false);
+    });
     public static byte[] Cancel(ulong epoch, OperationId token) => Encode(w => { w.Put((byte)Step.Cancel); w.Put(epoch); Token(w, token); });
     /// <summary>Host only: publish the PC as the host's game shows it after that edit.</summary>
     public static byte[] Settle(OperationId token) => Encode(w => { w.Put((byte)Step.Settle); Token(w, token); });
@@ -226,6 +251,8 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         public int Index { get; init; }
         public int Total { get; init; }
         public byte[] Data { get; init; } = Array.Empty<byte>();
+        public EditProgress Progress { get; init; }
+        public EditStart Start { get; init; } = new(false, false);
     }
 
     private static Request Parse(NetDataReader r, bool canonical)
@@ -270,6 +297,13 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 var epoch = r.GetULong(); var token = Token(r); var index = r.GetInt(); var total = r.GetInt();
                 var data = Protocol.ReadBlob(r, Rebuild.MaxChunkBytes, out _) ?? throw new FormatException("Invalid record chunk.");
                 c = new(step, epoch, default, default, 0, default, "", default, token, null) { Index = index, Total = total, Data = data };
+                break;
+            }
+            case Step.Progress:
+            {
+                var epoch = r.GetULong(); var token = Token(r); var progress = (EditProgress)r.GetByte();
+                var start = new EditStart(r.GetBool(), r.GetBool());
+                c = new(step, epoch, default, default, 0, default, "", default, token, null) { Progress = progress, Start = start };
                 break;
             }
             default: throw new FormatException("Unknown component-edit action.");
@@ -353,10 +387,28 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
             if (r.Outcome != EditOutcome.Done) return "Invalid edit outcome.";
             if (wiring.Check() is { } bad) return bad;
         }
-        if (r.Outcome == EditOutcome.Unplugged ? edit.Gesture != EditGesture.Remove : r.Outcome != EditOutcome.Done) return "Invalid edit outcome.";
+        if (r.Outcome == EditOutcome.Unplugged ? edit.Gesture != EditGesture.Remove || edit.PartStep : r.Outcome != EditOutcome.Done) return "Invalid edit outcome.";
         if (!float.IsNaN(r.Degrees) && (!float.IsFinite(r.Degrees) || MathF.Abs(r.Degrees) > 3600)) return "Invalid orientation.";
         if (r.Mode > 8 || r.Selected > 8 || !Text(r.CableType) || !Text(r.CableConnector) || r.Pins.Count > EditResult.MaxPins) return "Invalid edit values.";
         return null;
+    }
+
+    private static string? CheckProgress(ComponentEdit edit, Request c)
+    {
+        if (edit.WholePc) return "Cable, power and water edits don't report progress.";
+        switch (c.Progress)
+        {
+            case EditProgress.Started:
+                if (edit.Start != null) return "That change already started.";
+                if (!edit.Install && (c.Start.FromInventory || c.Start.Flipped)) return "Invalid edit start.";
+                return null;
+            case EditProgress.PartStep:
+                if (edit.Gesture != EditGesture.Remove) return "Only a removal has a cable step.";
+                if (edit.Start == null) return "That change hasn't started.";
+                if (c.Start.FromInventory || c.Start.Flipped) return "Invalid edit progress.";
+                return edit.PartStep ? "That removal already passed its cable step." : null;
+            default: return "Unknown edit progress.";
+        }
     }
 
     private string? CheckChunk(ComponentEdit edit, Request c)
@@ -411,6 +463,12 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
             {
                 var (edit, why) = Owned(ctx.Op.Actor, c, EditStage.Running);
                 error = why ?? (ctx.Op.Actor != edit!.Actor ? "Only the editor sends its record." : CheckChunk(edit, c));
+                break;
+            }
+            case Step.Progress:
+            {
+                var (edit, why) = Owned(ctx.Op.Actor, c, EditStage.Running);
+                error = why ?? (ctx.Op.Actor != edit!.Actor ? "Only the editor reports its progress." : CheckProgress(edit, c));
                 break;
             }
             case Step.Settle:
@@ -490,6 +548,15 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 var committed = edit with { Stage = EditStage.Committed, Result = c.Result };
                 _edits[_edits.IndexOf(edit)] = committed;
                 _native.Committed(ctx, _objects.Pcs.Single(p => p.Id == edit.Pc), committed);
+                break;
+            }
+            case Step.Progress:
+            {
+                var (edit, why) = Owned(ctx.Op.Actor, c, EditStage.Running);
+                if (why != null || edit!.Actor != ctx.Op.Actor || CheckProgress(edit, c) is { } bad) throw new InvalidDataException("Edit progress no longer applies: " + (why ?? "invalid progress"));
+                var next = c.Progress == EditProgress.Started ? edit with { Start = c.Start } : edit with { PartStep = true };
+                _edits[_edits.IndexOf(edit)] = next;
+                _native.Progressed(ctx, _objects.Pcs.Single(p => p.Id == edit.Pc), next, c.Progress);
                 break;
             }
             case Step.Chunk:

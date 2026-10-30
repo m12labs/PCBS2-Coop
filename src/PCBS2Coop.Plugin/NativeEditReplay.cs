@@ -21,6 +21,9 @@ namespace PCBS2Coop;
 /// <item>Input reads inside steps (<c>InputButton.IsDown/IsHeld/IsUp</c>) return false, so this player's mouse can't
 /// tighten screws or rotate a fan. Orientation takes the editor's final angle and is accepted.</item>
 /// </list>
+/// A replay can start before the editor finished (owner decision, October 30, 2026: both games animate at once). Until
+/// its plan is <see cref="Plan.Known"/> it waits at the orientation step and before settling; a held removal
+/// (<see cref="Plan.Held"/>) also waits after its cable step, until the editor's part step starts or Esc kept the part in.
 /// </summary>
 internal sealed class NativeEditReplay
 {
@@ -55,6 +58,15 @@ internal sealed class NativeEditReplay
         /// <summary>The editor's work tool at settlement (<c>WorkingOnComputerState.Mode</c>: 1 assembly, 0 disassembly) and selection.</summary>
         public int Mode = 1, Selected = 1;
         public CableChoice Cables;
+        /// <summary>The editor's final choices are known (orientation, tool, cables, Esc). Until then the replay waits at
+        /// the orientation step and before settling.</summary>
+        public bool Known = true;
+        /// <summary>When <see cref="Known"/> was set (the replay's timeout counts from then).</summary>
+        public float KnownAt;
+        /// <summary>A removal waits after its cable step, and an install before it builds its state.</summary>
+        public bool Held;
+        /// <summary>The part's airflow flip at the editor's settlement, applied before settling if it differs.</summary>
+        public bool? Flip;
         /// <summary>Called once: null on success, otherwise why it failed.</summary>
         public System.Action<string> Finished;
     }
@@ -67,12 +79,16 @@ internal sealed class NativeEditReplay
         public InstallingPartState State;
         public Il2CppSystem.Collections.IEnumerator Iterator;
         public CustomYieldInstruction Waiting;
-        public bool Exited, Loaded;
+        public bool Exited, Loaded, Moved;
+        /// <summary>The orientation angle held while waiting for the editor's choice.</summary>
+        public float? WaitDegrees;
         public WorkingOnComputerState StandIn;
         public float Started;
     }
 
     public const float Timeout = 60f;
+    /// <summary>A replay waiting for the editor gives up after the editor's own limit plus a margin.</summary>
+    public const float WaitTimeout = NativeComponentEdits.EditTimeout + 30f;
     private readonly List<Run> _runs = new();
     private readonly List<Plan> _queued = new();
 
@@ -93,6 +109,17 @@ internal sealed class NativeEditReplay
         if (plan?.Case == null || plan.Slot == null || (plan.Part == null) == (plan.Component == null)) throw new ArgumentException("Invalid replay plan.");
         if (Running(plan.Case)) { _queued.Add(plan); return; }
         Begin(plan);
+    }
+
+    /// <summary>Stop one replay (running or queued) as failed, with <paramref name="why"/>.</summary>
+    public void Abort(Plan plan, string why)
+    {
+        if (plan == null) return;
+        if (_runs.FirstOrDefault(r => r.Plan == plan) is { } run) { Fail(run, why); return; }
+        if (!_queued.Remove(plan)) return;
+        Plugin.Logger.LogError($"[replay] {plan.Label}: dropped before it started: {why}");
+        try { plan.Finished?.Invoke(why); }
+        catch (Exception e) { Plugin.Logger.LogError("[replay] failure callback failed: " + e); }
     }
 
     /// <summary>Drop every replay without finishing it (world reset, leaving the workshop).</summary>
@@ -152,12 +179,14 @@ internal sealed class NativeEditReplay
         {
             try
             {
-                if (Time.realtimeSinceStartup - run.Started > Timeout) throw new TimeoutException($"still running after {Timeout} s");
+                var known = run.Plan.Known;
+                if (Time.realtimeSinceStartup - (known ? Math.Max(run.Started, run.Plan.KnownAt) : run.Started) > (known ? Timeout : WaitTimeout))
+                    throw new TimeoutException(known ? $"still running after {Timeout} s" : $"the other player's edit didn't finish within {WaitTimeout} s");
                 if (run.Plan.Case == null || run.Plan.Slot == null) throw new InvalidDataException("the PC or slot was destroyed");
                 switch (run.Phase)
                 {
                     case Phase.Loading:
-                        if (run.Loaded) Construct(run);
+                        if (run.Loaded && !run.Plan.Held) Construct(run);
                         break;
                     case Phase.Unplugging:
                         Unplug(run);
@@ -175,6 +204,8 @@ internal sealed class NativeEditReplay
     {
         var p = run.Plan;
         if (!PartsDatabase.s_instance.HasLoadedPart(p.Part.GetPart(), out _)) throw new InvalidDataException("the part asset did not load");
+        // This player's previews are put away when the other player's edit begins; the game removes them a frame later.
+        if (p.Slot.GetComponent() is { } held && NativeAssembly.IsPreview(held)) return;
         if (p.Slot.GetComponent() != null) throw new InvalidDataException("the slot is not empty on this game");
         InstallingPartState state = null;
         Native(run, () => state = new InstallingPartState(p.Case, Camera(p), p.Part, p.Slot));
@@ -190,7 +221,7 @@ internal sealed class NativeEditReplay
         Native(run, state.InitUpgrades);
         run.Phase = Phase.Animating;
         Plugin.Logger.LogInfo($"[replay] {run.Plan.Label}: animating.");
-        if (run.Exited) Settle(run);
+        if (run.Exited && run.Plan.Known) Settle(run);
     }
 
     private void Unplug(Run run)
@@ -200,6 +231,9 @@ internal sealed class NativeEditReplay
             if (run.Waiting.keepWaiting) return;
             run.Waiting = null;
         }
+        // Started before the editor finished: after the first step (which starts unplugging), wait until the editor's
+        // part step started or its commit says Esc kept the part in.
+        if (run.Moved && run.Plan.Held) return;
         _captured = null;
         bool more;
         // After the cable wait the coroutine continues only while GameController.m_currentState is a work state
@@ -213,6 +247,7 @@ internal sealed class NativeEditReplay
         {
             if (!run.Plan.UnplugOnly) gc.m_currentState = run.StandIn;
             more = Native(run, () => run.Iterator.MoveNext());
+            run.Moved = true;
         }
         finally
         {
@@ -235,10 +270,14 @@ internal sealed class NativeEditReplay
 
     private void Step(Run run)
     {
-        var step = run.State.m_updateFn;
-        if (step == null) throw new InvalidDataException("the edit has no current step");
-        Native(run, step.Invoke);
-        if (run.Exited) Settle(run);
+        if (!run.Exited)
+        {
+            var step = run.State.m_updateFn;
+            if (step == null) throw new InvalidDataException("the edit has no current step");
+            Native(run, step.Invoke);
+        }
+        // The part is in (or out); settle once the editor's final choices are known.
+        if (run.Exited && run.Plan.Known) Settle(run);
     }
 
     /// <summary>The game's settlement for a finished edit, as on the editor's game.</summary>
@@ -248,6 +287,7 @@ internal sealed class NativeEditReplay
         run.StandIn ??= StandIn(p.Case, Camera(p), p.Mode, p.Selected);
         run.StandIn.m_mode = (WorkingOnComputerState.Mode)p.Mode;
         run.StandIn.m_currentSelected = (WorkingOnComputerState.Mode)p.Selected;
+        if (p.Flip is { } flip && run.State.m_part is { } part && part.IsFlipped() != flip) part.SetFlipped(flip);
         _inDestroy = true;
         try { Native(run, run.State.OnStateDestroy); }
         finally { _inDestroy = false; }
@@ -415,7 +455,17 @@ internal sealed class NativeEditReplay
     {
         private static void Prefix(InstallingPartState __instance)
         {
-            if (_step?.State == null || __instance == null || __instance.Pointer != _step.State.Pointer || float.IsNaN(_step.Plan.Degrees)) return;
+            if (_step?.State == null || __instance == null || __instance.Pointer != _step.State.Pointer) return;
+            if (!_step.Plan.Known)
+            {
+                // Before the editor's commit the step waits, not accepted: the part sits there until they choose. Keep its
+                // angle where it started, so this player's mouse wheel doesn't turn it.
+                _step.WaitDegrees ??= __instance.m_degrees;
+                __instance.m_degrees = _step.WaitDegrees.Value;
+                return;
+            }
+            // No angle from the editor (it had no orientation step, or it left before committing): keep this one.
+            if (float.IsNaN(_step.Plan.Degrees)) { __instance.m_accept = true; return; }
             __instance.m_degrees = _step.Plan.Degrees;
             __instance.m_accept = true;
         }

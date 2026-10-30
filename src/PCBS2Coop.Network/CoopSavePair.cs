@@ -17,6 +17,12 @@ public static class CoopSavePair
     private const ulong Magic = 0x3152494150324350; // PC2PAIR1
     private const ulong BundleMagic = 0x31454C444E423250;
     private const int MaxMetadataBytes = Protocol.MaxModStateBytes + 2 * MaxCarrierBytes + 4096;
+    /// <summary>Earlier versions whose co-op saves this build reads unchanged: 0.17 changed only network messages (edit
+    /// progress) and when the host saves, not what a save holds (owner decision, October 30, 2026).</summary>
+    private static readonly string[] SameFormat = { "0.16" };
+
+    /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
+    public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);
 
     public static SaveMetadata Create(byte[] native, SnapshotPosition position, IReadOnlyList<CarrierPayload> carriers)
     {
@@ -51,7 +57,7 @@ public static class CoopSavePair
             // 0.12 adds per-PC assembly resources and edit binding stamps to the world state; 0.13 adds the latches
             // a native load closes. The older
             // object/activity codecs are incompatible; migration belongs to phase 8, never implicit ID minting.
-            if (version != ModVersion.Value) throw new InvalidDataException("Unsupported co-op save version. This build requires a matching-version co-op save; older saves need migration.");
+            if (!Readable(version)) throw new InvalidDataException("Unsupported co-op save version. This build requires a matching-version co-op save; older saves need migration.");
             var size = r.GetInt(); var hash = new byte[32]; r.GetBytes(hash, hash.Length);
             var generation = r.GetUInt(); var revision = r.GetULong(); var chain = r.GetULong();
             var state = Protocol.ReadBlob(r, Protocol.MaxModStateBytes, out _) ?? throw new InvalidDataException("Invalid world state length.");

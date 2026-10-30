@@ -11,7 +11,7 @@ namespace PCBS2Coop;
 /// The co-op side panel: a dark card that slides out to the right of the co-op list, its top level with the entry that
 /// opened it, using the menu's fonts and copies of the game's white Free Build buttons. Modes: New Game (world name),
 /// Load Game (the co-op worlds, newest first, with delete), Join a Friend (IP and port), Co-op Options (Steam or LAN,
-/// LAN port), messages, and waiting for a Steam lobby or a connection. Join and Options have no title (the entry next
+/// LAN port, autosave interval), messages, and waiting for a Steam lobby or a connection. Join and Options have no title (the entry next
 /// to the card already names it). The list stays clickable (another entry switches the card), except while waiting.
 /// </summary>
 internal sealed class CoopDialog
@@ -34,10 +34,12 @@ internal sealed class CoopDialog
     private readonly TMP_Text _title, _status;
     private readonly Color _textColor;
     private readonly float _textSize;
-    private readonly RectTransform _nameRow, _ipRow, _portRow, _methodRow, _worldView, _worldContent;
+    private readonly RectTransform _nameRow, _ipRow, _portRow, _methodRow, _autosaveRow, _worldView, _worldContent;
     private readonly TMP_InputField _name, _ip, _port;
     private readonly GameObject _apply, _back;
     private readonly Image _steamMark, _lanMark;
+    private readonly Image[] _autosaveMarks;
+    private int _autosave;
     private RectTransform _anchor;
     private Mode _mode;
     private bool _hostWaiting, _steam;
@@ -95,6 +97,20 @@ internal sealed class CoopDialog
         TopLeft(lan.GetComponent<RectTransform>(), ButtonWidth + Gap, 0, ButtonWidth, ButtonHeight);
         _steamMark = Mark(steam);
         _lanMark = Mark(lan);
+
+        // Autosave interval (minutes; 0 = off): a label and one button per choice.
+        _autosaveRow = Ui.NewRect("AutosaveRow", _card);
+        TopLeft(Ui.NewText("Label", _autosaveRow, style, "Autosave", _textSize, TextAlignmentOptions.MidlineLeft).rectTransform, 0, 0, LabelWidth, ButtonHeight);
+        var choices = CoopSettings.AutosaveChoices;
+        var choiceWidth = (Width - 2 * Pad - LabelWidth - (choices.Length - 1) * ListGap) / choices.Length;
+        _autosaveMarks = new Image[choices.Length];
+        for (var i = 0; i < choices.Length; i++)
+        {
+            var minutes = choices[i];
+            var choice = Button(_autosaveRow, minutes == 0 ? "Off" : $"{minutes} min", () => { _autosave = minutes; ShowOptions(); });
+            TopLeft(choice.GetComponent<RectTransform>(), LabelWidth + i * (choiceWidth + ListGap), 0, choiceWidth, ButtonHeight);
+            _autosaveMarks[i] = Mark(choice);
+        }
 
         // Load Game: a scrolling list of worlds.
         _worldView = Ui.NewRect("Worlds", _card);
@@ -167,6 +183,7 @@ internal sealed class CoopDialog
                 Ui.SetText(_apply.transform, "Save");
                 _steam = SteamBootstrap.WantsSteam;
                 _port.text = CoopSettings.Port.ToString();
+                _autosave = CoopSettings.AutosaveMinutes;
                 break;
             case Mode.Message:
                 _title.text = "Co-op";
@@ -215,10 +232,13 @@ internal sealed class CoopDialog
         var available = SteamBootstrap.Service?.Available == true;
         _steamMark.enabled = _steam;
         _lanMark.enabled = !_steam;
+        for (var i = 0; i < _autosaveMarks.Length; i++) _autosaveMarks[i].enabled = CoopSettings.AutosaveChoices[i] == _autosave;
         if (_steam && !available) SetStatus("Steam isn't available: " + (SteamBootstrap.Service?.UnavailableReason ?? SteamBootstrap.Reason), true);
-        else SetStatus(_steam
+        else SetStatus((_steam
             ? "Host through Steam: invite a friend from the pause menu once your world is ready. Friends join by accepting the invite."
-            : "Host on your network (or a VPN): friends join with this PC's IP address and this port.", false);
+            : "Host on your network (or a VPN): friends join with this PC's IP address and this port.") +
+            (_autosave > 0 ? $" Your hosted world saves every {_autosave} minutes, when you exit, and from the Save screen."
+                : " Autosave is off: your hosted world saves when you exit and from the Save screen."), false);
     }
 
     // ---------------- Load Game ----------------
@@ -274,7 +294,7 @@ internal sealed class CoopDialog
     /// <summary>Stack what the mode uses (title, rows, worlds, text, buttons) and size the card to fit.</summary>
     private void Layout()
     {
-        foreach (var r in new[] { _nameRow, _ipRow, _portRow, _methodRow, _worldView }) r.gameObject.SetActive(false);
+        foreach (var r in new[] { _nameRow, _ipRow, _portRow, _methodRow, _autosaveRow, _worldView }) r.gameObject.SetActive(false);
         var inner = Width - 2 * Pad;
         var y = Pad;
         void Put(RectTransform r, float h) { r.gameObject.SetActive(true); TopLeft(r, Pad, y, inner, h); y += h + Gap; }
@@ -289,6 +309,7 @@ internal sealed class CoopDialog
             case Mode.Options:
                 Put(_methodRow, ButtonHeight + 14);
                 if (!_steam) Put(_portRow, RowHeight);
+                Put(_autosaveRow, ButtonHeight + 14);
                 break;
             case Mode.Load when _worldCount > 0:
                 Put(_worldView, Math.Min(_worldCount, VisibleWorlds) * (ButtonHeight + ListGap) - ListGap);
@@ -395,6 +416,7 @@ internal sealed class CoopDialog
                 if (!_steam && !ReadPort(out port)) return;
                 SteamBootstrap.PreferSteam = _steam;
                 CoopSettings.Port = port;
+                CoopSettings.AutosaveMinutes = _autosave;
                 Close();
                 return;
             }

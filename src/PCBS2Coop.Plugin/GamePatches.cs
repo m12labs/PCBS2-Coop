@@ -10,7 +10,10 @@ internal static class GamePatches
     {
         try
         {
-            new Harmony(Plugin.Guid + ".game").PatchAll(typeof(SaveHook));
+            var game = new Harmony(Plugin.Guid + ".game");
+            game.PatchAll(typeof(SaveHook));
+            game.PatchAll(typeof(CoopController.GameAutosaveGuard));
+            game.PatchAll(typeof(CoopController.ExitSave));
             new Harmony(Plugin.Guid + ".objects").PatchAll(typeof(NativeLoadHook));
             new Harmony(Plugin.Guid + ".object-save").PatchAll(typeof(ComputerSaveHook));
             new Harmony(Plugin.Guid + ".object-loading").PatchAll(typeof(ComputerLoadingHook));
@@ -29,12 +32,12 @@ internal static class GamePatches
             transfers.PatchAll(typeof(NativePcTransfers.DropIntercept));
             transfers.PatchAll(typeof(NativePcTransfers.StoreIntercept));
             transfers.PatchAll(typeof(NativePcTransfers.RetrieveIntercept));
-            transfers.PatchAll(typeof(NativeProjection.AutosaveDeferral));
             new Harmony(Plugin.Guid + ".workstations").PatchAll(typeof(NativeWorkstations.SwapIntercept));
             new Harmony(Plugin.Guid + ".assembly-preview").PatchAll(typeof(NativeAssembly.PreviewTrace));
             var latches = new Harmony(Plugin.Guid + ".latches");
             latches.PatchAll(typeof(NativeMechanisms.GestureScope));
             latches.PatchAll(typeof(NativeMechanisms.ToggleIntercept));
+            latches.PatchAll(typeof(NativeMechanisms.ShieldUnpaused));
             var panels = new Harmony(Plugin.Guid + ".panels");
             panels.PatchAll(typeof(NativeCaseAccess.RemovalIntercept));
             panels.PatchAll(typeof(NativeCaseAccess.PipeRemovalIntercept));

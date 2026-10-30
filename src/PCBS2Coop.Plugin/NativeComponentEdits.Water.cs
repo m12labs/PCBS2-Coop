@@ -45,7 +45,9 @@ internal sealed partial class NativeComponentEdits
     {
         if (slot != null && WaterSlots.Contains(slot.m_slotType)) return true;
         if (desc != null && WaterTypes.Contains(desc.m_type)) return true;
-        return comp != null && (comp.m_includesPipes || comp.GetPartInstance()?.m_onLoop == true);
+        // Not PartInstance.m_onLoop: the game's constructor sets it on every part (decompile), so an air cooler or a PCI
+        // cover removal looked like water cooling and reloaded the PC (owner report, 0.17).
+        return comp != null && comp.m_includesPipes;
     }
 
     /// <summary>A water-cooling edit or its reload is running on that PC: its assembly binds after the host's settle.</summary>

@@ -11,6 +11,8 @@ internal sealed class FakeEditNative : IEditNative
     public string? CheckHost(in CommandContext ctx, PcFact pc, AssemblyResource? slot, ComponentEdit edit) => Host(edit);
     PcFact IEditNative.Capture(PcFact pc, ComponentEdit edit, NetObjectIdAllocator allocator) => Capture(pc, edit, allocator);
     public void Began(in MutationContext ctx, PcFact pc, ComponentEdit edit) => Calls.Add($"began {edit.Gesture} {edit.Slot.Value} local={ctx.FromLocalPlayer}");
+    public void Progressed(in MutationContext ctx, PcFact pc, ComponentEdit edit, EditProgress progress) =>
+        Calls.Add($"progressed {progress} {edit.Slot.Value} local={ctx.FromLocalPlayer}");
     public void Committed(in MutationContext ctx, PcFact pc, ComponentEdit edit) =>
         Calls.Add($"committed {edit.Result!.Outcome} {edit.Result.Degrees} local={ctx.FromLocalPlayer}");
     public void Cancelled(in MutationContext ctx, ComponentEdit edit) => Calls.Add($"cancelled {edit.Slot.Value} local={ctx.FromLocalPlayer}");
@@ -130,7 +132,7 @@ internal static class ComponentEditTests
         string Key(ComponentEdit e) => $"{e.Token}|{e.Actor}|{e.Epoch}|{e.Pc}|{e.Slot}|{e.Gesture}|{e.Part}|{e.Component}|{string.Join(",", e.Targets)}|{e.Stage}|" +
             (e.Result is { } r ? $"{r.Outcome}|{r.Degrees}|{r.Flipped}|{r.Mode}|{r.Selected}|{r.FromInventory}|{r.CableType}|{r.CableConnector}|{string.Join(",", r.Pins)}|" +
                 (r.Wiring is { } wr ? Convert.ToHexString(WiringBytes(wr)) : "") +
-                (r.Rebuild is { } rb ? $"|{rb.Length}|{Convert.ToHexString(rb.Hash.ToArray())}|{rb.Powered}" : "") : "");
+                (r.Rebuild is { } rb ? $"|{rb.Length}|{Convert.ToHexString(rb.Hash.ToArray())}|{rb.Powered}" : "") : "") + $"|{e.Start}|{e.PartStep}";
         bool Same() => ho.ToBytes().SequenceEqual(go.ToBytes()) && Bytes(ha).SequenceEqual(Bytes(ga)) &&
             he.Edits.Select(Key).SequenceEqual(ge.Edits.Select(Key)) && l.InStep && l.Divergences.Count == 0;
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, host), CommandTypes.ActorActivity);
@@ -332,6 +334,52 @@ internal static class ComponentEditTests
         t.Check(l.GuestRejected.Count == malformed + 1 && l.GuestRejected.Last().Reason == RejectReason.Malformed, "too many cable changes are malformed");
         Send(l.Guest, ComponentEditWorld.Cancel(G().Epoch, begin));
 
+        t.Section("Component edits: progress, so the other game plays along (0.17)");
+        byte[] Progress(ActorActivity a, OperationId token, EditProgress p, EditStart? start = null) => ComponentEditWorld.Progress(a.Epoch, token, p, start);
+        begin = Send(l.Guest, Install(G(), 9, go, "gpu2"));
+        Send(l.Guest, Progress(G(), begin, EditProgress.Started, new EditStart(true, true)));
+        t.Check(ge.Find(begin) is { Start: { FromInventory: true, Flipped: true }, PartStep: false, Stage: EditStage.Running } &&
+            hn.Calls.Last() == "progressed Started 9 local=False" && gn.Calls.Last() == "progressed Started 9 local=True" && Same(),
+            "a guest's game started an install: both peers learn where the part came from and its flip, and the host's game plays it now");
+        rev = l.Host.Revision;
+        Send(l.Guest, Progress(G(), begin, EditProgress.Started, new EditStart(false, false)));
+        Send(l.Guest, Progress(G(), begin, EditProgress.PartStep));
+        Send(l.Host, Progress(H(), begin, EditProgress.Started));
+        Send(l.Guest, Progress(G(), begin, (EditProgress)9));
+        t.Check(l.Host.Revision == rev && l.GuestRejected.TakeLast(3).Select(x => x.Text).ToArray() is var pbad &&
+            pbad[0].Contains("already started") && pbad[1].Contains("Only a removal") && pbad[2].Contains("Unknown edit progress") &&
+            l.HostRejected.Last().Text.Contains("Only the editor reports"),
+            "an edit starts once, only a removal has a cable step, only the editor reports progress, and unknown progress is refused");
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Done() with { FromInventory = true, Flipped = true }));
+        t.Check(ge.Find(begin) is { Stage: EditStage.Committed, Start: not null } && Same(), "the commit keeps what the start reported");
+        Send(l.Guest, Progress(G(), begin, EditProgress.Started));
+        t.Check(l.GuestRejected.Last().Text.Contains("already finished"), "progress after the commit is refused");
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(ge.Edits.Count == 0 && !R(go, 9).Occupant.IsNone && Same(), "and it settles normally");
+
+        begin = Send(l.Host, Remove(H(), 9, ho));
+        rev = l.Host.Revision;
+        Send(l.Host, Progress(H(), begin, EditProgress.PartStep));
+        Send(l.Host, Progress(H(), begin, EditProgress.Started, new EditStart(true, false)));
+        t.Check(l.Host.Revision == rev && l.HostRejected.TakeLast(2).Select(x => x.Text).ToArray() is var rbadp &&
+            rbadp[0].Contains("hasn't started") && rbadp[1].Contains("Invalid edit start"),
+            "a removal reports its start before its cable step, and carries no part source");
+        Send(l.Host, Progress(H(), begin, EditProgress.Started));
+        Send(l.Host, Progress(H(), begin, EditProgress.PartStep));
+        t.Check(ge.Find(begin) is { Start: not null, PartStep: true } && gn.Calls.Last() == "progressed PartStep 9 local=False" && Same(),
+            "the host's removal passes its cable step: the guest's game takes the part out too");
+        Send(l.Host, Progress(H(), begin, EditProgress.PartStep));
+        Send(l.Host, ComponentEditWorld.Commit(H().Epoch, begin, EditResult.Done() with { Outcome = EditOutcome.Unplugged }));
+        t.Check(l.HostRejected.TakeLast(2).Select(x => x.Text).ToArray() is var rbad2 && rbad2[0].Contains("already passed") && rbad2[1].Contains("outcome"),
+            "the cable step passes once, and after it Esc can no longer keep the part in");
+        Send(l.Host, ComponentEditWorld.Commit(H().Epoch, begin, EditResult.Done()));
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(ge.Edits.Count == 0 && R(go, 9).Occupant.IsNone && Same(), "the removal settles on both peers");
+
+        begin = Send(l.Guest, Wire(G(), EditGesture.Connect, "PSU_24"));
+        Send(l.Guest, Progress(G(), begin, EditProgress.Started));
+        t.Check(l.GuestRejected.Last().Text.Contains("don't report progress"), "cable, power and water edits don't report progress");
+        Send(l.Guest, ComponentEditWorld.Cancel(G().Epoch, begin));
 
         t.Section("Water-cooling edits (phase 10): the finished PC record in chunks");
         var record = Enumerable.Range(0, Rebuild.MaxChunkBytes + 100).Select(i => (byte)(i * 7)).ToArray();

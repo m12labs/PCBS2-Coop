@@ -430,8 +430,9 @@ internal sealed class Phase3Probe
         { if (!runner.Coop.Join("127.0.0.1", 7777, out var error)) throw new InvalidOperationException(error); }
         else if (command == "native-save")
         {
-            Event("direct-call", "SaveCurrentGame: supplemental check, not input-path evidence");
-            Object.FindObjectOfType<SaveLoadSystem>()?.SaveCurrentGame();
+            // The game's own autosaves are skipped in co-op (0.17); this is the co-op interval's save.
+            Event("direct-call", "co-op world save: supplemental check, not input-path evidence");
+            runner.Coop.SaveWorld("probe");
         }
         else if (command == "skip-import-tutorial")
         {

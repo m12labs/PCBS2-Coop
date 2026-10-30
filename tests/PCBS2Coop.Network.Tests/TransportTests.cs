@@ -97,7 +97,9 @@ internal static class TransportTests
         bool Rejects(string version) { try { CoopSavePair.Decode(Version(version)); return false; } catch (InvalidDataException) { return true; } }
         foreach (var older in new[] { "0.8", "0.9", "0.10", "0.11" })
             t.Check(Rejects(older), $"{older} paired save is explicitly refused before the incompatible assembly/activity codecs run");
-        t.Check(Rejects("0.7") && Rejects("9.9"), "unknown and older incompatible paired saves still fail explicitly");
+        t.Check(Rejects("0.7") && Rejects("9.9") && Rejects("0.15"), "unknown and older incompatible paired saves still fail explicitly");
+        t.Check(!Rejects("0.16") && CoopSavePair.Encode(CoopSavePair.Decode(Version("0.16"))).SequenceEqual(current),
+            "a 0.16 paired save (same format) loads in this build and is written back under this version");
         long joinTime = 0;
         using var waiting = new CoopSession(() => joinTime);
         var noWelcome = new WaitingTransport(); var drops = 0; string? reason = null;

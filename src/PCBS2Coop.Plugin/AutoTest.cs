@@ -179,9 +179,9 @@ internal sealed class AutoTest
                 var gc2 = UnityEngine.Object.FindObjectOfType<GameController>();
                 Plugin.Logger.LogInfo($"AUTOTEST: during 3 s of host pause: {s.Stats.PlayerStatesReceived - _statesAtPause} positions received, markers now {r.Coop.Markers.Applied.Count}.");
                 gc2?.UnpauseGame();
-                var saves = UnityEngine.Object.FindObjectOfType<SaveLoadSystem>();
-                Plugin.Logger.LogInfo("AUTOTEST: host saves its world (SaveCurrentGame); the guest should receive a copy.");
-                saves?.SaveCurrentGame();
+                // The game's own autosaves are skipped in co-op (0.17); save the way the co-op interval does.
+                Plugin.Logger.LogInfo("AUTOTEST: host saves its world (co-op save); the guest should receive a copy.");
+                r.Coop.SaveWorld("self test");
                 _deadline = now + 60;
                 Next(now + 1);
                 break;

@@ -285,7 +285,7 @@ internal sealed partial class CoopController
         Session.Stop(toPeer);
         SteamBootstrap.Service?.Cancel();
         Objects.Reset();
-        Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; Workstations = null; _notice = null; NativeProjection.Reset();
+        Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; Workstations = null; _notice = null; ResetAutosave();
         DestroyView();
         _lastRemoteAt = -1;
         _hostWorldStarted = false;
@@ -338,7 +338,7 @@ internal sealed partial class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Replays.Update(); NativeProjection.Update(); }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
         else if (Replays.Busy) Replays.Reset();
 
         UpdateRemoteView(inWorkshop);
@@ -521,6 +521,7 @@ internal sealed partial class CoopController
         if (Session.Role != Role.Host || string.IsNullOrEmpty(path) || _saveCapture == null) return;
         Plugin.Logger.LogInfo($"[world] host saved '{path}'.");
         _pairWrites.Enqueue((path, _saveCapture.Value.Position, _saveCapture.Value.Carriers));
+        HostSaveWritten(_saveCapture.Value.Position.Revision);
         _saveCapture = null;
     }
 

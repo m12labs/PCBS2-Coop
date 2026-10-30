@@ -172,9 +172,13 @@ internal sealed class NativeMechanisms : IMechanismNative
     public void Update()
     {
         if (_showing.Count == 0) return;
+        // A paused game doesn't animate latches (decompile: LGASlot.Update skips while GameController.paused; the owner's
+        // CPU shield timed out, 0.17). The time limit counts only while this game runs; the latch finishes on unpause.
+        var paused = GameController.Get()?.paused == true;
         foreach (var id in _showing.Keys.ToArray())
         {
             if (!_showing.TryGetValue(id, out var s)) continue;
+            if (paused) s.Until = Math.Max(s.Until, Time.realtimeSinceStartup + ShowTimeout);
             try
             {
                 if (Time.realtimeSinceStartup > s.Until) throw new TimeoutException($"still not {State(s.Open)} after {ShowTimeout} s");
@@ -253,6 +257,26 @@ internal sealed class NativeMechanisms : IMechanismNative
         }
         private static void Prefix() => _gesture++;
         private static void Finalizer() => _gesture--;
+    }
+
+    /// <summary>In a co-op world a paused game still animates the CPU shield: <c>LGASlot.Update</c> skips its animation
+    /// while <c>GameController.paused</c> (decompile), which left the other player's shield toggle unfinished (0.17).
+    /// There is no shared pause.</summary>
+    [HarmonyPatch(typeof(LGASlot), "Update")]
+    internal static class ShieldUnpaused
+    {
+        private static void Prefix(LGASlot __instance, out bool __state)
+        {
+            __state = false;
+            if (CoopSaves.Current == CoopSaves.Mode.None || __instance == null || !(__instance.opening || __instance.closing)) return;
+            var gc = __instance.controller;
+            if (gc == null || !gc.paused) return;
+            gc.paused = false; __state = true;
+        }
+        private static void Finalizer(LGASlot __instance, bool __state)
+        {
+            if (__state && __instance != null && __instance.controller != null) __instance.controller.paused = true;
+        }
     }
 
     /// <summary>Every <c>TogglePin</c> implementation, each native function once. Outside a gesture this passes.</summary>

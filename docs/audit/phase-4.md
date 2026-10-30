@@ -511,3 +511,25 @@ Not run, by owner decision (from now on, code first and the owner tests the whol
 ### Owner game test (October 27, 2026)
 
 The owner ran this two-instance checklist as host and guest and reported it passed ("all is good to go"). No logs were collected for this report: GPU, RAM (clips), CPU (direct removal), air cooler (orientation), fans (intake/exhaust: is the flip carried?), AIO (radiator + pump, proxies), motherboard (standoffs, children), drives/M.2, PSU (cables), a PCI cover, USB, Esc during a GPU's cable step, inventory both ways, the waiting rule, late join and save/restart after edits, and `/sync`.
+
+### Simultaneous replay (version 0.17, October 30, 2026)
+
+Owner report: the other game started an install's animation only after the editor's whole animation had finished (a motherboard: about 10 s later). Owner decision: the animation plays on both games as soon as the edit is confirmed. For fans and coolers the other player sees the part arrive, wait while the editor chooses its direction, then snap to it (no live rotation stream).
+
+- **Network:** command 9 step `Progress` (6), editor only, part edits only (not cables, power or water). `Started` once the editor's game began the edit; an install carries `EditStart` (inventory source, airflow flip), read right after the native `InstallingPartState` constructor, which takes the part out of the inventory (decompile: `.ctor` calls `CareerStatus.RemoveItemFromInventory`). `PartStep` when a `Remove` passes its cable step (`Uninstall` coroutine entered `UninstallState`); after it the commit can't be `Unplugged`. The model keeps `ComponentEdit.Start`/`PartStep`; edits stay out of snapshots.
+- **Editor:** sends both from `UpdateLocal` (never inside `Apply`), before the commit.
+- **Other game:** builds its replay plan on `Started` (`Plan.Known` false). `NativeEditReplay` waits at the orientation step (not accepted; the angle is held so this player's wheel can't turn it) and before `OnStateDestroy` until the commit fills in angle, tool, cables, Esc and flip (`Know`). A held removal (`Plan.Held`) runs the coroutine's first step (unplugging) and waits before the next until `PartStep` (continue) or an `Unplugged` commit (stop where the editor stopped). A commit without a running replay replays the whole edit as before. A cancel after `Started` aborts the replay and reports out of sync. The host settles only after the commit (or the editor's departure, which finishes the replay with defaults).
+- **Local guard:** a player's own part edit on a PC this game is still replaying is refused ("Your game is still showing the other player's change on that PC.").
+- Not checked in game. Model evidence: the `Component edits: progress` section in `ComponentEditTests` (553/553 checks).
+
+### Owner test of 0.17 and fixes (October 30, 2026)
+
+Owner: simultaneous replay and autosave work. Issues from the run's logs:
+
+- **Guest air cooler refused** ("That part doesn't fit there on the host's game"; `Air_Cooler_Deepcool_2/3`). Decompile: `Slot.CanFillWithItem` returns false while `GameController.paused` is set, and when `PartsDatabase.GetPrefab` gives a prefab without its component (model not loaded). The host check now runs unpaused and is skipped, with a log line, for a part the host hasn't loaded (`NativeComponentEdits.Fits`).
+- **Every removal reloaded the PC.** `PartInstance.m_onLoop` is set to true by the `PartInstance` constructor for every part, so `IsWater` sent air-cooler and PCI-cover removals down the water path (reload). `IsWater` no longer reads it. The reload then failed to rebind (motherboard standoffs), so the guest went out of sync.
+- **CPU shield toggle timed out on the host** ("still not open after 5 s"). `LGASlot.Update` skips its animation while the game is paused. In a co-op world, `NativeMechanisms.ShieldUnpaused` runs that update unpaused while the shield moves, and the latch timeout counts only while the game runs.
+- **Host kept getting "Your previous change is still finishing".** The host's own edit couldn't settle while its own part preview sat on that PC (the game re-showed the held GPU after the PCI cover came out), and every next edit waited for that settle. After 0.3 s the host puts its own previews on that PC away (`ClearPlaceholders`) and says "Your last change is shared now. Select the part again."
+- **Replay "the slot is not empty on this game"**: the other game's own previews are put away when an edit begins but are removed a frame later; `Construct` now waits for them.
+
+After these fixes the owner built a PC from start to finish in a two-player session (October 30, 2026) and reported it working. Committed as 0.17.

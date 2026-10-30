@@ -271,7 +271,7 @@ internal sealed partial class CoopController
         _hostWorldKind = "co-op world reloaded by /sync";
         _readiness.Reset();
         // Nothing from the old scene may bind into the reloaded one; the generation start resets the rest.
-        Objects.Reset(); Activity?.Reset(); Workstations?.Reset(); NativeProjection.Reset(); DestroyView();
+        Objects.Reset(); Activity?.Reset(); Workstations?.Reset(); ResetAutosave(); DestroyView();
         Plugin.Logger.LogInfo($"[sync] host continues '{name}' from '{CoopSaves.CoopDir}'.");
         LoadNamedFreeBuild(name);
     }
@@ -293,7 +293,7 @@ internal sealed partial class CoopController
         _guestSyncDeadline = Time.realtimeSinceStartup + GuestSyncTimeout;
         _guestLoading = false;
         AddChat($"Host is syncing both games ({by}): returning to the menu, then loading the host's world.");
-        Objects.Reset(); NativeProjection.Reset(); DestroyView();
+        Objects.Reset(); ResetAutosave(); DestroyView();
         if (CoopRunner.Instance?.Scene == CoopRunner.MenuScene) return;
         var loader = Object.FindObjectOfType<NewLoadingScreen>();
         if (loader != null) loader.LoadScene(CoopRunner.MenuScene, false);
