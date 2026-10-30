@@ -13,9 +13,9 @@ namespace PCBS2Coop;
 /// <list type="number">
 /// <item>Redirects the game's save folder to a disposable BepInEx/PCBS2Coop-diag/saves-&lt;role&gt; folder, so the
 /// owner's solo saves are never read or overwritten. Overwrite prompts are accepted only inside that folder.</item>
-/// <item>Host: Host → New world (co-op folder inside the disposable one); once its world is ready it submits three
+/// <item>Host: Co-op → Host Co-op → New Game → Start (co-op folder inside the disposable one); once its world is ready it submits three
 /// markers before the guest is in, so the guest must receive them through the snapshot.</item>
-/// <item>Guest: Join → Connect later, receives and loads the host's world, then walks a circle.</item>
+/// <item>Guest: Co-op → Join a Friend → Connect later, receives and loads the host's world, then walks a circle.</item>
 /// <item>Both: aim the camera at the other player's capsule for a screenshot; five markers each (the guest also one
 /// invalid marker that must be refused). The host pauses its game while markers flow and saves once (the guest must
 /// receive the copy). Both log "AUTOTEST: world summary …" and PASSED/FAILED.</item>
@@ -46,7 +46,7 @@ internal sealed class AutoTest
     public static bool IsEnabled => Role is "host" or "join";
     private static string Role => Environment.GetEnvironmentVariable("PCBS2COOP_AUTOTEST")?.Trim().ToLowerInvariant();
 
-    /// <summary>Probe host relaunch: reuse this run's disposable saves and press Continue instead of New world.</summary>
+    /// <summary>Probe host relaunch: reuse this run's disposable saves and press Continue instead of New Game.</summary>
     private static bool ProbeResume => Phase3Probe.Enabled && Environment.GetEnvironmentVariable("PCBS2COOP_PROBE_RESUME") == "1";
 
     /// <summary>The disposable save folder, set once the redirect is confirmed. Null means saves are not isolated.</summary>
@@ -94,31 +94,37 @@ internal sealed class AutoTest
                 break;
             case 1:
                 Shot(r, "menu");
-                Next(now + 1);
+                Plugin.Logger.LogInfo("AUTOTEST: clicking the main menu's 'Co-op' entry with pointer events.");
+                Click(r.Menu.Entry);
+                Next(now + 2);
                 break;
             case 2:
-                var target = _role == "host" ? r.Menu.HostButton : r.Menu.JoinButton;
+            {
+                if (!r.Menu.CoopReady) { Fail("the co-op list did not open from the 'Co-op' entry."); break; }
+                Shot(r, "coop-menu");
+                if (ProbeResume && _role == "host")
+                {
+                    if (!r.Menu.ContinueButton.activeInHierarchy) { Fail("resume run has no world to continue."); break; }
+                    Plugin.Logger.LogInfo("AUTOTEST: resuming this probe run; clicking Host Co-op > 'Continue' with pointer events.");
+                    Click(r.Menu.ContinueButton);
+                    _deadline = now + 240;
+                    _step = 4; Next(now);
+                    break;
+                }
+                var target = _role == "host" ? r.Menu.NewGameButton : r.Menu.JoinButton;
                 Plugin.Logger.LogInfo($"AUTOTEST: clicking '{target.name}' with pointer events.");
                 Click(target);
                 Next(now + 1.5f);
                 break;
+            }
             case 3:
-                Plugin.Logger.LogInfo($"AUTOTEST: dialog open = {r.Menu.Dialog.IsOpen}, continue enabled = {r.Menu.Dialog.ContinueButton.GetComponent<UnityEngine.UI.Button>().interactable}, scene = {r.Scene}.");
+                Plugin.Logger.LogInfo($"AUTOTEST: dialog open = {r.Menu.Dialog.IsOpen} ({r.Menu.Dialog.Current}), worlds = {CoopSaves.WorldSaves().Count}, scene = {r.Scene}.");
                 Shot(r, "dialog");
                 Next(now + 1.5f);
                 break;
             case 4:
-                if (!r.Menu.Dialog.IsOpen) { Fail("the dialog did not open from the button click."); break; }
-                if (ProbeResume && _role == "host")
-                {
-                    if (!r.Menu.Dialog.ContinueButton.GetComponent<UnityEngine.UI.Button>().interactable) { Fail("resume run has no world to continue."); break; }
-                    Plugin.Logger.LogInfo("AUTOTEST: resuming this probe run; clicking the dialog's 'Continue' button with pointer events.");
-                    Click(r.Menu.Dialog.ContinueButton);
-                    _deadline = now + 240;
-                    Next(now);
-                    break;
-                }
-                Plugin.Logger.LogInfo($"AUTOTEST: clicking the dialog's '{(_role == "host" ? "New world" : "Connect")}' button with pointer events.");
+                if (!r.Menu.Dialog.IsOpen) { Fail("the popup did not open from the button click."); break; }
+                Plugin.Logger.LogInfo($"AUTOTEST: clicking the popup's '{(_role == "host" ? "Start" : "Connect")}' button with pointer events.");
                 Click(r.Menu.Dialog.ApplyButton);
                 _deadline = now + 240;
                 Next(now);
@@ -202,17 +208,17 @@ internal sealed class AutoTest
 
             // ---- round 2: host continues the co-op world, guest rejoins, guest leaves first ----
             case 13:
-                Plugin.Logger.LogInfo("AUTOTEST: round 2 - host continues the co-op world.");
-                Click(r.Menu.HostButton);
+                Plugin.Logger.LogInfo($"AUTOTEST: round 2 - host continues the co-op world (back on the co-op list: {r.Menu.CoopReady}).");
+                if (!r.Menu.CoopReady) Click(r.Menu.Entry);
                 Next(now + 1.5f);
                 break;
             case 14:
             {
-                var canContinue = r.Menu.Dialog.ContinueButton.GetComponent<UnityEngine.UI.Button>().interactable;
-                Plugin.Logger.LogInfo($"AUTOTEST: dialog open = {r.Menu.Dialog.IsOpen}, continue enabled = {canContinue}.");
-                Shot(r, "dialog-2");
+                var canContinue = r.Menu.CoopReady && r.Menu.ContinueButton.activeInHierarchy;
+                Plugin.Logger.LogInfo($"AUTOTEST: co-op list shown = {r.Menu.CoopShown}, Continue shown = {canContinue}, worlds = [{string.Join(", ", CoopSaves.WorldSaves().Select(f => f.Name))}].");
+                Shot(r, "coop-menu-2");
                 if (!canContinue) { Fail("Continue is not offered after a co-op save."); break; }
-                Click(r.Menu.Dialog.ContinueButton);
+                Click(r.Menu.ContinueButton);
                 _deadline = now + 240;
                 Next(now);
                 break;
@@ -314,7 +320,9 @@ internal sealed class AutoTest
 
             // ---- round 2: rejoin the continued world, then leave first ----
             case 11:
-                if (!r.Menu.Dialog.IsOpen) { Click(r.Menu.JoinButton); _at = now + 1.5f; break; }
+                // Back on the co-op list with the departure message open: close it, then Join a Friend.
+                if (r.Menu.Dialog.IsOpen && r.Menu.Dialog.Current != CoopDialog.Mode.Join) { r.Menu.Dialog.Close(); _at = now + 0.5f; break; }
+                if (!r.Menu.Dialog.IsOpen) { Click(r.Menu.CoopReady ? r.Menu.JoinButton : r.Menu.Entry); _at = now + 1.5f; break; }
                 Plugin.Logger.LogInfo("AUTOTEST: round 2 - guest rejoins.");
                 Click(r.Menu.Dialog.ApplyButton);
                 _deadline = now + 240;

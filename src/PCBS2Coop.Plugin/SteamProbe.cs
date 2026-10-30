@@ -31,7 +31,7 @@ internal sealed class SteamProbe
                 if (SaveLoadSystem.s_saveDir != _saves) { Finish(false, "Save isolation failed."); return; }
                 Plugin.Logger.LogInfo("STEAM-PROBE: disposable save folder " + _saves);
                 if (SteamBootstrap.Service?.Available != true) { Finish(false, SteamBootstrap.Service?.UnavailableReason ?? SteamBootstrap.Reason); return; }
-                runner.Menu.OpenHost();
+                runner.Menu.OpenNewWorld();
                 _step++; _at = now + 2;
                 break;
             case 1:

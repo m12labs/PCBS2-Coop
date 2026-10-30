@@ -18,6 +18,8 @@ internal static class SteamBootstrap
         var file = Path.Combine(_directory, name.Name + ".dll");
         return File.Exists(file) ? context.LoadFromAssemblyPath(file) : null;
     }
+    /// <summary>The player chose Steam in Co-op Options (it may still be unavailable).</summary>
+    internal static bool WantsSteam => !AutoTest.IsEnabled && (SteamProbe.Enabled || _method?.Value != "LAN");
     internal static bool PreferSteam
     {
         get => !AutoTest.IsEnabled && Service?.Available == true && (SteamProbe.Enabled || _method?.Value != "LAN");

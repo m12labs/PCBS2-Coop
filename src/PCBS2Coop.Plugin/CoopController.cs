@@ -37,6 +37,9 @@ internal sealed partial class CoopController
     private SaveMetadata _loadingPair;
     private (SnapshotPosition Position, IReadOnlyList<CarrierPayload> Carriers)? _snapshotPair;
     private string _saveError;
+    /// <summary>Host: a new world's stem, saved once under its own name as soon as the world is ready.</summary>
+    private string _initialSave;
+    private float _initialSaveAt, _initialSaveGiveUp;
 
     // Guest
     private bool _guestLoading;
@@ -67,6 +70,9 @@ internal sealed partial class CoopController
     /// <summary>A reason to show once the main menu is back (the guest left a world). Read with <see cref="TakeMenuMessage"/>.</summary>
     private string _menuMessage;
     public string TakeMenuMessage() { var m = _menuMessage; _menuMessage = null; return m; }
+    private bool _returnToCoopMenu;
+    /// <summary>The main menu was reached from a co-op world: open it on the co-op list. Read once.</summary>
+    public bool TakeReturnToCoopMenu() { var r = _returnToCoopMenu; _returnToCoopMenu = false; return r; }
     /// <summary>Show a short message on the workshop status line (for example, why the host refused a request).</summary>
     public void Notice(string text)
     {
@@ -104,29 +110,57 @@ internal sealed partial class CoopController
 
     // ---------------- starting and stopping ----------------
 
-    /// <summary>Host: start listening and load the co-op world (new or continued). Call on the main menu.</summary>
-    public bool HostWorld(int port, bool continueWorld, out string error)
-        => HostWorld(port, continueWorld, null, out error);
+    /// <summary>Host: start listening and load a co-op world (new, the most recent, or a chosen save). Call on the main menu.</summary>
+    public bool HostWorld(int port, HostStart start, out string error)
+        => HostWorld(port, start, null, out error);
 
-    private bool HostWorld(int port, bool continueWorld, ISessionTransport transport, out string error)
+    /// <summary>The world <paramref name="start"/> names exists (or, for a new one, doesn't yet). Gives its stem and save file.</summary>
+    private static bool ResolveStart(HostStart start, out string stem, out string file, out string error)
+    {
+        stem = file = null; error = null;
+        switch (start.What)
+        {
+            case HostStart.Kind.New:
+                stem = start.Name;
+                if (CoopSaves.WorldExists(stem)) error = $"There is already a world called \"{CoopWorldNames.WorldName(stem)}\".";
+                break;
+            case HostStart.Kind.Continue:
+                file = CoopSaves.WorldSaves().FirstOrDefault()?.Name;
+                if (file == null) error = "There is no co-op world to continue.";
+                break;
+            default:
+                file = Path.GetFileName(start.Name ?? "");
+                if (file.Length == 0) error = "No co-op world was chosen.";
+                break;
+        }
+        if (file != null)
+            stem = CoopSaves.IsEarlierWorld(file)
+                ? CoopWorldNames.StemFromName(CoopWorldNames.NextDefaultName(CoopSaves.WorldStems()), out _)
+                : CoopWorldNames.SafeStem(CoopWorldNames.StemOf(file));
+        return error == null;
+    }
+
+    private bool HostWorld(int port, HostStart start, ISessionTransport transport, out string error)
     {
         if (transport == null) Stop(null, "Starting a new host session.");
         LastFailure = null;
         if (!GamePatches.Ready) { error = "The co-op save/object hooks could not be installed. See the log."; return false; }
         var menu = Object.FindObjectOfType<NewMainMenu>();
         if (menu == null) { error = "The main menu isn't ready."; return false; }
+        if (!ResolveStart(start, out var stem, out var file, out error)) return false;
         var local = GameInfo.Build();
         if (!(transport == null ? Session.Host(port, local, out error) : Session.Host(transport, local, out error))) return false;
         BeginBackgroundRun();
-        CoopSaves.EnterHost();
-        _hostWorldKind = continueWorld ? "continued co-op world" : "new co-op world";
+        CoopSaves.EnterHost(stem);
+        var newWorld = start.What == HostStart.Kind.New;
+        _hostWorldKind = newWorld ? "new co-op world" : "continued co-op world";
+        _initialSave = newWorld ? stem : null;
 
         string name;
-        if (continueWorld)
+        if (!newWorld)
         {
-            var files = new[] { SaveLoadSystem.s_freeBuildSaveName, SaveLoadSystem.s_autoFreeBuildSaveName };
-            name = CoopSaves.FindSaveName(f => files.Any(n => f.Equals(n, StringComparison.OrdinalIgnoreCase) || f.Equals(n + ".zip", StringComparison.OrdinalIgnoreCase)));
-            if (name == null) { Fail("There is no co-op world to continue."); error = LastFailure; return false; }
+            name = CoopSaves.FindSaveFile(file);
+            if (name == null) { Fail($"The co-op world \"{CoopWorldNames.DisplayOf(file)}\" isn't in the save list."); error = LastFailure; return false; }
         }
         else
         {
@@ -138,10 +172,10 @@ internal sealed partial class CoopController
                 return true;
             }
         }
-        Plugin.Logger.LogInfo($"[world] host loads the {_hostWorldKind} from '{CoopSaves.CoopDir}' ('{name}').");
+        Plugin.Logger.LogInfo($"[world] host loads the {_hostWorldKind} '{CoopWorldNames.WorldName(stem)}' from '{CoopSaves.CoopDir}' ('{name}').");
         try
         {
-            if (continueWorld) _loadingPair = CoopSavePair.ReadSidecar(CoopSaves.NativeFile(CoopSaves.CoopDir, name));
+            if (!newWorld) _loadingPair = CoopSavePair.ReadSidecar(CoopSaves.NativeFile(CoopSaves.CoopDir, name));
             LoadNamedFreeBuild(name); return true;
         }
         catch (Exception e)
@@ -185,7 +219,7 @@ internal sealed partial class CoopController
     public bool SteamStarting => SteamBootstrap.Service?.Busy == true;
     public bool IsSteamHost => Session.Role == Role.Host && Session.TransportName == "Steam";
 
-    public bool HostSteam(bool continueWorld, out string error)
+    public bool HostSteam(HostStart start, out string error)
     {
         Stop(null, "Preparing a Steam host session.");
         LastFailure = null;
@@ -193,13 +227,14 @@ internal sealed partial class CoopController
         if (steam?.Available != true) { error = steam?.UnavailableReason ?? SteamBootstrap.Reason; return false; }
         if (!GamePatches.Ready || Object.FindObjectOfType<NewMainMenu>() == null)
         { error = "The main menu or co-op hooks are not ready."; return false; }
+        if (!ResolveStart(start, out _, out _, out error)) return false;
         steam.BeginHost(GameInfo.Build(), (ISessionTransport transport, string failure) =>
         {
             if (failure != null) { LastFailure = failure; return; }
             try
             {
                 if (!IdleMainMenu) { transport?.Dispose(); steam.Cancel(); LastFailure = "Return to the main menu before hosting."; return; }
-                if (!HostWorld(0, continueWorld, transport, out var why)) { LastFailure = why; steam.Cancel(); }
+                if (!HostWorld(0, start, transport, out var why)) { LastFailure = why; steam.Cancel(); }
             }
             catch (Exception e) { LastFailure = "Could not start the Steam world: " + e.Message; Stop(null, LastFailure); CoopSaves.Restore(LastFailure); }
         });
@@ -216,7 +251,7 @@ internal sealed partial class CoopController
         if (!GamePatches.Ready) { ShowSteamMessage("The co-op hooks are not ready. See the log."); return; }
         LastFailure = null;
         // Open first: opening an ordinary co-op dialog cancels previous attempts.
-        CoopRunner.Instance.Menu?.Dialog.OpenSteamWaiting();
+        CoopRunner.Instance.Menu?.ShowSteamJoining();
         steam.BeginJoin(lobby, GameInfo.Build(), (ISessionTransport transport, string failure) =>
         {
             if (failure != null) { LastFailure = failure; return; }
@@ -232,7 +267,7 @@ internal sealed partial class CoopController
     private void ShowSteamMessage(string reason)
     {
         LastFailure = reason;
-        if (CoopRunner.Instance?.Menu != null) CoopRunner.Instance.Menu.Dialog.OpenMessage(reason);
+        if (CoopRunner.Instance?.Menu != null) CoopRunner.Instance.Menu.ShowMessage(reason);
         else _menuMessage = reason;
     }
     private void OnSteamFailure(string reason)
@@ -256,7 +291,7 @@ internal sealed partial class CoopController
         _hostWorldStarted = false;
         _pendingFile = null;
         _copiesToSend.Clear();
-        _pairWrites.Clear(); _saveCapture = null; _loadingPair = null; _snapshotPair = null; _saveError = null;
+        _pairWrites.Clear(); _saveCapture = null; _loadingPair = null; _snapshotPair = null; _saveError = null; _initialSave = null;
         _guestLoading = false;
         GuestLoadStarted = false;
         ResetSync();
@@ -273,6 +308,8 @@ internal sealed partial class CoopController
             Plugin.Logger.LogInfo("[sync] on the main menu; the session stays open.");
             return;
         }
+        // Back from a co-op world (or a failed attempt): the menu opens on the co-op list.
+        if (Session.IsRunning || CoopSaves.Current != CoopSaves.Mode.None || _menuMessage != null) _returnToCoopMenu = true;
         if (Session.IsRunning)
             Stop(Session.Role == Role.Host ? "The host ended the session." : "The other player left.", "Returned to the main menu.");
         _leavingToMenu = false;
@@ -334,9 +371,11 @@ internal sealed partial class CoopController
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Host, Session.LocalIdentity.Player), out _);
                 _hostWorldStarted = true;
                 Plugin.Logger.LogInfo($"[objects] host bound {Objects.Model.Pcs.Count} PCs, next ID {Objects.Model.NextId}, world {Objects.Model.WorldId}.");
+                _initialSaveAt = Time.realtimeSinceStartup + 1; _initialSaveGiveUp = Time.realtimeSinceStartup + 60;
             }
             catch (Exception e) { Plugin.Logger.LogError(e); LeaveToMenu("Could not bind co-op object identities: " + e.Message, false); return; }
         }
+        if (_initialSave != null && _hostWorldStarted && _readiness.Ready) SaveNewWorld();
 
         if (_hostWorldStarted && Session.IsJoined && Activity.Get(ActorSlot.Guest)?.Player != Session.RemoteIdentity.Player)
             Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, Session.RemoteIdentity.Player), out _);
@@ -377,6 +416,32 @@ internal sealed partial class CoopController
     }
 
     // ---------------- host: snapshots and copies ----------------
+
+    /// <summary>
+    /// A new world is loaded from the game's default build, so it has no save of its own yet. Save it once under its
+    /// name (a normal paired co-op save), so it is in Load Game and Continue straight away.
+    /// </summary>
+    private void SaveNewWorld()
+    {
+        var now = Time.realtimeSinceStartup;
+        if (now < _initialSaveAt) return;
+        if (now > _initialSaveGiveUp)
+        {
+            Plugin.Logger.LogWarning($"[saves] the new world '{_initialSave}' was not saved under its name (the game kept refusing); its first autosave will add it.");
+            _initialSave = null; return;
+        }
+        _initialSaveAt = now + 2;
+        if (SaveLoadSystem.WaitingOnThread() || _pairWrites.Count > 0 || _pendingFile != null || _sync != SyncStep.None || Workstations?.Settled == false) return;
+        var saves = Object.FindObjectOfType<SaveLoadSystem>();
+        if (saves == null) return;
+        var file = CoopWorldNames.FileOf(_initialSave);
+        string path = null;
+        try { path = saves.CreateSaveGame(file, false, CoopWorldNames.DisplayOf(file)); }
+        catch (Exception e) { Plugin.Logger.LogWarning($"[saves] first save of the new world failed: {e.Message}"); }
+        if (string.IsNullOrEmpty(path)) return;
+        Plugin.Logger.LogInfo($"[saves] new world saved as '{path}'.");
+        _initialSave = null;
+    }
 
     private void TakeSnapshot()
     {
@@ -789,4 +854,24 @@ internal static class LocalPlayer
 
     public static Transform Root => _cc != null ? _cc.transform : null;
     public static CharacterController Controller => _cc;
+}
+
+/// <summary>Which co-op world the host plays.</summary>
+internal sealed class HostStart
+{
+    public enum Kind { New, Continue, Load }
+
+    private HostStart(Kind what, string name) { What = what; Name = name; }
+    public Kind What { get; }
+    /// <summary>New: the world's stem. Load: the chosen save's name.</summary>
+    public string Name { get; }
+
+    /// <summary>A new world from the game's default build, saved as <paramref name="stem"/> (see <see cref="PCBS2Coop.Network.CoopWorldNames"/>).</summary>
+    public static HostStart New(string stem) => new(Kind.New, stem);
+
+    /// <summary>The most recently saved co-op world (its named save or its autosave, whichever is newer).</summary>
+    public static HostStart Continue { get; } = new(Kind.Continue, null);
+
+    /// <summary>One save chosen on the load screen, by its save list name.</summary>
+    public static HostStart Load(string saveName) => new(Kind.Load, saveName);
 }

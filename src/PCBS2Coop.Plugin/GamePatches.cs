@@ -106,7 +106,12 @@ internal static class GamePatches
     [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.CreateSaveGame), typeof(string), typeof(bool), typeof(string))]
     private static class SaveHook
     {
-        private static bool Prefix() => CoopController.Instance?.BeforeHostSave() ?? true;
+        private static bool Prefix(ref string filename, ref string OverrideName)
+        {
+            try { CoopSaves.RedirectAutosave(ref filename, ref OverrideName); }
+            catch (Exception e) { Plugin.Logger.LogError(e); }
+            return CoopController.Instance?.BeforeHostSave() ?? true;
+        }
         private static void Postfix(string __result)
         {
             try

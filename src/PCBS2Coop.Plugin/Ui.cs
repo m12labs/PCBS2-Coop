@@ -37,6 +37,32 @@ internal static class Ui
         button.onClick.AddListener((UnityAction)new Action(() => Safe(onClick)));
     }
 
+    /// <summary>
+    /// Make a cloned menu entry run only <paramref name="onClick"/>: its click event is replaced, so neither the
+    /// game's serialized calls (for example Options' "ShowOptionsMenu") nor its fade-and-call flags come along.
+    /// </summary>
+    public static void ReplaceClick(GameObject go, Action onClick)
+    {
+        foreach (var trigger in go.GetComponents<EventTrigger>()) trigger.triggers.Clear();
+        var item = go.GetComponent<IndividualMenuButton>();
+        if (item != null) { item.shouldFadeIn = false; item.shouldFadeOut = false; }
+        var button = go.GetComponent<Button>() ?? go.AddComponent<Button>();
+        button.onClick = new Button.ButtonClickedEvent();
+        button.onClick.AddListener((UnityAction)new Action(() => Safe(onClick)));
+    }
+
+    private static bool _keyReadFailed;
+
+    /// <summary>A key went down this frame (Unity input, else Rewired, which the game uses).</summary>
+    public static bool KeyDown(KeyCode key)
+    {
+        if (!_keyReadFailed)
+            try { return Input.GetKeyDown(key); }
+            catch (Exception e) { _keyReadFailed = true; Plugin.Logger.LogWarning("[menu] Unity key input unavailable, using Rewired: " + e.Message); }
+        try { return Rewired.ReInput.isReady && Rewired.ReInput.controllers.Keyboard.GetKeyDown(key); }
+        catch { return false; }
+    }
+
     public static Button MakeButton(GameObject go, Action onClick)
     {
         var button = go.GetComponent<Button>() ?? go.AddComponent<Button>();

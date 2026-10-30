@@ -17,7 +17,7 @@ A quick look at what's ready and what's next. See the [full sync checklist](docs
 | LAN Host / Join | | | ✅ | Direct IP and port from the main menu. |
 | Steam Invite / Join | | ✅ | | Steamworks when available. |
 | Join check | | | ✅ | A different mod version or game build is refused with the reason; DLC or part catalog differences join with a warning. |
-| Shared Free Build world | | | ✅ | Host picks **New world** or **Continue**; both players load the same workshop. |
+| Shared Free Build world | | | ✅ | Host picks a new or saved co-op world; both players load the same workshop. |
 | Joining an active session | | | ✅ | Join or rejoin any time; you get the host's current world, including changes made while you load. |
 | Co-op saves | | | ✅ | One co-op world, kept apart from your solo saves. The guest keeps a copy of the host's latest save. |
 | Leaving | | | ✅ | Host leaving sends the guest back to the menu with the reason; guest leaving lets the host keep playing. |
@@ -87,18 +87,20 @@ Start the game, then open `<GameDir>\BepInEx\LogOutput.log` and look for:
 [Info   :PCBS2 Coop] PCBS2 Coop 0.13 loaded.
 ```
 
-The main menu also gains a **Multiplayer** panel below Free Build.
+The main menu also gains a **Co-op** entry above Options, and a GitHub icon with the mod version in the bottom row.
 
 ## Play together
 
-Both players install the same version. On the main menu, open **Multiplayer**:
+Both players install the same version. On the main menu, click **Co-op**. The list switches to the co-op menu:
 
-- **LAN:** select LAN inside Host or Join. Host → **New world** starts a fresh co-op workshop, or **Continue** loads your co-op world. Join → enter the host's IPv4 address (`ipconfig` on the host's PC) and port (default `7777`) → **Connect**.
-- **Steamworks (experimental):** both players open Steam and launch PCBS2. The host selects Steam → **New world** / **Continue**, then Esc → **Invite Friends**. The guest accepts the invite with PCBS2 open on its main menu. Use the in-game friends list if the overlay doesn't open.
+- **Host Co-op:** **New Game** names and starts a new co-op world, **Continue** opens the most recently saved one, **Load Game** lists them all (each world has its own autosave, shown as "(auto)").
+- **Join a Friend:** enter the host's IPv4 address (`ipconfig` on the host's PC) and port (default `7777`) → **Connect**.
+- **Co-op Options:** choose how you host, **Steam** or **LAN**, and the LAN port.
+- **Steamworks (experimental):** both players open Steam and launch PCBS2. The host picks Steam in Co-op Options, hosts a world, then Esc → **Invite Friends**. The guest accepts the invite with PCBS2 open on its main menu. Use the in-game friends list if the overlay doesn't open.
 
 LAN remains available when Steamworks isn't. See the [Steamworks notes](steamworks.md) for setup and pending two-PC testing.
 
-The guest can join at any time while the host is in the workshop, and can leave and rejoin. New world asks before replacing an existing co-op world. For LAN, `127.0.0.1` only reaches the same PC; allow the game through Windows Firewall on your private network if prompted, or forward the UDP port for direct-IP play outside your LAN.
+The guest can join at any time while the host is in the workshop, and can leave and rejoin. For LAN, `127.0.0.1` only reaches the same PC; allow the game through Windows Firewall on your private network if prompted, or forward the UDP port for direct-IP play outside your LAN.
 
 **Saves.** The host's co-op world is saved in `<GameDir>\Saves\Coop`, separate from solo Free Build saves. The guest plays from a temporary folder and keeps a copy of the host's latest save in `Saves\Coop\Joined`. Neither player's solo saves are read or written during a session.
 

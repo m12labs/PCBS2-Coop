@@ -480,8 +480,10 @@ internal sealed class Phase3Probe
             }
             _reloadReadiness.Reset();
             _reloadStep = 2;
-            Event("direct-call", "reload check: CoopController.HostWorld(7777, continueWorld:true)");
-            if (!runner.Coop.HostWorld(7777, true, out var error)) throw new InvalidOperationException(error);
+            // The fixture keeps the game's own autosave name; otherwise resume the newest co-op world (as Continue does).
+            var start = _reloadCopyFixture ? HostStart.Load("autofreebuild.binary") : HostStart.Continue;
+            Event("direct-call", $"reload check: CoopController.HostWorld(7777, {(_reloadCopyFixture ? "Load autofreebuild.binary" : "Continue")})");
+            if (!runner.Coop.HostWorld(7777, start, out var error)) throw new InvalidOperationException(error);
         }
         else if (_reloadStep == 2)
         {

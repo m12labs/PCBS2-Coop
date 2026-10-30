@@ -16,7 +16,7 @@ public sealed class CoopRunner : MonoBehaviour
 
     internal static CoopRunner Instance { get; private set; }
     internal CoopController Coop { get; private set; }
-    internal MultiplayerMenu Menu { get; private set; }
+    internal CoopMenu Menu { get; private set; }
     internal string Scene { get; private set; } = "";
     internal ChatBox Chat { get; private set; }
 
@@ -56,7 +56,7 @@ public sealed class CoopRunner : MonoBehaviour
             if (scene == MenuScene) Coop.OnMainMenu();
         }
 
-        if (scene == MenuScene && (Menu == null || !Menu.IsAlive)) Menu = MultiplayerMenu.TryBuild(Coop);
+        if (scene == MenuScene && (Menu == null || !Menu.IsAlive)) Menu = CoopMenu.TryBuild(Coop);
         SteamBootstrap.Service?.Poll();
         Menu?.Update();
 

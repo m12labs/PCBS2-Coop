@@ -6,6 +6,7 @@ using PCBS2Coop.Network;
 //  - Loopback runs real host + guest sessions over UDP on 127.0.0.1.
 var t = new Checker();
 IdentityTests.Run(t);
+WorldNameTests.Run(t);
 ObjectWorldTests.Run(t);
 ActivityTests.Run(t);
 AssemblyResourceTests.Run(t);
