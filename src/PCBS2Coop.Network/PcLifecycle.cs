@@ -304,7 +304,7 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
             else if (m.Place == PcPlace.Storage && m.Bench.IsNone) location = PcLocation.Storage;
             else if (m.Place == PcPlace.Carrier && m.Bench.IsNone) location = PcLocation.Carried(ActorSlot.Host, host.Player);
             else { Bad("Invalid observed location."); return Array.Empty<PcFact>(); }
-            pcs[m.Pc] = pc with { Location = location };
+            pcs[m.Pc] = pc.At(location);
         }
         var result = pcs.Values.ToArray();
         // Validate the complete candidate (occupancy, carriers) without publishing it.

@@ -12,7 +12,7 @@ namespace PCBS2Coop;
 /// settles once its own game shows the result: it captures that PC (part identity by native instance, prefab resources
 /// by binding) and publishes it. Every PC is rebound after the settle, once no edit or replay is running there.
 /// </summary>
-internal sealed class NativeComponentEdits : IEditNative
+internal sealed partial class NativeComponentEdits : IEditNative
 {
     private sealed class Request
     {
@@ -24,6 +24,8 @@ internal sealed class NativeComponentEdits : IEditNative
         public Slot NativeSlot;
         public Case Mesh;
         public int InventoryBefore;
+        /// <summary>Power edits: whether the press turns the PC on.</summary>
+        public bool PowerOn;
     }
     /// <summary>The edit this player is running natively (one at a time).</summary>
     private sealed class Local
@@ -34,6 +36,9 @@ internal sealed class NativeComponentEdits : IEditNative
         public bool Entered, Done, Committed;
         public EditResult Result;
         public float Since;
+        /// <summary>Cable and power edits: the PC before the edit, and since when nothing has moved on it.</summary>
+        public WireState Before;
+        public float Started, QuietSince;
     }
 
     private readonly CoopController _coop;
@@ -54,13 +59,13 @@ internal sealed class NativeComponentEdits : IEditNative
     public ComponentEditWorld Handler { get; }
     private static NativeComponentEdits Current => CoopController.Instance?.Edits;
 
-    /// <summary>Slot types whose edits are shared. Owner decision (October 27, 2026): custom-loop parts and cable
-    /// accessories are deferred; slot types not probed yet stay refused.</summary>
+    /// <summary>Slot types whose edits are shared. Owner decisions (October 27, 2026): custom-loop parts are deferred; cable
+    /// accessories (splitters, adapters) are shared since phase 5b; slot types not probed yet stay refused.</summary>
     private static readonly HashSet<Slot.SlotType> Shared = new()
     {
         Slot.SlotType.MOTHERBOARD, Slot.SlotType.CPU, Slot.SlotType.CPU_COOLER, Slot.SlotType.RAM, Slot.SlotType.PCI,
         Slot.SlotType.PCI_COVER, Slot.SlotType.STORAGE, Slot.SlotType.M2, Slot.SlotType.PSU, Slot.SlotType.CASE_COOLER,
-        Slot.SlotType.RADIATOR, Slot.SlotType.GPU_PROXY, Slot.SlotType.USB,
+        Slot.SlotType.RADIATOR, Slot.SlotType.GPU_PROXY, Slot.SlotType.USB, Slot.SlotType.POWER_SPLITTER, Slot.SlotType.POWER_ADAPTER,
     };
 
     public NativeComponentEdits(CoopController coop, WorldSync world)
@@ -75,11 +80,12 @@ internal sealed class NativeComponentEdits : IEditNative
     internal void Reset()
     {
         Handler.Reset(); _pending.Clear(); _local = null; _cancel.Clear(); _identities.Clear(); _ready.Clear(); _settling = null; _commitOp = null;
+        ResetWiring();
     }
 
     private bool Active => _world.Admitted && _world.Divergence == null && _coop.Objects.Initialized && _coop.Activity.Get(_world.Local) != null;
     /// <summary>An edit is waiting, running or being shown: saves and snapshots wait for it.</summary>
-    internal bool Busy => Handler.Edits.Count > 0 || _pending.Count > 0 || _local != null || _ready.Count > 0;
+    internal bool Busy => Handler.Edits.Count > 0 || _pending.Count > 0 || _local != null || _ready.Count > 0 || _wireRuns.Count > 0;
     /// <summary>An edit claim this game's model holds for an edit in progress (activity must not release it).</summary>
     internal bool Holds(OperationId token) => Handler.Find(token) != null;
     private static State CurrentState => GameController.Get()?.GetCurrentState();
@@ -97,7 +103,7 @@ internal sealed class NativeComponentEdits : IEditNative
     private (PcFact Pc, AssemblyResource Slot, string Why) Find(Slot slot)
     {
         if (slot == null) return (null, null, "That slot isn't shared in co-op yet.");
-        if (!Shared.Contains(slot.m_slotType)) return (null, null, "Water-cooling, lighting and cable accessories aren't shared in co-op yet.");
+        if (!Shared.Contains(slot.m_slotType)) return (null, null, "Water-cooling and lighting parts aren't shared in co-op yet.");
         var (pcId, id) = _coop.Objects.Assembly.Find(slot);
         var pc = _coop.Objects.Model.Pcs.SingleOrDefault(p => p.Id == pcId);
         var fact = pc?.Resources.SingleOrDefault(r => r.Id == id);
@@ -184,9 +190,10 @@ internal sealed class NativeComponentEdits : IEditNative
 
     public string CheckHost(in CommandContext ctx, PcFact pc, AssemblyResource fact, ComponentEdit edit)
     {
+        if (edit.Wired) return CheckWiredHost(pc, edit);
         var slot = _coop.Objects.Assembly.NativeFor(pc.Id, fact.Id)?.TryCast<Slot>();
         if (slot == null) return "That slot is missing on the host's game.";
-        if (!Shared.Contains(slot.m_slotType)) return "Water-cooling, lighting and cable accessories aren't shared in co-op yet.";
+        if (!Shared.Contains(slot.m_slotType)) return "Water-cooling and lighting parts aren't shared in co-op yet.";
         if (CoopController.Instance?.Replays.Running(slot.GetCase()) == true) return "The host's game is still showing the previous change.";
         var comp = slot.GetComponent();
         if (comp != null && NativeAssembly.IsPreview(comp)) comp = null;
@@ -220,13 +227,14 @@ internal sealed class NativeComponentEdits : IEditNative
                 Plugin.Logger.LogInfo($"[edits] {what}: the other player is editing.");
                 return;
             }
-            if (request?.Replay == null || request.Work == null || CurrentState?.Pointer != request.Work.Pointer || request.NativeSlot == null)
+            if (request?.Replay == null || request.Work == null || CurrentState?.Pointer != request.Work.Pointer || (!edit.Wired && request.NativeSlot == null))
             {
                 Plugin.Logger.LogWarning($"[edits] {what}: this player's work state changed before the host answered; cancelling.");
                 _cancel.Add(edit.Token);
                 return;
             }
-            _local = new Local { Token = edit.Token, Request = request, Since = Time.realtimeSinceStartup };
+            _local = new Local { Token = edit.Token, Request = request, Since = Time.realtimeSinceStartup, Started = Time.realtimeSinceStartup };
+            if (edit.Wired) _local.Before = Snapshot(request.Mesh);
             NativeProjection.Run(request.Replay);
             Plugin.Logger.LogInfo($"[edits] {what}: running here.");
         }
@@ -250,6 +258,7 @@ internal sealed class NativeComponentEdits : IEditNative
         var what = $"{edit.Gesture} at slot {edit.Slot} on PC {pc.Id} by {ctx.Op}";
         try
         {
+            if (edit.Wired) { StartWireReplay(pc, edit); return; }
             var plan = Plan(pc, edit);
             plan.Finished = error =>
             {
@@ -306,7 +315,8 @@ internal sealed class NativeComponentEdits : IEditNative
         captured = AssemblyManifest.Repair(captured, _coop.Objects.Assembly.Describe(captured, mesh, record), allocator);
         var added = facts.Where(f => !known.ContainsKey(f.Id)).Select(f => f.Sku); var removed = pc.Parts.Where(p => !aliases.ContainsValue(p.Id)).Select(p => p.Sku);
         Plugin.Logger.LogInfo($"[edits] settle capture of PC {pc.Id}: added [{string.Join(", ", added)}], removed [{string.Join(", ", removed)}].");
-        return captured with { BuildProfile = NativeAssembly.CaptureProfile(captured, mesh, record) };
+        // The host's game is the record: a part edit can turn the PC off, and a cable or power edit can turn it on or off.
+        return captured with { BuildProfile = NativeAssembly.CaptureProfile(captured, mesh, record), Powered = pc.Location.Place == PcPlace.Bench && Running(mesh) };
     }
 
     /// <summary>Native part instances of a PC (from its last record, or a fresh one if that no longer matches the model).</summary>
@@ -379,7 +389,9 @@ internal sealed class NativeComponentEdits : IEditNative
             _world.Submit(CommandTypes.ComponentEdit, ComponentEditWorld.Cancel(actor.Epoch, token), out _);
         }
         UpdateLocal();
+        UpdateWireRuns();
         if (_world.IsAuthority) UpdateHost();
+        UpdatePower();
     }
 
     private void UpdateLocal()
@@ -389,6 +401,11 @@ internal sealed class NativeComponentEdits : IEditNative
         {
             _local = null;
             return;
+        }
+        if (!_local.Done && _local.Before != null)
+        {
+            PollWired();
+            if (_local == null) return;
         }
         if (_local.Done)
         {
@@ -437,7 +454,7 @@ internal sealed class NativeComponentEdits : IEditNative
     private bool Stable(NetObjectId pc)
     {
         if (!_coop.Objects.Projections.TryGet(pc, out var mesh) || mesh == null) return true; // not shown here: the capture refuses, and the edit is dropped
-        if (CoopController.Instance.Replays.Running(mesh)) return false;
+        if (CoopController.Instance.Replays.Running(mesh) || WireMoving(mesh)) return false;
         var install = CurrentState?.TryCast<InstallingPartState>();
         if (install?.m_case != null && install.m_case.Pointer == mesh.Pointer) return false;
         foreach (var slot in mesh.GetComponentsInChildren<Slot>(true))

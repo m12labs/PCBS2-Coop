@@ -8,7 +8,7 @@ internal sealed class FakeEditNative : IEditNative
     public Func<ComponentEdit, string?> Host = _ => null;
     public Func<PcFact, ComponentEdit, NetObjectIdAllocator, PcFact> Capture = (pc, _, _) => pc;
     public readonly List<string> Calls = new();
-    public string? CheckHost(in CommandContext ctx, PcFact pc, AssemblyResource slot, ComponentEdit edit) => Host(edit);
+    public string? CheckHost(in CommandContext ctx, PcFact pc, AssemblyResource? slot, ComponentEdit edit) => Host(edit);
     PcFact IEditNative.Capture(PcFact pc, ComponentEdit edit, NetObjectIdAllocator allocator) => Capture(pc, edit, allocator);
     public void Began(in MutationContext ctx, PcFact pc, ComponentEdit edit) => Calls.Add($"began {edit.Gesture} {edit.Slot.Value} local={ctx.FromLocalPlayer}");
     public void Committed(in MutationContext ctx, PcFact pc, ComponentEdit edit) =>
@@ -20,6 +20,7 @@ internal sealed class FakeEditNative : IEditNative
 internal static class ComponentEditTests
 {
     private static NetObjectId Id(ulong n) => new(n);
+    private static bool Throws(Action a) { try { a(); return false; } catch (InvalidDataException) { return true; } }
     private static AssemblyResource Slot(ulong id, ulong parent, string path, ulong occupant = 0) =>
         new(Id(id), Id(parent), path, "Slot", AssemblyResourceKind.Slot, Id(occupant), false, 0, 0, Array.Empty<NetObjectId>());
     private static AssemblyResource Screw(ulong id, ulong parent, string path) =>
@@ -46,6 +47,21 @@ internal static class ComponentEditTests
     /// <summary>The host's game after the edit: an installed stick (one new part, its own screw) or a removed card.</summary>
     private static PcFact Edited(PcFact pc, ComponentEdit edit, NetObjectIdAllocator allocator)
     {
+        if (edit.Wired)
+        {
+            var wiring = edit.Result?.Wiring;
+            var next = pc with { Powered = wiring?.Powered ?? pc.Powered };
+            if (wiring?.Accessories.FirstOrDefault(a => a.Sku != "") is { } added)
+            {
+                var splitter = allocator.Allocate();
+                next = next with
+                {
+                    Parts = pc.Parts.Append(new PartFact(splitter, added.Sku, "PowerSplitterPartInstance")).ToArray(),
+                    Links = pc.Links.Append(new PartLink($"psuSplitterIDs[{added.Index}]", splitter)).ToArray(),
+                };
+            }
+            return next;
+        }
         var slot = pc.Resources.Single(r => r.Id == edit.Slot);
         if (edit.Install)
         {
@@ -69,6 +85,9 @@ internal static class ComponentEditTests
             Resources = pc.Resources.Where(r => r.Parent != gone).Select(r => r.Id == slot.Id ? r with { Occupant = default, Coupled = Array.Empty<NetObjectId>(), Version = r.Version + 1 } : r).ToArray(),
         };
     }
+
+    private static byte[] WiringBytes(Wiring wiring) { var w = new NetDataWriter(); wiring.Write(w); return w.CopyData(); }
+    private static readonly CableFact Cable24 = new("PSU_24", "MB_24", "cable/24pin", "conn/24", false, true, new[] { 4, 4, 2 }, Array.Empty<float>());
 
     public static void Run(Checker t)
     {
@@ -98,7 +117,8 @@ internal static class ComponentEditTests
             ComponentEditWorld.Begin(a.Epoch, Id(2), Id(slot), R(o, slot).Version, gesture, "", R(o, slot).Occupant);
         byte[] Bytes(ActivityWorld a) { var w = new NetDataWriter(); a.Write(w); return w.CopyData(); }
         string Key(ComponentEdit e) => $"{e.Token}|{e.Actor}|{e.Epoch}|{e.Pc}|{e.Slot}|{e.Gesture}|{e.Part}|{e.Component}|{string.Join(",", e.Targets)}|{e.Stage}|" +
-            (e.Result is { } r ? $"{r.Outcome}|{r.Degrees}|{r.Flipped}|{r.Mode}|{r.Selected}|{r.FromInventory}|{r.CableType}|{r.CableConnector}|{string.Join(",", r.Pins)}" : "");
+            (e.Result is { } r ? $"{r.Outcome}|{r.Degrees}|{r.Flipped}|{r.Mode}|{r.Selected}|{r.FromInventory}|{r.CableType}|{r.CableConnector}|{string.Join(",", r.Pins)}|" +
+                (r.Wiring is { } wr ? Convert.ToHexString(WiringBytes(wr)) : "") : "");
         bool Same() => ho.ToBytes().SequenceEqual(go.ToBytes()) && Bytes(ha).SequenceEqual(Bytes(ga)) &&
             he.Edits.Select(Key).SequenceEqual(ge.Edits.Select(Key)) && l.InStep && l.Divergences.Count == 0;
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, host), CommandTypes.ActorActivity);
@@ -237,6 +257,69 @@ internal static class ComponentEditTests
         t.Check(gn.Calls.Count == calls + 2 && ge.Find(begin)?.Stage == EditStage.Committed && Same(), "a duplicated commit applies and is shown exactly once");
         Send(l.Host, ComponentEditWorld.Settle(begin));
         t.Check(ge.Edits.Count == 0 && R(go, 9).Occupant.IsNone && Same(), "and settles normally");
+
+        t.Section("Cable and power edits (phase 5)");
+        byte[] Wire(ActorActivity a, EditGesture g, string part) => ComponentEditWorld.Begin(a.Epoch, Id(2), default, 0, g, part, default);
+        rev = l.Host.Revision;
+        Send(l.Guest, ComponentEditWorld.Begin(G().Epoch, Id(2), Id(10), 0, EditGesture.Connect, "PSU_24", default));
+        Send(l.Guest, Wire(G(), EditGesture.Power, "maybe"));
+        Send(l.Guest, Wire(G(), EditGesture.Unplug, ""));
+        t.Check(l.Host.Revision == rev && l.GuestRejected.TakeLast(3).Select(x => x.Text).ToArray() is var wbad &&
+            wbad[0].Contains("Invalid cable") && wbad[1].Contains("Invalid power") && wbad[2].Contains("Invalid cable"),
+            "a cable edit names no slot, power is on or off, and an unplug names its cable");
+
+        begin = Send(l.Guest, Wire(G(), EditGesture.Connect, "PSU_24"));
+        t.Check(ge.Find(begin) is { Gesture: EditGesture.Connect, Targets.Count: 0, Wired: true } && G().Pending is { Targets.Count: 0 } &&
+            gn.Calls.Last() == "began Connect 0 local=True" && Same(), "a guest starts plugging a cable in: the claim covers the whole PC");
+        rev = l.Host.Revision;
+        Send(l.Host, Remove(H(), 10, ho));
+        Send(l.Host, MechanismWorld.Toggle(H().Epoch, Id(2), Id(14), R(ho, 14).Version, true), CommandTypes.Mechanism);
+        Send(l.Host, Wire(H(), EditGesture.Power, "on"));
+        Send(l.Host, ActivityWorld.Reserve(H(), Id(2), ActivityOperation.Edit, Id(10)), CommandTypes.ActorActivity);
+        t.Check(l.Host.Revision == rev && l.HostRejected.TakeLast(4).Select(x => x.Text).ToArray() is var waits &&
+            waits.Take(3).All(x => x.Contains("changing a part of that PC")) && waits[3].Contains("in use"),
+            "while it runs, the other player's part edits, latches, power and resource claims on that PC wait");
+
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Done()));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Wired(Wiring.None with { Added = new[] { Cable24, Cable24 } })));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Wired(Wiring.None with { Inventory = new[] { new InventoryChange("cable/red", 0) } })));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Wired(Wiring.None with { Added = new[] { Cable24 with { Points = new[] { 1f } } } })));
+        t.Check(l.GuestRejected.TakeLast(4).Select(x => x.Text).ToArray() is var cbad && cbad[0].Contains("Invalid edit result") &&
+            cbad[1].Contains("added twice") && cbad[2].Contains("inventory") && cbad[3].Contains("added cable"),
+            "a cable commit carries a cable change; duplicates, empty inventory changes and broken route points are refused");
+        var wiring = new Wiring(new[] { "PSU_FAN>FAN_1" }, new[] { Cable24 }, new[] { new AccessoryChange(AccessoryKind.Splitter, 0, "PSU_SPLITTER_3X6PIN") },
+            new[] { new InventoryChange("cable/custom", -1) }, false);
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Wired(wiring)));
+        t.Check(ge.Find(begin)?.Result?.Wiring is { } got && WiringBytes(got).SequenceEqual(WiringBytes(wiring)) &&
+            hn.Calls.Last() == "committed Done NaN local=False" && Same(), "the cable change reaches the host's game to replay");
+        next = ho.NextId;
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(ge.Edits.Count == 0 && G().Pending == null && P(go).Links.Single(x => x.Path == "psuSplitterIDs[0]").Part.Value == next && Same(),
+            "the host settles it: the automatic splitter gets a new ID and the PC is free again");
+
+        begin = Send(l.Host, Wire(H(), EditGesture.Power, "on"));
+        Send(l.Host, ComponentEditWorld.Commit(H().Epoch, begin, EditResult.Wired(Wiring.None with { Powered = true })));
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(P(go).Powered && P(ho).Powered && ge.Edits.Count == 0 && Same(), "the host powers the PC on: both peers record it");
+        begin = Send(l.Guest, Wire(G(), EditGesture.Unplug, Cable24.Key));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Wired(Wiring.None with { Removed = new[] { Cable24.Key } })));
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(!P(go).Powered && Same(), "a guest pulls the 24-pin of the running PC: the host's game shows it off, so both do");
+        begin = Send(l.Guest, Wire(G(), EditGesture.Power, "on"));
+        Send(l.Guest, ComponentEditWorld.Cancel(G().Epoch, begin));
+        t.Check(ge.Edits.Count == 0 && G().Pending == null && !P(go).Powered && Same(), "a press that changed nothing is cancelled");
+
+        var powered = P(ho) with { Powered = true };
+        t.Check(!powered.At(PcLocation.Storage).Powered && powered.At(powered.Location).Powered &&
+            Throws(() => new ObjectWorld().Replace(ho.WorldId, ho.NextId, ho.Locations, new[] { powered with { Location = PcLocation.Storage } }, ho.Retired)),
+            "only a PC on its bench can be powered; moving it turns it off");
+
+        rev = l.Host.Revision; malformed = l.GuestRejected.Count;
+        begin = Send(l.Guest, Wire(G(), EditGesture.Connect, "PSU_24"));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Wired(Wiring.None with { Removed = Enumerable.Range(0, Wiring.MaxCables + 1).Select(i => $"a{i}>b").ToArray() })));
+        t.Check(l.GuestRejected.Count == malformed + 1 && l.GuestRejected.Last().Reason == RejectReason.Malformed, "too many cable changes are malformed");
+        Send(l.Guest, ComponentEditWorld.Cancel(G().Epoch, begin));
+
         var copy = new ObjectWorld(); copy.Read(new NetDataReader(ho.ToBytes()));
         t.Check(copy.ToBytes().SequenceEqual(ho.ToBytes()), "a settled world round-trips exactly");
     }

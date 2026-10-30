@@ -49,7 +49,9 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
             p.Kind != kind || _objects.Pcs.SingleOrDefault(x => x.Id == pc) is not { } current) return false;
         if (kind == ActivityOperation.Move) return targets.Length == 0 && p.Targets.Count == 0;
         if (kind != ActivityOperation.Edit || a.WorkingPc != pc || current.Location.Place != PcPlace.Bench ||
-            targets.Length == 0 || targets.Distinct().Count() != targets.Length) return false;
+            targets.Distinct().Count() != targets.Length) return false;
+        // A whole-PC claim (cable and power edits, command 9) has no part targets.
+        if (targets.Length == 0) return p.Targets.Count == 0 && p.Writes.Count == 0 && p.BindingStamp == Stamp(current, p.Writes);
         try
         {
             var plan = AssemblyResources.Plan(current, targets);
@@ -62,7 +64,8 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
     internal string EditStamp(PcFact pc, IEnumerable<NetObjectId> targets) => Stamp(pc, AssemblyResources.Plan(pc, targets).Writes);
 
     /// <summary>Component edits (command 9) take their edit claim inside their own host-validated command, so the
-    /// claim and the edit record change in one revision. The caller has checked the actor, PC and conflicts.</summary>
+    /// claim and the edit record change in one revision. The caller has checked the actor, PC and conflicts. No targets
+    /// claims the whole PC (cable and power edits, phase 5).</summary>
     internal void SetEditClaim(OperationId token, ActorSlot actor, PcFact pc, IReadOnlyList<NetObjectId> targets)
     {
         if (Get(actor) is not { Pending: null } a || a.WorkingPc != pc.Id || a.Version == ulong.MaxValue)
@@ -139,7 +142,7 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
                 {
                     var targets = AssemblyResources.Plan(pc, r.Targets).Writes;
                     if (_actors.Values.Any(x => x.Pending is { } p && p.Pc == pc.Id &&
-                        (p.Kind == ActivityOperation.Move || AssemblyResources.Conflicts(pc, p.Writes, targets)))) error = "Resource already in use.";
+                        (p.Kind == ActivityOperation.Move || p.Writes.Count == 0 || AssemblyResources.Conflicts(pc, p.Writes, targets)))) error = "Resource already in use.";
                 }
                 catch (InvalidDataException e) { error = e.Message; }
             }

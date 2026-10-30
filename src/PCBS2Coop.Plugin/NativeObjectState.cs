@@ -572,7 +572,9 @@ internal sealed class NativeObjectState : IWorldState
             }
             var provenance = prior?.Provenance ?? new InstanceProvenance(Initialized ? InstanceOrigin.NativeObserved : InstanceOrigin.Baseline, host, default);
             var captured = new PcFact(id, provenance, o.Location, facts, links)
-                { Resources = prior?.Resources ?? Array.Empty<AssemblyResource>(), BuildProfile = prior?.BuildProfile };
+                { Resources = prior?.Resources ?? Array.Empty<AssemblyResource>(), BuildProfile = prior?.BuildProfile,
+                  // The game doesn't save power: keep the shared state while the PC stays on its bench (NativePower restores it).
+                  Powered = prior != null && prior.Powered && prior.Location == o.Location };
             if ((!Initialized || repair) && o.Mesh != null)
             {
                 captured = AssemblyManifest.Repair(captured, Assembly.Describe(captured, o.Mesh, o.Save), allocator);
@@ -828,7 +830,7 @@ internal sealed class NativeObjectState : IWorldState
         _reading = false;
         // A fresh host has no admitted guest. Restore absent carriers to the shared cupboard, preserving IDs and payloads.
         var pcs = Model.Pcs.Select(x => x.Location.Place == PcPlace.Carrier &&
-            (x.Location.Actor != ActorSlot.Host || x.Location.Player != host) ? x with { Location = PcLocation.Storage } : x).ToArray();
+            (x.Location.Actor != ActorSlot.Host || x.Location.Player != host) ? x.At(PcLocation.Storage) : x).ToArray();
         Model.Replace(Model.WorldId, Model.NextId, Model.Locations, pcs, Model.Retired);
         _saveBindings = _loadBindings ?? _saveBindings; _loadBindings = null; _loadingCarriers = null;
     }

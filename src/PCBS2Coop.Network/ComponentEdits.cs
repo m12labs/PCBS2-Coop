@@ -5,8 +5,86 @@ namespace PCBS2Coop.Network;
 
 /// <summary>How the editor's game started the edit (4e decompile): an install (<c>AssemblyTick</c>, or clicking a
 /// placeholder), a removal through <c>WorkingOnComputerState.Uninstall</c> (cables unplug first), or the direct removal
-/// that skips the cable step.</summary>
-public enum EditGesture : byte { Install = 1, Remove = 2, RemoveDirect = 3 }
+/// that skips the cable step. Phase 5 adds the whole-PC gestures: plugging a cable in from a connector (<c>Connect</c>,
+/// which may also add a splitter), unplugging one (<c>Unplug</c>) and the power button (<c>Power</c>).</summary>
+public enum EditGesture : byte { Install = 1, Remove = 2, RemoveDirect = 3, Connect = 4, Unplug = 5, Power = 6 }
+public enum AccessoryKind : byte { Splitter = 1, Adapter = 2 }
+
+/// <summary>One cable as the game saves it (<c>CableSave</c>): connector IDs at both ends, cable and connector types,
+/// custom wire colours and route points (9 floats per point: position, up, forward; usually none).</summary>
+public sealed record CableFact(string From, string To, string Desc, string Connector, bool NonModular, bool PlayerChoice,
+    IReadOnlyList<int> Pins, IReadOnlyList<float> Points)
+{
+    public const int MaxPointFloats = 9 * 128;
+    public string Key => Wiring.Key(From, To);
+}
+/// <summary>A PSU splitter or power adapter slot (by its index in <c>Case.psuSplitterSlots</c>/<c>powerAdapterSlots</c>)
+/// that now holds <see cref="Sku"/> (empty: now empty).</summary>
+public sealed record AccessoryChange(AccessoryKind Kind, int Index, string Sku);
+public sealed record InventoryChange(string Sku, int Count);
+
+/// <summary>What a cable or power edit changed on the editor's PC (phase 5b-5c): cables removed (by key) and added,
+/// splitter/adapter slots, the editor's inventory and the PC's power state afterwards.</summary>
+public sealed record Wiring(IReadOnlyList<string> Removed, IReadOnlyList<CableFact> Added, IReadOnlyList<AccessoryChange> Accessories,
+    IReadOnlyList<InventoryChange> Inventory, bool Powered)
+{
+    public const int MaxCables = 64, MaxAccessories = 32, MaxInventory = 32, MaxIndex = 64, MaxCount = 64;
+    public static string Key(string from, string to) => from + ">" + to;
+    public static readonly Wiring None = new(Array.Empty<string>(), Array.Empty<CableFact>(), Array.Empty<AccessoryChange>(), Array.Empty<InventoryChange>(), false);
+    /// <summary>Nothing changed, given the power state before the edit.</summary>
+    public bool Empty(bool poweredBefore) => Removed.Count == 0 && Added.Count == 0 && Accessories.Count == 0 && Inventory.Count == 0 && Powered == poweredBefore;
+
+    internal void Write(NetDataWriter w)
+    {
+        w.Put(Removed.Count); foreach (var k in Removed) w.Put(k);
+        w.Put(Added.Count);
+        foreach (var c in Added)
+        {
+            w.Put(c.From); w.Put(c.To); w.Put(c.Desc); w.Put(c.Connector); w.Put(c.NonModular); w.Put(c.PlayerChoice);
+            w.Put(c.Pins.Count); foreach (var p in c.Pins) w.Put(p);
+            w.Put(c.Points.Count); foreach (var f in c.Points) w.Put(f);
+        }
+        w.Put(Accessories.Count); foreach (var a in Accessories) { w.Put((byte)a.Kind); w.Put(a.Index); w.Put(a.Sku); }
+        w.Put(Inventory.Count); foreach (var i in Inventory) { w.Put(i.Sku); w.Put(i.Count); }
+        w.Put(Powered);
+    }
+
+    internal static Wiring Read(NetDataReader r)
+    {
+        static int Count(NetDataReader r, int max) { var n = r.GetInt(); if (n < 0 || n > max) throw new FormatException("Invalid cable change count."); return n; }
+        var removed = new string[Count(r, MaxCables)]; for (var i = 0; i < removed.Length; i++) removed[i] = r.GetString(1024);
+        var added = new CableFact[Count(r, MaxCables)];
+        for (var i = 0; i < added.Length; i++)
+        {
+            var from = r.GetString(1024); var to = r.GetString(1024); var desc = r.GetString(1024); var connector = r.GetString(1024);
+            var nonModular = r.GetBool(); var choice = r.GetBool();
+            var pins = new int[Count(r, EditResult.MaxPins)]; for (var j = 0; j < pins.Length; j++) pins[j] = r.GetInt();
+            var points = new float[Count(r, CableFact.MaxPointFloats)]; for (var j = 0; j < points.Length; j++) points[j] = r.GetFloat();
+            added[i] = new(from, to, desc, connector, nonModular, choice, pins, points);
+        }
+        var accessories = new AccessoryChange[Count(r, MaxAccessories)];
+        for (var i = 0; i < accessories.Length; i++) accessories[i] = new((AccessoryKind)r.GetByte(), r.GetInt(), r.GetString(1024));
+        var inventory = new InventoryChange[Count(r, MaxInventory)];
+        for (var i = 0; i < inventory.Length; i++) inventory[i] = new(r.GetString(1024), r.GetInt());
+        return new(removed, added, accessories, inventory, r.GetBool());
+    }
+
+    /// <summary>Why this change is malformed, or null.</summary>
+    internal string? Check()
+    {
+        static bool Text(string s) => s.Length <= ComponentEditWorld.MaxText && !s.Any(char.IsControl);
+        if (Removed.Any(k => k.Length == 0 || !Text(k)) || Removed.Distinct(StringComparer.Ordinal).Count() != Removed.Count) return "Invalid removed cable.";
+        foreach (var c in Added)
+            if (c.From.Length == 0 || c.To.Length == 0 || !Text(c.From) || !Text(c.To) || !Text(c.Desc) || !Text(c.Connector) ||
+                c.Points.Count % 9 != 0 || c.Points.Any(f => !float.IsFinite(f) || MathF.Abs(f) > 1000)) return "Invalid added cable.";
+        if (Added.Select(c => c.Key).Distinct(StringComparer.Ordinal).Count() != Added.Count) return "A cable is added twice.";
+        if (Accessories.Any(a => !Enum.IsDefined(a.Kind) || a.Index is < 0 or >= MaxIndex || !Text(a.Sku)) ||
+            Accessories.Select(a => (a.Kind, a.Index)).Distinct().Count() != Accessories.Count) return "Invalid splitter or adapter change.";
+        if (Inventory.Any(i => i.Sku.Length == 0 || !Text(i.Sku) || i.Count == 0 || Math.Abs(i.Count) > MaxCount) ||
+            Inventory.Select(i => i.Sku).Distinct(StringComparer.Ordinal).Count() != Inventory.Count) return "Invalid inventory change.";
+        return null;
+    }
+}
 /// <summary><see cref="Unplugged"/>: the editor pressed Esc during a removal's cable step, so only the cables came off
 /// and the part stayed in (4b N2; owner decision: share whatever the editor's game ends with).</summary>
 public enum EditOutcome : byte { Done = 1, Unplugged = 2 }
@@ -21,14 +99,22 @@ public sealed record EditResult(EditOutcome Outcome, float Degrees, bool Flipped
 {
     public const int MaxPins = 64;
     public static EditResult Done(float degrees = float.NaN) => new(EditOutcome.Done, degrees, false, 1, 1, false, "", "", Array.Empty<int>());
+    /// <summary>A cable or power edit's result: what changed on the editor's PC.</summary>
+    public static EditResult Wired(Wiring wiring) => Done() with { Wiring = wiring };
+    /// <summary>Set for cable and power edits (phase 5), absent for part edits.</summary>
+    public Wiring? Wiring { get; init; }
 }
 
 /// <summary>One component edit in progress. <see cref="Part"/> is the installed SKU; <see cref="Component"/> the
 /// removed part (none for an integral cover). <see cref="Targets"/> is the claim the edit holds.</summary>
+/// <remarks>For a cable or power edit (<see cref="Wired"/>), <see cref="Slot"/> is none, <see cref="Targets"/> is empty
+/// (the claim covers the whole PC) and <see cref="Part"/> names what was pressed: the connector the cable starts from, the
+/// unplugged cable's key, or "on"/"off".</remarks>
 public sealed record ComponentEdit(OperationId Token, ActorSlot Actor, ulong Epoch, NetObjectId Pc, NetObjectId Slot,
     EditGesture Gesture, string Part, NetObjectId Component, IReadOnlyList<NetObjectId> Targets)
 {
     public bool Install => Gesture == EditGesture.Install;
+    public bool Wired => ComponentEditWorld.IsWiring(Gesture);
     public EditStage Stage { get; init; } = EditStage.Running;
     public EditResult? Result { get; init; }
 }
@@ -37,7 +123,8 @@ public sealed record ComponentEdit(OperationId Token, ActorSlot Actor, ulong Epo
 /// Cancelled and Settled run after the model changed (both peers, in host order) and must not submit commands.</summary>
 public interface IEditNative
 {
-    string? CheckHost(in CommandContext ctx, PcFact pc, AssemblyResource slot, ComponentEdit edit);
+    /// <summary><paramref name="slot"/> is null for a cable or power edit.</summary>
+    string? CheckHost(in CommandContext ctx, PcFact pc, AssemblyResource? slot, ComponentEdit edit);
     /// <summary>Host: the PC as its game shows it now. Unchanged parts and resources keep their IDs; new ones come from
     /// <paramref name="allocator"/>.</summary>
     PcFact Capture(PcFact pc, ComponentEdit edit, NetObjectIdAllocator allocator);
@@ -74,6 +161,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     public ComponentEditWorld(ObjectWorld objects, ActivityWorld activity, IEditNative native)
     { _objects = objects; _activity = activity; _native = native; }
     public string Name => "component-edit";
+    public static bool IsWiring(EditGesture g) => g is EditGesture.Connect or EditGesture.Unplug or EditGesture.Power;
     public IReadOnlyList<ComponentEdit> Edits => _edits;
     public ComponentEdit? Find(OperationId token) => _edits.SingleOrDefault(e => e.Token == token);
     /// <summary>The edit running on that PC, if any (one per PC: the other player waits).</summary>
@@ -88,6 +176,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         w.Put((byte)Step.Commit); w.Put(epoch); Token(w, token);
         w.Put((byte)result.Outcome); w.Put(result.Degrees); w.Put(result.Flipped); w.Put(result.Mode); w.Put(result.Selected); w.Put(result.FromInventory);
         w.Put(result.CableType ?? ""); w.Put(result.CableConnector ?? ""); w.Put(result.Pins.Count); foreach (var p in result.Pins) w.Put(p);
+        w.Put(result.Wiring != null); result.Wiring?.Write(w);
     });
     public static byte[] Cancel(ulong epoch, OperationId token) => Encode(w => { w.Put((byte)Step.Cancel); w.Put(epoch); Token(w, token); });
     /// <summary>Host only: publish the PC as the host's game shows it after that edit.</summary>
@@ -121,7 +210,9 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 var inventory = r.GetBool(); var type = r.GetString(1024); var connector = r.GetString(1024); var n = r.GetInt();
                 if (n is < 0 or > EditResult.MaxPins) throw new FormatException("Invalid cable pin count.");
                 var pins = new int[n]; for (var i = 0; i < n; i++) pins[i] = r.GetInt();
-                c = new(step, epoch, default, default, 0, default, "", default, token, new(outcome, degrees, flipped, mode, selected, inventory, type, connector, pins));
+                var wiring = r.GetBool() ? Wiring.Read(r) : null;
+                c = new(step, epoch, default, default, 0, default, "", default, token,
+                    new(outcome, degrees, flipped, mode, selected, inventory, type, connector, pins) { Wiring = wiring });
                 break;
             }
             case Step.Cancel:
@@ -153,6 +244,13 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         if (!Enum.IsDefined(c.Gesture)) return "Unknown edit.";
         if (actor.Pending != null || _edits.Any(e => e.Actor == requester)) return "Your previous change is still finishing.";
         if (Busy(pc.Id, requester) is { } busy) return busy;
+        if (IsWiring(c.Gesture))
+        {
+            // Whole-PC claim: a cable edit can touch connectors on many parts and add a splitter (phase 5 audit).
+            if (!c.Slot.IsNone || c.Version != 0 || !c.Component.IsNone || c.Part.Length == 0 || !Text(c.Part)) return "Invalid cable or power change.";
+            if (c.Gesture == EditGesture.Power && c.Part is not ("on" or "off")) return "Invalid power change.";
+            return null;
+        }
         slot = pc.Resources.SingleOrDefault(r => r.Id == c.Slot);
         if (slot == null || slot.Kind != AssemblyResourceKind.Slot) return "Unknown slot.";
         if (AssemblyResources.Dormant(pc).Contains(slot.Id)) return "That slot is on a removed panel.";
@@ -191,6 +289,12 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
 
     private string? CheckResult(ComponentEdit edit, EditResult r)
     {
+        if (edit.Wired != (r.Wiring != null)) return "Invalid edit result.";
+        if (r.Wiring is { } wiring)
+        {
+            if (r.Outcome != EditOutcome.Done) return "Invalid edit outcome.";
+            if (wiring.Check() is { } bad) return bad;
+        }
         if (r.Outcome == EditOutcome.Unplugged ? edit.Gesture != EditGesture.Remove : r.Outcome != EditOutcome.Done) return "Invalid edit outcome.";
         if (!float.IsNaN(r.Degrees) && (!float.IsFinite(r.Degrees) || MathF.Abs(r.Degrees) > 3600)) return "Invalid orientation.";
         if (r.Mode > 8 || r.Selected > 8 || !Text(r.CableType) || !Text(r.CableConnector) || r.Pins.Count > EditResult.MaxPins) return "Invalid edit values.";
@@ -218,7 +322,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 error = CheckBegin(ctx.Op.Actor, c, out var pc, out var slot, out var targets);
                 if (error == null)
                 {
-                    try { error = _native.CheckHost(ctx, pc!, slot!, new(ctx.Op, ctx.Op.Actor, c.Epoch, pc!.Id, slot!.Id, c.Gesture, c.Part, c.Component, targets)); }
+                    try { error = _native.CheckHost(ctx, pc!, slot, new(ctx.Op, ctx.Op.Actor, c.Epoch, pc!.Id, slot?.Id ?? default, c.Gesture, c.Part, c.Component, targets)); }
                     catch (Exception e) { error = "Host check failed: " + e.Message; }
                 }
                 break;
@@ -298,7 +402,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 // The same checks against this peer's copy of the same revision. A difference is a divergence.
                 if (CheckBegin(ctx.Op.Actor, c, out var pc, out var slot, out var targets) is { } error) throw new InvalidDataException("Component edit no longer applies: " + error);
                 if (c.Stamp != _activity.EditStamp(pc!, targets)) throw new InvalidDataException("Component edit binding differs from the host's.");
-                var edit = new ComponentEdit(ctx.Op, ctx.Op.Actor, c.Epoch, pc!.Id, slot!.Id, c.Gesture, c.Part, c.Component,
+                var edit = new ComponentEdit(ctx.Op, ctx.Op.Actor, c.Epoch, pc!.Id, slot?.Id ?? default, c.Gesture, c.Part, c.Component,
                     Array.AsReadOnly(targets));
                 _activity.SetEditClaim(ctx.Op, ctx.Op.Actor, pc, targets);
                 _edits.Add(edit);

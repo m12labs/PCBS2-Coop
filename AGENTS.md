@@ -1,6 +1,6 @@
 # Agent instructions
 
-PCBS2 Coop is a BepInEx 6 IL2CPP multiplayer mod for PC Building Simulator 2 (Unity 6000.2.6f2, Windows x64). Current state: two players on a LAN share one Free Build world. The host loads a co-op world (Host → New world / Continue, saved in `Saves\Coop`); a guest can join at any time and loads a snapshot of the host's current world; each sees the other as a capsule. Creating and deleting PCs is host-approved and shared (phase 3e). Moving PCs between benches, hands and the cupboard is host-approved too (phase 3f, version 0.8), with owned two-instance transfer, race and persistence checks. Swapping a workbench peripheral is host-approved, and a world with packages or physical notes is refused (phase 3g, version 0.10, with owned two-instance checks). Version 0.11 completes phase 3 (3h, owned checks H1–H6): an out-of-sync marker, a chat box (Enter) and the players' `/sync` save-and-reload repair. Phase 4 (standard building) is in progress: 0.12 (4c) binds slots, latches and screws and refuses saves with unconfirmed edits; 0.13 (4d) shares latch toggles and case panels; 0.14 (4e) shares standard component installs and removals, which the other game replays with the game's own animations (the owner tested it in game). Water-cooling, lighting and cable accessories and later features are not synced yet.
+PCBS2 Coop is a BepInEx 6 IL2CPP multiplayer mod for PC Building Simulator 2 (Unity 6000.2.6f2, Windows x64). Current state: two players on a LAN share one Free Build world. The host loads a co-op world (Host → New world / Continue, saved in `Saves\Coop`); a guest can join at any time and loads a snapshot of the host's current world; each sees the other as a capsule. Creating and deleting PCs is host-approved and shared (phase 3e). Moving PCs between benches, hands and the cupboard is host-approved too (phase 3f, version 0.8), with owned two-instance transfer, race and persistence checks. Swapping a workbench peripheral is host-approved, and a world with packages or physical notes is refused (phase 3g, version 0.10, with owned two-instance checks). Version 0.11 completes phase 3 (3h, owned checks H1–H6): an out-of-sync marker, a chat box (Enter) and the players' `/sync` save-and-reload repair. Phase 4 (standard building) is in progress: 0.12 (4c) binds slots, latches and screws and refuses saves with unconfirmed edits; 0.13 (4d) shares latch toggles and case panels; 0.14 (4e) shares standard component installs and removals, which the other game replays with the game's own animations (the owner tested it in game). Phase 5 (cables and power) is in progress: 0.15 shares plugging cables in and unplugging them (with the game's automatic splitters and custom-colour cables) and the power buttons (not yet tested in game). Water-cooling, lighting and later features are not synced yet.
 
 ## Layout
 
@@ -29,7 +29,7 @@ Set `PCBS2COOP_AUTOTEST=host` for one launch of `PCBS2.exe` and `=join` for a se
 
 ## Versioning
 
-The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.14). It is the plugin version, the network assembly version and the join check; there is no separate protocol version. Two players can join only with exactly the same version, so bump it whenever a build changes what goes over the network or into co-op saves, and before handing a build to someone.
+The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.15). It is the plugin version, the network assembly version and the join check; there is no separate protocol version. Two players can join only with exactly the same version, so bump it whenever a build changes what goes over the network or into co-op saves, and before handing a build to someone.
 
 - Each bump adds one to the number after the dot: 0.1, 0.2, 0.3, 0.4, … (0.9 is followed by 0.10).
 - BepInEx shows it with a third part (0.3 → `0.3.0`). Only an exact match matters for joining.
@@ -97,6 +97,12 @@ For component installs and removals, read task 4e in `docs/audit/phase-4.md`. Co
 - `Cancel`: the editor drops an edit that never ran; the host drops one it can't settle.
 
 While another actor's edit claim is pending on a PC, latches, panels and edits on that PC are refused (owner decision). `DisassemblyTick` b__0 is a placeholder install, b__1 the direct removal, b__2 the `Uninstall` coroutine. Never hook `SetCurrentState`, `OnStateDestroy` or the replay targets through a second method that shares their native code.
+
+For cables and power, read `docs/audit/phase-5.md`. They are command 9 gestures `Connect`, `Unplug` and `Power`, each with a whole-PC edit claim (no targets):
+- The editor's gesture is the cabling long press `<CablingTick>b__0` (its `ConnectCableState` may install a splitter on entry), the unplug long press `<RemoveCableTick>b__0`, `PowerButton.Press` or `WorkingOnComputerStateBase.PowerClicked`.
+- The editor is followed until nothing moves on that PC. The commit carries a `Wiring` change: cables off/on, splitter/adapter slots, inventory and power.
+- The other game applies that change with the game's own calls (`NativeComponentEdits.Wiring.cs`).
+- `PcFact.Powered` is bench-only (`PcFact.At` clears it on a move). The game doesn't save power, so each game turns powered PCs on again shortly after a load.
 
 ## Working rules
 

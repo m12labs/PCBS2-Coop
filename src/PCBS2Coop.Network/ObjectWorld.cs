@@ -24,6 +24,11 @@ public sealed record PcFact(NetObjectId Id, InstanceProvenance Provenance, PcLoc
     // that a case has no slots/mechanics, nor permission to synchronize component edits on that PC.
     public IReadOnlyList<AssemblyResource> Resources { get; init; } = Array.Empty<AssemblyResource>();
     public PcBuildProfile? BuildProfile { get; init; }
+    /// <summary>Physically powered on (phase 5c). The game doesn't save power, so this restores it after a load. Only a
+    /// PC on a bench can be on; leaving the bench turns it off (native <c>Case.OnPickup</c>).</summary>
+    public bool Powered { get; init; }
+    /// <summary>The same PC at another place: off unless it stays on its bench.</summary>
+    public PcFact At(PcLocation location) => this with { Location = location, Powered = Powered && location == Location };
 }
 public sealed record LocationFact(NetObjectId Id, string Key);
 
@@ -145,6 +150,7 @@ public sealed class ObjectWorld : IWorldState
                     break;
                 default: Bad("Unknown PC location."); break;
             }
+            if (pc.Powered && pc.Location.Place != PcPlace.Bench) Bad("Only a PC on a bench can be powered.");
             if (pc.Parts.Count is < 1 or > MaxPartsPerPc || pc.Links.Count is < 1 or > MaxLinksPerPc) Bad("Invalid PC topology size.");
             var parts = new HashSet<NetObjectId>();
             foreach (var p in pc.Parts) { Add(p.Id); Text(p.Sku); Text(p.NativeType); parts.Add(p.Id); }
@@ -193,6 +199,7 @@ public sealed class ObjectWorld : IWorldState
         foreach (var link in pc.Links) { w.Put(link.Path); link.Part.Write(w); }
         w.Put(pc.Resources.Count); foreach (var resource in pc.Resources) AssemblyResources.Write(w, resource);
         WriteProfile(w, pc.BuildProfile);
+        w.Put(pc.Powered);
     }
 
     internal static PcFact ReadPc(NetDataReader r)
@@ -206,7 +213,7 @@ public sealed class ObjectWorld : IWorldState
         for (var j = 0; j < links.Length; j++) links[j] = new(r.GetString(1024), NetObjectId.Read(r));
         var resources = new AssemblyResource[Count(r, AssemblyResources.MaxPerPc)];
         for (var j = 0; j < resources.Length; j++) resources[j] = AssemblyResources.Read(r);
-        return new(id, provenance, location, parts, links) { Resources = resources, BuildProfile = ReadProfile(r) };
+        return new(id, provenance, location, parts, links) { Resources = resources, BuildProfile = ReadProfile(r), Powered = r.GetBool() };
     }
 
     public void Read(NetDataReader r)

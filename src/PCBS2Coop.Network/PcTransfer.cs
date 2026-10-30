@@ -80,7 +80,7 @@ public sealed class PcTransfers : ICommandHandler
         var leaving = moves.Where(m => m.From.Place == PcPlace.Bench).Select(m => m.Pc).ToHashSet();
         _objects.Replace(_objects.WorldId, _objects.NextId, _objects.Locations,
             _objects.Pcs.Select(x => to.TryGetValue(x.Id, out var l)
-                ? (leaving.Contains(x.Id) ? AssemblyResources.SettleLoad(x) : x) with { Location = l } : x).ToArray(), _objects.Retired);
+                ? (leaving.Contains(x.Id) ? AssemblyResources.SettleLoad(x) : x).At(l) : x).ToArray(), _objects.Retired);
         _native.Moved(ctx, c, moves);
     }
 

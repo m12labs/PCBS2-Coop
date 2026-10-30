@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phases 5–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phases 6–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -400,6 +400,48 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 **Exit:** cable graphs restore to the same endpoints and geometry; disconnects/conflicts do not leave dangling or cross-PC links; physical power and connected peripherals agree, with one logical outcome per action.
 
 **Audit starting points:** HW cables/peripherals/power; PW workstation assignment; SW display association and power animation.
+
+**Status: Implementing** (started at the owner's request on October 27, 2026, after 4e passed the owner's game test; 4f stays open). Focused audit: [docs/audit/phase-5.md](docs/audit/phase-5.md). Owner decisions (October 27, 2026): the other game shows the game's own plug/unplug animation; power on/off is shared and each game runs its own boot screen until phase 6; custom-colour cables are included (the colour app stays phase 11). The 4e waiting rule, inventory mirroring and host-published record apply.
+
+#### 5a. Focused audit and owner decisions
+
+- **Status:** Complete (static decompile audit), October 27, 2026.
+- **Outcome and audit IDs:** native connect/unplug/power/splitter paths and their saved form; dispositions for HW-022–029, HW-042, HW-046–050, HW-054–055, HW-072.
+- **Dependencies and decisions:** phase 4 tasks 4a–4e; the three owner decisions above.
+- **Scope and evidence:** `WorkingOnComputerState` cabling/unplug/power ticks, `ConnectCableState`, `Case.CreateCableAsync`, `Plug.Unplug`, `PowerButton`, `Motherboard.TurnOn/TurnOff/PowerOn`, `Case.AutoConnect`, `ComputerSave` cable/accessory arrays. Static only.
+- **Work:** record the gesture entry points, the automatic splitter at cable-state entry, the unreachable hand-route mode, the unsaved power state and the existing save refusal after a manual cable change.
+- **Acceptance:** every selected factor has a task or a named later phase.
+- **Completion evidence:** [phase 5 audit](docs/audit/phase-5.md).
+
+#### 5b. Shared cable plugging and unplugging, with splitters and adapters
+
+- **Status:** Validating (0.15; owner game test next).
+- **Outcome and audit IDs:** plugging in and unplugging a cable, including automatic splitters and custom-colour cables, is host-ordered and replayed with the game's own animation (HW-022–029, HW-054).
+- **Dependencies and decisions:** 5a; the 4e pipeline (command 9), waiting rule and settle capture.
+- **Scope and evidence:** gestures `Connect` and `Unplug` in `ComponentEditWorld`, with a whole-PC edit claim. The commit carries the cable change (removed keys, added `CableSave` data, splitter/adapter slot changes, inventory change). The plugin hooks `<CablingTick>b__0` and `<RemoveCableTick>b__0`; the replay uses `Plug.Unplug`, the splitter sequence and `Case.CreateCableAsync`. `POWER_SPLITTER`/`POWER_ADAPTER` join the 4e shared slots.
+- **Work:** network gestures and checks; the cable change format and limits; whole-PC claims in `ActivityWorld`; plugin request, follow, commit, replay and host settle; model tests.
+- **Acceptance:** phase 5 audit cases 1–5 and 10 in both directions; duplicate commits applied once; malformed and oversized changes refused; a commit with no change cancelled.
+- **Completion evidence:** implemented in 0.15 (code and model tests): `ComponentEditWorld` gestures and the `Wiring` change, whole-PC claims in `ActivityWorld`, `NativeComponentEdits.Wiring.cs` (hooks, following, replay). **504/504** model/network checks, Release 0/0. Pending: the owner's game test (5d).
+
+#### 5c. Shared physical power
+
+- **Status:** Validating (0.15; owner game test next).
+- **Outcome and audit IDs:** case and HUD power buttons are host-ordered, both games power the PC together, and the powered state survives late join and save/Continue (HW-042, HW-046, HW-050).
+- **Dependencies and decisions:** 5b; owner decision on boot screens (own per game until phase 6).
+- **Scope and evidence:** gesture `Power` in command 9; `PcFact.Powered` (bench only, cleared when the PC leaves its bench); plugin hooks on `PowerButton.Press` and `WorkingOnComputerStateBase.PowerClicked`; replay by the same press; after a load, the power state is restored from the shared world.
+- **Work:** model field, codec and checks; transfer/lifecycle clearing; plugin request, follow, replay, capture and restore; model tests.
+- **Acceptance:** phase 5 audit cases 6–9.
+- **Completion evidence:** implemented in 0.15 (code and model tests): `PcFact.Powered`/`At`, power hooks and replay, capture of the host's power state at every settle, power restore after a load. Pending: the owner's game test (5d).
+
+#### 5d. Combined phase 5 acceptance
+
+- **Status:** Not started.
+- **Outcome and audit IDs:** the phase exit criteria with the owner's two-instance test.
+- **Dependencies and decisions:** 5b–5c.
+- **Scope and evidence:** the phase 5 audit's acceptance list, the 4e regression list and `/sync`.
+- **Work:** fix issues from the owner's report and the `[edits]`/`[replay]`/`[cables]` log lines.
+- **Acceptance:** all cases pass in both directions; owner saves unchanged.
+- **Completion evidence:** pending.
 
 ### 6. Boot, BIOS, OS and visible computer screens
 
