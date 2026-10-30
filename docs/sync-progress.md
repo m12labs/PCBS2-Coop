@@ -1,5 +1,14 @@
 # PCBS2 Co-op synchronization progress
 
+**October 30, 2026 — version 0.17 committed (`a471f96`); owner built a PC from start to finish in game.**
+
+- Saves: the game's own autosaves (after every edit, drop, decoration switch and load) are off in co-op. The host saves on an interval set in Co-op Options (Off / 2 / 5 / 10 minutes, default 5), when it exits, and from the Save screen. 0.17 still loads 0.16 co-op saves.
+- Edits: the other game starts the same install or removal animation as soon as the editor's game starts it. It used to wait for the editor to finish, about 10 s for a motherboard. Fans and coolers wait for the editor's chosen direction, then snap to it.
+- Fixes from the owner's run: a guest's cooler or motherboard was refused while the host's game was paused; every removal reloaded the PC as if it were water cooling; the CPU shield didn't move on a paused game; the host's own part preview blocked its next edits ("still finishing").
+- The owner marked cables, power and water cooling as synced; their full test of those and the phase 4/5 acceptance passes (4f, 5d) are still to come. Next: phase 6 (boot, BIOS, OS and screens).
+
+**553/553** model/network checks; Release **0 warnings/errors**.
+
 **October 29, 2026 — phase 10 water cooling implemented, version 0.16 (code and model tests; not yet tested in game).** [Custom water cooling](audit/phase-10.md):
 
 - Laying or removing a pipe, filling or draining coolant, and installing or removing water blocks, pumps and reservoirs (with VRM, heat-sink and GPU-cooler slots) ask the host first.
@@ -176,15 +185,15 @@ Detailed evidence: [HW-001–078](audit/hardware-and-building.md).
 
 | Feature | Not synced | Partially synced | Synced | Comments |
 | --- | :---: | :---: | :---: | --- |
-| PC/case/part identity, topology, installed/removed/held state | | ✅ | | Phase 3c synchronizes persistent baseline IDs, native topology bindings and carrier facts at save/join. Phase 3e creates/retires PCs with host-assigned IDs and gives parts a native load adds (default case fans) IDs through the change stream before a capture. Phase 3f adds atomic movement and makes default fan identities explicit at catalog creation; live component edits remain phase 4. |
-| Component variants, compatibility and blockers | ✅ | | | CPU/GPU/RAM/storage/M.2/PSU/cooling/accessory/adapter/splitter paths. |
-| Screws/standoffs/socket/RAM/PCI locks/covers/hinges | ✅ | | | Settled state plus rotation/travel/callback phases. |
+| PC/case/part identity, topology, installed/removed/held state | | | ✅ | Phase 3c synchronizes persistent baseline IDs, native topology bindings and carrier facts at save/join. Phase 3e creates/retires PCs with host-assigned IDs and gives parts a native load adds (default case fans) IDs through the change stream before a capture. Phase 3f adds atomic movement and makes default fan identities explicit at catalog creation. Phase 4e (0.14) shares every standard install and removal; 0.17 animates them on both games at once. The owner built a PC from start to finish in game (0.17); the full phase 4 acceptance (4f) is still to run. |
+| Component variants, compatibility and blockers | | | ✅ | 4e: the host checks fit and blockers with the game's own checks (0.17: unpaused, skipped for a part model it hasn't loaded); splitters/adapters since 5b. LED strips: the tool can't be opened in this build. Owner test pending for the full category list (4f). |
+| Screws/standoffs/socket/RAM/PCI locks/covers/hinges | | | ✅ | 4d: latches, CPU levers/shields, clips, covers and case panels are host-ordered with the game's animation (0.17: the CPU shield also moves on a paused game); screws and standoffs are automatic inside 4e edits. |
 | Paste/Q-tip/dust/cleaning/delid/varnish/pads | ✅ | | | Surface/progress versus saved flags and thermal results. |
-| Cable endpoints/connectors/custom colours/pins/routing | ✅ | | | Graph/node frames, commit/cancel and reconstruction. |
-| Water loops/pipes/fittings/coolant/fill/drain/pump/run/direction | ✅ | | | Save graph and visible flow; no invented leak mechanic. |
+| Cable endpoints/connectors/custom colours/pins/routing | | | ✅ | Phase 5b (0.15): plugging in and unplugging, automatic splitters and custom-colour cables, replayed with the game's animation. Hand-routing has no caller in this build. Marked synced by the owner (October 30, 2026); their full test (5d) is pending. |
+| Water loops/pipes/fittings/coolant/fill/drain/pump/run/direction | | | ✅ | Phase 10b (0.16): pipes, coolant fill/drain, water blocks, pumps and reservoirs; the other game reloads the finished PC (owner decision). The water-cooling workbench is not shared. Marked synced by the owner (October 30, 2026); their full test is pending. |
 | Case themes/paint/material/stickers/brush strokes/transforms | ✅ | | | Saved primitives, asset keys, DLC and customization IDs. |
 | LEDs/RGB/strip nodes and fan curves/direction/flipping/spin/blur | ✅ | | | Config, simulation and visual phase differ. |
-| Peripheral/desk/monitor/LCD assignment, plugs and power | | ✅ | | Phase 3g (0.10): workbench peripheral swaps (monitor, keyboard, mouse, mouse pad, headset) are host-approved and applied once on both games, verified in owned two-instance runs (G1–G7). Desk/LCD assignment, LED config, plugs and power remain (phases 5, 6, 11). |
+| Peripheral/desk/monitor/LCD assignment, plugs and power | | ✅ | | Phase 3g (0.10): workbench peripheral swaps (monitor, keyboard, mouse, mouse pad, headset) are host-approved and applied once on both games, verified in owned two-instance runs (G1–G7). Phase 5c (0.15): physical power (case and HUD buttons) is shared and restored after a load; each game runs its own boot screen. Desk/LCD assignment, screens and LED config remain (phases 6, 11). |
 | Condition/breakage/repair and powered/damage presentation | ✅ | | | Logical consequences versus visual damage evidence. |
 
 ## Computer screens, software and simulation
@@ -223,7 +232,7 @@ Detailed evidence: [CP-001–070](audit/career-economy-and-persistence.md).
 | PC Bay/market/retail/listings/prices/sales | ✅ | | | Offer/item identity, generation and ownership. |
 | Calendar/day/events/email/read flags/notes/post-its | ✅ | | | Linked deadlines/bills/deliveries/generated records. |
 | Tutorials/onboarding/hints and progression flags | ✅ | | | Actor UI versus shared progress and callbacks. |
-| Manual/autosave/schema/codec/load/restore ordering | | ✅ | | Phase 3c pairs native saves with exact mod state/allocator/carrier graphs and validates before replay; joined copies retain both files. Missing/mismatched pairs fail explicitly. Phase 3e: created PCs keep their IDs/provenance through save, Host Continue and guest rejoin (E5, E7). Wider recovery/migration remains phase 8. |
+| Manual/autosave/schema/codec/load/restore ordering | | ✅ | | Phase 3c pairs native saves with exact mod state/allocator/carrier graphs and validates before replay; joined copies retain both files. Missing/mismatched pairs fail explicitly. Phase 3e: created PCs keep their IDs/provenance through save, Host Continue and guest rejoin (E5, E7). 0.16: named co-op worlds, each with its own autosave. 0.17: the game's own autosaves are off in co-op; the host saves on an interval (Co-op Options, default 5 min), on Exit and from the Save screen; 0.17 reads 0.16 saves. Wider recovery/migration remains phase 8. |
 | Export/import/local PC files/external sharing | ✅ | | | Target: required custom/imported-PC content transfers automatically in-session. External platform paths remain unverified and need separate scope if encountered. |
 
 ## Intentionally local
