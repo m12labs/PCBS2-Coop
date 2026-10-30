@@ -1,5 +1,15 @@
 # PCBS2 Co-op synchronization progress
 
+**October 29, 2026 — phase 10 water cooling implemented, version 0.16 (code and model tests; not yet tested in game).** [Custom water cooling](audit/phase-10.md):
+
+- Laying or removing a pipe, filling or draining coolant, and installing or removing water blocks, pumps and reservoirs (with VRM, heat-sink and GPU-cooler slots) ask the host first.
+- When the change is finished, the other game reloads that PC with the result (owner decision: show the result, not the animation).
+- While someone builds water cooling, the other player is told so and waits on that PC.
+- The water-cooling workbench is not shared.
+- LED strips: the strip tool can't be opened in this build, so there is nothing to share. Existing strips stay with their PC.
+
+**513/513** model/network checks; Release **0 warnings/errors**. Phase 5 was committed as `e40ab30`. No commit of phase 10 yet.
+
 **October 27, 2026 — phase 5 tasks 5b–5c implemented, version 0.15 (code and model tests; not yet tested in game).** [Cables and power](audit/phase-5.md):
 
 - Plugging a cable in, unplugging one and pressing a PC's power button (on the case or in the work HUD) now ask the host first.

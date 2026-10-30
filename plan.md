@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phases 6–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Phase 11's LED strip tool is unreachable in this build (owner-confirmed). Phases 6–9 and 11–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -493,6 +493,23 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** HW water graph/save/bench-tool factors; SW thermal/flow input consumers; SS reconstruction order.
 
+**Status: Implementing** (pulled forward at the owner's request on October 29, 2026; phases 6–9 stay open). Focused audit: [docs/audit/phase-10.md](docs/audit/phase-10.md). Owner decisions (October 29, 2026): the other game reloads the finished PC instead of replaying the animation; blocks, pumps, reservoirs, pipes and coolant are shared; the water-cooling workbench is not; the other player waits on that PC with a water-cooling message.
+
+#### 10a. Focused audit and owner decisions
+
+- **Status:** Complete (static decompile audit), October 29, 2026.
+- **Outcome and audit IDs:** native pipe, pipe removal, fill/drain and water part paths, and their saved form (HW-030–035, HW-074–075; HW-078 workbench left out by the owner).
+- **Completion evidence:** [phase 10 audit](docs/audit/phase-10.md).
+
+#### 10b. Shared water-cooling edits by PC reload
+
+- **Status:** Validating (0.16; owner game test later).
+- **Outcome and audit IDs:** every in-PC custom water-cooling change is host-ordered and shown on the other game by reloading the finished PC (HW-030–035, HW-074).
+- **Dependencies and decisions:** 4e/5 command 9 pipeline; the owner decisions above.
+- **Scope and evidence:** gesture `Water`, record `Chunk` steps, `Rebuild` commit; `NativeComponentEdits.Water.cs`, `NativeObjectState.ReloadOnBench`, path-based settle identity.
+- **Acceptance:** the phase 10 audit's acceptance list, in both directions.
+- **Completion evidence:** implemented in 0.16 (code and model tests, **513/513**, Release 0/0). Pending: the owner's game test.
+
 ### 11. PC customization, RGB and visual hardware configuration
 
 **Purpose:** share the full PC appearance and its dynamic effects.
@@ -502,6 +519,8 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 **Exit:** configuration and required visual output match during editing, after commit/cancel and after save/rejoin; customizations attach to the correct components; dynamic effects use the intended shared or personal inputs and clocks.
 
 **Audit starting points:** HW customization/cable/LED/fan factors; SW GIF/content/lighting/music-driven effects; PW animation timing.
+
+**Note (October 29, 2026):** the owner asked for LED strips (strips only) with phase 10. The strip tool (`LEDStripState`) has no creator in this build, and the owner confirmed it can't be opened in game. Strips in loaded PC records are preserved; there is nothing to share yet ([phase 10 audit](docs/audit/phase-10.md#led-strips-phase-11-finding)). The phase itself is not started.
 
 ### 12. Workshop environment, remaining Free Build apps and content
 

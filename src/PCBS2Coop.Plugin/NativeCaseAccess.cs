@@ -273,15 +273,22 @@ internal sealed class NativeCaseAccess : IPanelNative
         }
     }
 
-    /// <summary>Removing a water pipe (custom loops are deferred by the owner).</summary>
+    /// <summary>Removing a water pipe (phase 10: a water-cooling edit, shown on the other game by reloading the PC).</summary>
     [HarmonyPatch(typeof(WorkingOnComputerState.__c__DisplayClass68_1), "_DisassemblyTick_b__3")]
     internal static class PipeRemovalIntercept
     {
-        private static bool Prefix()
+        private static bool Prefix(WorkingOnComputerState.__c__DisplayClass68_1 __instance)
         {
             if (Bypass) return true;
-            CoopController.Instance?.Notice("Refused: custom water-cooling edits aren't shared in co-op yet.");
-            return false;
+            try
+            {
+                var edits = CoopController.Instance?.Edits;
+                if (edits == null) return NotReady();
+                var closure = __instance;
+                var mesh = GameController.Get()?.GetCurrentState()?.TryCast<WorkingOnComputerState>()?.m_case ?? closure.pipe?.GetComponentInParent<Case>();
+                return edits.RequestWater(mesh, "pipe removal", () => closure._DisassemblyTick_b__3());
+            }
+            catch (Exception e) { Plugin.Logger.LogError("[panels] pipe removal request failed: " + e); return false; }
         }
     }
 

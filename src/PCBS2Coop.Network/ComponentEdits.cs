@@ -6,8 +6,10 @@ namespace PCBS2Coop.Network;
 /// <summary>How the editor's game started the edit (4e decompile): an install (<c>AssemblyTick</c>, or clicking a
 /// placeholder), a removal through <c>WorkingOnComputerState.Uninstall</c> (cables unplug first), or the direct removal
 /// that skips the cable step. Phase 5 adds the whole-PC gestures: plugging a cable in from a connector (<c>Connect</c>,
-/// which may also add a splitter), unplugging one (<c>Unplug</c>) and the power button (<c>Power</c>).</summary>
-public enum EditGesture : byte { Install = 1, Remove = 2, RemoveDirect = 3, Connect = 4, Unplug = 5, Power = 6 }
+/// which may also add a splitter), unplugging one (<c>Unplug</c>) and the power button (<c>Power</c>). Phase 10 adds
+/// <c>Water</c>: any custom water-cooling change (a pipe, coolant, a block, pump or reservoir), shown on the other game by
+/// reloading the finished PC (owner decision, October 29, 2026).</summary>
+public enum EditGesture : byte { Install = 1, Remove = 2, RemoveDirect = 3, Connect = 4, Unplug = 5, Power = 6, Water = 7 }
 public enum AccessoryKind : byte { Splitter = 1, Adapter = 2 }
 
 /// <summary>One cable as the game saves it (<c>CableSave</c>): connector IDs at both ends, cable and connector types,
@@ -22,6 +24,15 @@ public sealed record CableFact(string From, string To, string Desc, string Conne
 /// that now holds <see cref="Sku"/> (empty: now empty).</summary>
 public sealed record AccessoryChange(AccessoryKind Kind, int Index, string Sku);
 public sealed record InventoryChange(string Sku, int Count);
+
+/// <summary>A water-cooling edit's result: the editor's finished PC record (sent before the commit in chunks, compressed)
+/// by length and SHA-256, and whether that PC is on.</summary>
+public sealed record Rebuild(int Length, IReadOnlyList<byte> Hash, bool Powered)
+{
+    public const int HashBytes = 32;
+    /// <summary>Compressed record limits: chunks fit one command; the whole record stays under 2 MB.</summary>
+    public const int MaxChunkBytes = 15 * 1024, MaxBytes = 2 * 1024 * 1024, MaxChunks = MaxBytes / MaxChunkBytes + 1;
+}
 
 /// <summary>What a cable or power edit changed on the editor's PC (phase 5b-5c): cables removed (by key) and added,
 /// splitter/adapter slots, the editor's inventory and the PC's power state afterwards.</summary>
@@ -103,6 +114,9 @@ public sealed record EditResult(EditOutcome Outcome, float Degrees, bool Flipped
     public static EditResult Wired(Wiring wiring) => Done() with { Wiring = wiring };
     /// <summary>Set for cable and power edits (phase 5), absent for part edits.</summary>
     public Wiring? Wiring { get; init; }
+    /// <summary>A water-cooling edit's result (phase 10): the finished record to reload.</summary>
+    public static EditResult Rebuilt(Rebuild rebuild) => Done() with { Rebuild = rebuild };
+    public Rebuild? Rebuild { get; init; }
 }
 
 /// <summary>One component edit in progress. <see cref="Part"/> is the installed SKU; <see cref="Component"/> the
@@ -115,6 +129,9 @@ public sealed record ComponentEdit(OperationId Token, ActorSlot Actor, ulong Epo
 {
     public bool Install => Gesture == EditGesture.Install;
     public bool Wired => ComponentEditWorld.IsWiring(Gesture);
+    /// <summary>A water-cooling edit: the other game reloads the finished PC.</summary>
+    public bool Rebuilt => Gesture == EditGesture.Water;
+    public bool WholePc => ComponentEditWorld.IsWholePc(Gesture);
     public EditStage Stage { get; init; } = EditStage.Running;
     public EditResult? Result { get; init; }
 }
@@ -151,23 +168,30 @@ public interface IEditNative
 /// </summary>
 public sealed class ComponentEditWorld : ICanonicalCommandHandler
 {
-    private enum Step : byte { Begin = 1, Commit = 2, Cancel = 3, Settle = 4 }
+    private enum Step : byte { Begin = 1, Commit = 2, Cancel = 3, Settle = 4, Chunk = 5 }
     public const int MaxText = 255;
     private readonly ObjectWorld _objects;
     private readonly ActivityWorld _activity;
     private readonly IEditNative _native;
     private readonly List<ComponentEdit> _edits = new();
+    /// <summary>Water-cooling edits: the chunks of the editor's finished record received so far, and their total.</summary>
+    private readonly Dictionary<OperationId, (int Total, List<byte[]> Chunks)> _records = new();
     private (OperationId Op, byte[] Payload)? _settling;
     public ComponentEditWorld(ObjectWorld objects, ActivityWorld activity, IEditNative native)
     { _objects = objects; _activity = activity; _native = native; }
     public string Name => "component-edit";
     public static bool IsWiring(EditGesture g) => g is EditGesture.Connect or EditGesture.Unplug or EditGesture.Power;
+    /// <summary>Gestures whose claim covers the whole PC: cables, power and water cooling.</summary>
+    public static bool IsWholePc(EditGesture g) => IsWiring(g) || g == EditGesture.Water;
     public IReadOnlyList<ComponentEdit> Edits => _edits;
     public ComponentEdit? Find(OperationId token) => _edits.SingleOrDefault(e => e.Token == token);
     /// <summary>The edit running on that PC, if any (one per PC: the other player waits).</summary>
     public ComponentEdit? On(NetObjectId pc) => _edits.SingleOrDefault(e => e.Pc == pc);
     /// <summary>World generation start: edits never outlive their world.</summary>
-    public void Reset() { _edits.Clear(); _settling = null; }
+    public void Reset() { _edits.Clear(); _records.Clear(); _settling = null; }
+    /// <summary>A water-cooling edit's complete record (compressed), once every chunk has arrived; otherwise null.</summary>
+    public byte[]? RecordOf(OperationId token) =>
+        _records.TryGetValue(token, out var r) && r.Chunks.Count == r.Total ? r.Chunks.SelectMany(c => c).ToArray() : null;
 
     public static byte[] Begin(ulong epoch, NetObjectId pc, NetObjectId slot, ulong version, EditGesture gesture, string part, NetObjectId component) =>
         Encode(w => { w.Put((byte)Step.Begin); w.Put(epoch); pc.Write(w); slot.Write(w); w.Put(version); w.Put((byte)gesture); w.Put(part ?? ""); component.Write(w); });
@@ -177,6 +201,14 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         w.Put((byte)result.Outcome); w.Put(result.Degrees); w.Put(result.Flipped); w.Put(result.Mode); w.Put(result.Selected); w.Put(result.FromInventory);
         w.Put(result.CableType ?? ""); w.Put(result.CableConnector ?? ""); w.Put(result.Pins.Count); foreach (var p in result.Pins) w.Put(p);
         w.Put(result.Wiring != null); result.Wiring?.Write(w);
+        w.Put(result.Rebuild != null);
+        if (result.Rebuild is { } b) { w.Put(b.Length); w.Put(b.Hash.Count); foreach (var x in b.Hash) w.Put(x); w.Put(b.Powered); }
+    });
+    /// <summary>Editor, before a water-cooling commit: chunk <paramref name="index"/> of <paramref name="total"/> of its
+    /// finished record.</summary>
+    public static byte[] Chunk(ulong epoch, OperationId token, int index, int total, byte[] data) => Encode(w =>
+    {
+        w.Put((byte)Step.Chunk); w.Put(epoch); Token(w, token); w.Put(index); w.Put(total); Protocol.WriteBlob(w, data);
     });
     public static byte[] Cancel(ulong epoch, OperationId token) => Encode(w => { w.Put((byte)Step.Cancel); w.Put(epoch); Token(w, token); });
     /// <summary>Host only: publish the PC as the host's game shows it after that edit.</summary>
@@ -191,6 +223,9 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     {
         public string Stamp { get; init; } = "";
         public byte[] Settled { get; init; } = Array.Empty<byte>();
+        public int Index { get; init; }
+        public int Total { get; init; }
+        public byte[] Data { get; init; } = Array.Empty<byte>();
     }
 
     private static Request Parse(NetDataReader r, bool canonical)
@@ -211,8 +246,16 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 if (n is < 0 or > EditResult.MaxPins) throw new FormatException("Invalid cable pin count.");
                 var pins = new int[n]; for (var i = 0; i < n; i++) pins[i] = r.GetInt();
                 var wiring = r.GetBool() ? Wiring.Read(r) : null;
+                Rebuild? rebuild = null;
+                if (r.GetBool())
+                {
+                    var length = r.GetInt(); var hashLength = r.GetInt();
+                    if (hashLength != Rebuild.HashBytes) throw new FormatException("Invalid record hash.");
+                    var hash = new byte[hashLength]; for (var i = 0; i < hashLength; i++) hash[i] = r.GetByte();
+                    rebuild = new(length, hash, r.GetBool());
+                }
                 c = new(step, epoch, default, default, 0, default, "", default, token,
-                    new(outcome, degrees, flipped, mode, selected, inventory, type, connector, pins) { Wiring = wiring });
+                    new(outcome, degrees, flipped, mode, selected, inventory, type, connector, pins) { Wiring = wiring, Rebuild = rebuild });
                 break;
             }
             case Step.Cancel:
@@ -222,6 +265,13 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 c = new(step, 0, default, default, 0, default, "", default, Token(r), null);
                 if (canonical) c = c with { Settled = r.GetRemainingBytes() };
                 break;
+            case Step.Chunk:
+            {
+                var epoch = r.GetULong(); var token = Token(r); var index = r.GetInt(); var total = r.GetInt();
+                var data = Protocol.ReadBlob(r, Rebuild.MaxChunkBytes, out _) ?? throw new FormatException("Invalid record chunk.");
+                c = new(step, epoch, default, default, 0, default, "", default, token, null) { Index = index, Total = total, Data = data };
+                break;
+            }
             default: throw new FormatException("Unknown component-edit action.");
         }
         if (r.AvailableBytes != 0) throw new FormatException("Trailing component-edit bytes.");
@@ -244,7 +294,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         if (!Enum.IsDefined(c.Gesture)) return "Unknown edit.";
         if (actor.Pending != null || _edits.Any(e => e.Actor == requester)) return "Your previous change is still finishing.";
         if (Busy(pc.Id, requester) is { } busy) return busy;
-        if (IsWiring(c.Gesture))
+        if (IsWholePc(c.Gesture))
         {
             // Whole-PC claim: a cable edit can touch connectors on many parts and add a splitter (phase 5 audit).
             if (!c.Slot.IsNone || c.Version != 0 || !c.Component.IsNone || c.Part.Length == 0 || !Text(c.Part)) return "Invalid cable or power change.";
@@ -277,7 +327,8 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     /// <summary>Why the other player can't change that PC now, or null. Used by latches and panels too.</summary>
     public string? Busy(NetObjectId pc, ActorSlot requester)
     {
-        if (_edits.Any(e => e.Pc == pc && e.Actor != requester)) return "The other player is changing a part of that PC.";
+        if (_edits.FirstOrDefault(e => e.Pc == pc && e.Actor != requester) is { } running)
+            return running.Rebuilt ? "The other player is building water cooling on that PC." : "The other player is changing a part of that PC.";
         foreach (var other in _activity.Actors)
             if (other.Pending is { } p && p.Pc == pc)
             {
@@ -289,7 +340,14 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
 
     private string? CheckResult(ComponentEdit edit, EditResult r)
     {
-        if (edit.Wired != (r.Wiring != null)) return "Invalid edit result.";
+        if (edit.Wired != (r.Wiring != null) || edit.Rebuilt != (r.Rebuild != null)) return "Invalid edit result.";
+        if (r.Rebuild is { } rebuild)
+        {
+            if (r.Outcome != EditOutcome.Done) return "Invalid edit outcome.";
+            if (RecordOf(edit.Token) is not { } record) return "The finished PC record hasn't fully arrived.";
+            if (record.Length != rebuild.Length || !System.Security.Cryptography.SHA256.HashData(record).SequenceEqual(rebuild.Hash))
+                return "The finished PC record doesn't match its commit.";
+        }
         if (r.Wiring is { } wiring)
         {
             if (r.Outcome != EditOutcome.Done) return "Invalid edit outcome.";
@@ -298,6 +356,16 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         if (r.Outcome == EditOutcome.Unplugged ? edit.Gesture != EditGesture.Remove : r.Outcome != EditOutcome.Done) return "Invalid edit outcome.";
         if (!float.IsNaN(r.Degrees) && (!float.IsFinite(r.Degrees) || MathF.Abs(r.Degrees) > 3600)) return "Invalid orientation.";
         if (r.Mode > 8 || r.Selected > 8 || !Text(r.CableType) || !Text(r.CableConnector) || r.Pins.Count > EditResult.MaxPins) return "Invalid edit values.";
+        return null;
+    }
+
+    private string? CheckChunk(ComponentEdit edit, Request c)
+    {
+        if (!edit.Rebuilt) return "Only a water-cooling edit sends a record.";
+        if (c.Total is < 1 or > Rebuild.MaxChunks || c.Data.Length is < 1 or > Rebuild.MaxChunkBytes) return "Invalid record chunk.";
+        var (total, chunks) = _records.TryGetValue(edit.Token, out var r) ? r : (c.Total, new List<byte[]>());
+        if (c.Total != total || c.Index != chunks.Count) return "Record chunk out of order.";
+        if (chunks.Sum(x => x.Length) + c.Data.Length > Rebuild.MaxBytes) return "The finished PC record is too large.";
         return null;
     }
 
@@ -337,6 +405,12 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 // The editor cancels an edit that never ran; the host drops one it can't settle.
                 var (edit, why) = Owned(ctx.Op.Actor, c, ctx.Op.Actor == ActorSlot.Host ? null : EditStage.Running);
                 error = why;
+                break;
+            }
+            case Step.Chunk:
+            {
+                var (edit, why) = Owned(ctx.Op.Actor, c, EditStage.Running);
+                error = why ?? (ctx.Op.Actor != edit!.Actor ? "Only the editor sends its record." : CheckChunk(edit, c));
                 break;
             }
             case Step.Settle:
@@ -418,11 +492,19 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 _native.Committed(ctx, _objects.Pcs.Single(p => p.Id == edit.Pc), committed);
                 break;
             }
+            case Step.Chunk:
+            {
+                var (edit, why) = Owned(ctx.Op.Actor, c, EditStage.Running);
+                if (why != null || edit!.Actor != ctx.Op.Actor || CheckChunk(edit, c) is { } bad) throw new InvalidDataException("Record chunk no longer applies: " + (why ?? "invalid chunk"));
+                if (!_records.TryGetValue(edit.Token, out var r)) _records[edit.Token] = r = (c.Total, new List<byte[]>());
+                r.Chunks.Add(c.Data);
+                break;
+            }
             case Step.Cancel:
             {
                 var (edit, why) = Owned(ctx.Op.Actor, c, ctx.Op.Actor == ActorSlot.Host ? null : EditStage.Running);
                 if (why != null) throw new InvalidDataException("Component cancel no longer applies: " + why);
-                _edits.Remove(edit!);
+                _edits.Remove(edit!); _records.Remove(edit!.Token);
                 _activity.ClearClaim(edit!.Actor, edit.Token);
                 _native.Cancelled(ctx, edit);
                 break;
@@ -437,7 +519,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                     throw new InvalidDataException("Invalid settled PC allocation or identity.");
                 if (gone.Any(id => _objects.Retired.Contains(id))) throw new InvalidDataException("A settled PC retires an ID twice.");
                 _objects.Replace(_objects.WorldId, allocated, _objects.Locations, _objects.Pcs.Select(p => p.Id == pc.Id ? next : p), _objects.Retired.Concat(gone));
-                _edits.Remove(edit);
+                _edits.Remove(edit); _records.Remove(edit.Token);
                 _activity.ClearClaim(edit.Actor, edit.Token);
                 _native.Settled(ctx, _objects.Pcs.Single(p => p.Id == pc.Id), edit);
                 break;

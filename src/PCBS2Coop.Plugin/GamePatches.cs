@@ -57,11 +57,15 @@ internal static class GamePatches
             cables.PatchAll(typeof(NativeComponentEdits.UnplugIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.PowerButtonIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.PowerClickIntercept));
+            var water = new Harmony(Plugin.Guid + ".water");
+            water.PatchAll(typeof(NativeComponentEdits.PipeIntercept));
+            water.PatchAll(typeof(NativeComponentEdits.FillIntercept));
+            water.PatchAll(typeof(NativeComponentEdits.DrainIntercept));
             foreach (var method in Harmony.GetAllPatchedMethods())
                 if (FoldedWith(method) is { } other)
                     Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");
             Ready = true;
-            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power).");
+            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
     }

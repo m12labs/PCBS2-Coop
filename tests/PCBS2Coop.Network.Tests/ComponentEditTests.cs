@@ -47,6 +47,17 @@ internal static class ComponentEditTests
     /// <summary>The host's game after the edit: an installed stick (one new part, its own screw) or a removed card.</summary>
     private static PcFact Edited(PcFact pc, ComponentEdit edit, NetObjectIdAllocator allocator)
     {
+        if (edit.Rebuilt)
+        {
+            // The host's game after reloading the editor's finished PC: a new water block in the free RAM slot.
+            var block = allocator.Allocate();
+            return pc with
+            {
+                Parts = pc.Parts.Append(new PartFact(block, edit.Part, "PartInstance")).ToArray(),
+                Links = pc.Links.Append(new PartLink("waterBlock", block)).ToArray(),
+                Powered = edit.Result?.Rebuild?.Powered ?? false,
+            };
+        }
         if (edit.Wired)
         {
             var wiring = edit.Result?.Wiring;
@@ -118,7 +129,8 @@ internal static class ComponentEditTests
         byte[] Bytes(ActivityWorld a) { var w = new NetDataWriter(); a.Write(w); return w.CopyData(); }
         string Key(ComponentEdit e) => $"{e.Token}|{e.Actor}|{e.Epoch}|{e.Pc}|{e.Slot}|{e.Gesture}|{e.Part}|{e.Component}|{string.Join(",", e.Targets)}|{e.Stage}|" +
             (e.Result is { } r ? $"{r.Outcome}|{r.Degrees}|{r.Flipped}|{r.Mode}|{r.Selected}|{r.FromInventory}|{r.CableType}|{r.CableConnector}|{string.Join(",", r.Pins)}|" +
-                (r.Wiring is { } wr ? Convert.ToHexString(WiringBytes(wr)) : "") : "");
+                (r.Wiring is { } wr ? Convert.ToHexString(WiringBytes(wr)) : "") +
+                (r.Rebuild is { } rb ? $"|{rb.Length}|{Convert.ToHexString(rb.Hash.ToArray())}|{rb.Powered}" : "") : "");
         bool Same() => ho.ToBytes().SequenceEqual(go.ToBytes()) && Bytes(ha).SequenceEqual(Bytes(ga)) &&
             he.Edits.Select(Key).SequenceEqual(ge.Edits.Select(Key)) && l.InStep && l.Divergences.Count == 0;
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, host), CommandTypes.ActorActivity);
@@ -318,6 +330,46 @@ internal static class ComponentEditTests
         begin = Send(l.Guest, Wire(G(), EditGesture.Connect, "PSU_24"));
         Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Wired(Wiring.None with { Removed = Enumerable.Range(0, Wiring.MaxCables + 1).Select(i => $"a{i}>b").ToArray() })));
         t.Check(l.GuestRejected.Count == malformed + 1 && l.GuestRejected.Last().Reason == RejectReason.Malformed, "too many cable changes are malformed");
+        Send(l.Guest, ComponentEditWorld.Cancel(G().Epoch, begin));
+
+
+        t.Section("Water-cooling edits (phase 10): the finished PC record in chunks");
+        var record = Enumerable.Range(0, Rebuild.MaxChunkBytes + 100).Select(i => (byte)(i * 7)).ToArray();
+        var part1 = record.Take(Rebuild.MaxChunkBytes).ToArray(); var part2 = record.Skip(Rebuild.MaxChunkBytes).ToArray();
+        var hash = System.Security.Cryptography.SHA256.HashData(record);
+        var rebuilt = EditResult.Rebuilt(new Rebuild(record.Length, hash, true));
+        begin = Send(l.Guest, Wire(G(), EditGesture.Water, "pipe"));
+        t.Check(ge.Find(begin) is { Rebuilt: true, Targets.Count: 0 } && Same(), "a guest starts a pipe: the claim covers the whole PC");
+        Send(l.Host, Remove(H(), 10, ho));
+        t.Check(l.HostRejected.Last().Text.Contains("building water cooling"), "the other player is told someone is building water cooling there");
+        rev = l.Host.Revision;
+        Send(l.Guest, ComponentEditWorld.Chunk(G().Epoch, begin, 1, 2, part2));
+        Send(l.Guest, ComponentEditWorld.Chunk(G().Epoch, begin, 0, 2, part1));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, rebuilt));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Done()));
+        t.Check(l.GuestRejected.TakeLast(3).Select(x => x.Text).ToArray() is var rbad && rbad[0].Contains("out of order") &&
+            rbad[1].Contains("hasn't fully arrived") && rbad[2].Contains("Invalid edit result") && ge.RecordOf(begin) == null,
+            "chunks arrive in order, the commit waits for the whole record, and a water edit commits a record");
+        Send(l.Guest, ComponentEditWorld.Chunk(G().Epoch, begin, 1, 2, part2));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Rebuilt(new Rebuild(record.Length, new byte[32], true))));
+        t.Check(l.GuestRejected.Last().Text.Contains("doesn't match"), "a record that doesn't match its hash is refused");
+        Send(l.Host, ComponentEditWorld.Chunk(H().Epoch, begin, 2, 2, part2));
+        t.Check(l.HostRejected.Last().Text.Contains("no longer running") || l.HostRejected.Last().Text.Contains("Only the editor"), "only the editor sends its record");
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, rebuilt));
+        t.Check(ge.RecordOf(begin) is { } got1 && got1.SequenceEqual(record) && he.RecordOf(begin)!.SequenceEqual(record) &&
+            ge.Find(begin)?.Stage == EditStage.Committed && Same(), "both peers hold the whole record when the commit lands (the host's game reloads that PC)");
+        next = ho.NextId;
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(ge.Edits.Count == 0 && ge.RecordOf(begin) == null && G().Pending == null && P(go).Powered &&
+            P(go).Links.Single(x => x.Path == "waterBlock").Part.Value == next && Same(),
+            "the host settles from its reloaded PC: the new block gets an ID, the power state carries, the record is dropped");
+
+        begin = Send(l.Guest, Wire(G(), EditGesture.Connect, "PSU_24"));
+        Send(l.Guest, ComponentEditWorld.Chunk(G().Epoch, begin, 0, 1, part2));
+        t.Check(l.GuestRejected.Last().Text.Contains("Only a water-cooling"), "only a water-cooling edit sends a record");
+        malformed = l.GuestRejected.Count;
+        Send(l.Guest, ComponentEditWorld.Chunk(G().Epoch, begin, 0, 1, new byte[Rebuild.MaxChunkBytes + 1]));
+        t.Check(l.GuestRejected.Count == malformed + 1 && l.GuestRejected.Last().Reason == RejectReason.Malformed, "an oversized chunk is malformed");
         Send(l.Guest, ComponentEditWorld.Cancel(G().Epoch, begin));
 
         var copy = new ObjectWorld(); copy.Read(new NetDataReader(ho.ToBytes()));

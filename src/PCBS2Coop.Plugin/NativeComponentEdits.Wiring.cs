@@ -204,6 +204,8 @@ internal sealed partial class NativeComponentEdits
                 return FindConnector(mesh, _coop.Objects.FindBench(pc.Id), edit.Part) == null ? "That connector is missing on the host's game." : null;
             case EditGesture.Unplug:
                 return FindCable(mesh, edit.Part) == null ? "The host's game doesn't show that cable." : null;
+            case EditGesture.Water:
+                return _coop.Objects.FindBench(pc.Id) == null ? "That PC isn't on a bench on the host's game." : null;
             default:
                 var on = edit.Part == "on";
                 return Running(mesh) == on ? $"The host's game already shows that PC {(on ? "on" : "off")}." : null;

@@ -415,7 +415,26 @@ internal sealed class NativeObjectState : IWorldState
     }
 
     /// <summary>A local work/monitor view of a PC that is about to leave this bench: step back out of it first.</summary>
-    private static void LeaveWork(Case mesh)
+    /// <summary>The other player finished a water-cooling edit on this PC: replace it on its bench with their finished
+    /// record (owner decision, October 29, 2026: the other game reloads that PC). Same loader and binding as a remote drop,
+    /// without the drop's unplugging.</summary>
+    internal void ReloadOnBench(PcFact pc, BenchSlot bench, ComputerSave record)
+    {
+        var mesh = bench.GetCaseInSlot();
+        if (mesh == null || IdOf(mesh) != pc.Id || bench.m_caseLoadingToSlot) throw new InvalidDataException($"bench does not show PC {pc.Id} on this game");
+        _settleDrops.Remove(pc.Id);
+        LeaveWork(mesh, "the other player finished building water cooling on the PC this player was working on; leaving its work view.");
+        NativeProjection.Run(() => bench.DestroyComputer());
+        UnbindMesh(pc.Id);
+        var input = NativePcCodec.Read(NativePcCodec.Write(record));
+        RememberSave(pc.Id, input); bench.m_caseLoadingToSlot = true;
+        ShowBench(bench);
+        NativeProjection.Run(() => Saves.LoadComputerToSlot(input, bench, true, false, null));
+        if (!_spawnTickets.Values.Any(t => t.Id == pc.Id) && IdOf(bench.GetCaseInSlot()) != pc.Id)
+            throw new InvalidDataException("the game did not start loading the PC onto the bench");
+    }
+
+    private static void LeaveWork(Case mesh, string why = "the other player moved the PC this player was working on; leaving its work view.")
     {
         var ctrl = GameController.Get();
         for (var i = 0; i < 4 && ctrl != null; i++)
@@ -423,7 +442,7 @@ internal sealed class NativeObjectState : IWorldState
             var state = ctrl.GetCurrentState();
             var work = state?.TryCast<WorkingOnComputerStateBase>(); var monitor = state?.TryCast<LookingAtMonitorState>();
             if (work?.Case?.Pointer != mesh.Pointer && monitor?.m_case?.Pointer != mesh.Pointer) return;
-            Plugin.Logger.LogWarning("[objects] the other player moved the PC this player was working on; leaving its work view.");
+            Plugin.Logger.LogWarning("[objects] " + why);
             ctrl.GoToPreviousState();
         }
     }

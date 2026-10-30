@@ -38,6 +38,8 @@ internal sealed partial class NativeComponentEdits : IEditNative
         public float Since;
         /// <summary>Cable and power edits: the PC before the edit, and since when nothing has moved on it.</summary>
         public WireState Before;
+        /// <summary>Water-cooling edits: the PC record before the edit, then the finished one (both compressed).</summary>
+        public byte[] RecordBefore, Record;
         public float Started, QuietSince;
     }
 
@@ -80,12 +82,12 @@ internal sealed partial class NativeComponentEdits : IEditNative
     internal void Reset()
     {
         Handler.Reset(); _pending.Clear(); _local = null; _cancel.Clear(); _identities.Clear(); _ready.Clear(); _settling = null; _commitOp = null;
-        ResetWiring();
+        ResetWiring(); _reloads.Clear();
     }
 
     private bool Active => _world.Admitted && _world.Divergence == null && _coop.Objects.Initialized && _coop.Activity.Get(_world.Local) != null;
     /// <summary>An edit is waiting, running or being shown: saves and snapshots wait for it.</summary>
-    internal bool Busy => Handler.Edits.Count > 0 || _pending.Count > 0 || _local != null || _ready.Count > 0 || _wireRuns.Count > 0;
+    internal bool Busy => Handler.Edits.Count > 0 || _pending.Count > 0 || _local != null || _ready.Count > 0 || _wireRuns.Count > 0 || _reloads.Count > 0;
     /// <summary>An edit claim this game's model holds for an edit in progress (activity must not release it).</summary>
     internal bool Holds(OperationId token) => Handler.Find(token) != null;
     private static State CurrentState => GameController.Get()?.GetCurrentState();
@@ -103,7 +105,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
     private (PcFact Pc, AssemblyResource Slot, string Why) Find(Slot slot)
     {
         if (slot == null) return (null, null, "That slot isn't shared in co-op yet.");
-        if (!Shared.Contains(slot.m_slotType)) return (null, null, "Water-cooling and lighting parts aren't shared in co-op yet.");
+        if (!Shared.Contains(slot.m_slotType)) return (null, null, "That kind of part isn't shared in co-op yet.");
         var (pcId, id) = _coop.Objects.Assembly.Find(slot);
         var pc = _coop.Objects.Model.Pcs.SingleOrDefault(p => p.Id == pcId);
         var fact = pc?.Resources.SingleOrDefault(r => r.Id == id);
@@ -117,6 +119,8 @@ internal sealed partial class NativeComponentEdits : IEditNative
     /// <summary>An install commit (or a click on a placeholder). Returns whether the native install may run now.</summary>
     internal bool RequestInstall(Slot slot, string sku, System.Action replay)
     {
+        if (IsWater(slot, string.IsNullOrEmpty(sku) ? null : PartsDatabase.s_instance?.GetDesc(sku, null), null))
+            return RequestWater(slot.GetCase(), $"install {sku}", replay);
         var (pc, fact, why) = Find(slot);
         if (why != null) { Refuse(why); return false; }
         if (string.IsNullOrEmpty(sku)) { Refuse("That part isn't known."); return false; }
@@ -130,9 +134,10 @@ internal sealed partial class NativeComponentEdits : IEditNative
     internal bool RequestRemove(ComponentPC comp, EditGesture gesture, System.Action replay)
     {
         var slot = comp?.Slot;
+        if (comp != null && IsWater(slot, comp.GetPartInstance()?.GetPart(), comp))
+            return RequestWater(slot?.GetCase() ?? comp.GetComponentInParent<Case>(), $"removal {comp.GetPartInstance()?.GetPartId()}", replay);
         var (pc, fact, why) = Find(slot);
         if (why != null) { Refuse(why); return false; }
-        if (comp.m_includesPipes) { Refuse("Water-cooling parts aren't shared in co-op yet."); return false; }
         if (fact.Occupant.IsNone && fact.IntegralPart == "") { Refuse("That part isn't in the shared world."); return false; }
         return Submit(new Request { Pc = pc.Id, Slot = fact.Id, Gesture = gesture, Replay = replay, Work = CurrentState, NativeSlot = slot, Mesh = slot.GetCase() },
             ComponentEditWorld.Begin(_coop.Activity.Get(_world.Local)!.Epoch, pc.Id, fact.Id, fact.Version, gesture, "", fact.Occupant),
@@ -190,10 +195,10 @@ internal sealed partial class NativeComponentEdits : IEditNative
 
     public string CheckHost(in CommandContext ctx, PcFact pc, AssemblyResource fact, ComponentEdit edit)
     {
-        if (edit.Wired) return CheckWiredHost(pc, edit);
+        if (edit.WholePc) return CheckWiredHost(pc, edit);
         var slot = _coop.Objects.Assembly.NativeFor(pc.Id, fact.Id)?.TryCast<Slot>();
         if (slot == null) return "That slot is missing on the host's game.";
-        if (!Shared.Contains(slot.m_slotType)) return "Water-cooling and lighting parts aren't shared in co-op yet.";
+        if (!Shared.Contains(slot.m_slotType)) return "That kind of part isn't shared in co-op yet.";
         if (CoopController.Instance?.Replays.Running(slot.GetCase()) == true) return "The host's game is still showing the previous change.";
         var comp = slot.GetComponent();
         if (comp != null && NativeAssembly.IsPreview(comp)) comp = null;
@@ -201,7 +206,6 @@ internal sealed partial class NativeComponentEdits : IEditNative
         {
             if (comp == null) return "The host's game shows that slot empty.";
             if (!comp.CanBeUninstalled()) return "Something is in the way of that part.";
-            if (comp.m_includesPipes) return "Water-cooling parts aren't shared in co-op yet.";
             if (!edit.Component.IsNone && pc.Parts.SingleOrDefault(p => p.Id == edit.Component)?.Sku != comp.GetPartInstance()?.GetPartId())
                 return "The host's game shows a different part there.";
             return null;
@@ -227,7 +231,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
                 Plugin.Logger.LogInfo($"[edits] {what}: the other player is editing.");
                 return;
             }
-            if (request?.Replay == null || request.Work == null || CurrentState?.Pointer != request.Work.Pointer || (!edit.Wired && request.NativeSlot == null))
+            if (request?.Replay == null || request.Work == null || CurrentState?.Pointer != request.Work.Pointer || (!edit.WholePc && request.NativeSlot == null))
             {
                 Plugin.Logger.LogWarning($"[edits] {what}: this player's work state changed before the host answered; cancelling.");
                 _cancel.Add(edit.Token);
@@ -235,6 +239,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
             }
             _local = new Local { Token = edit.Token, Request = request, Since = Time.realtimeSinceStartup, Started = Time.realtimeSinceStartup };
             if (edit.Wired) _local.Before = Snapshot(request.Mesh);
+            if (edit.Rebuilt) _local.RecordBefore = RecordBytes(pc.Id);
             NativeProjection.Run(request.Replay);
             Plugin.Logger.LogInfo($"[edits] {what}: running here.");
         }
@@ -259,6 +264,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         try
         {
             if (edit.Wired) { StartWireReplay(pc, edit); return; }
+            if (edit.Rebuilt) { StartReload(pc, edit); return; }
             var plan = Plan(pc, edit);
             plan.Finished = error =>
             {
@@ -299,13 +305,20 @@ internal sealed partial class NativeComponentEdits : IEditNative
         var record = _coop.Objects.CaptureRecord(pc.Id) ?? throw new InvalidDataException("That PC has no native record.");
         var facts = new List<PartFact>(); var links = new List<PartLink>(); var aliases = new Dictionary<long, NetObjectId>();
         var known = pc.Parts.ToDictionary(p => p.Id);
+        var byPath = new Dictionary<string, NetObjectId>(StringComparer.Ordinal); var used = new HashSet<NetObjectId>();
+        foreach (var link in pc.Links) byPath[link.Path] = link.Part;
         foreach (var (path, part) in NativeObjectState.Parts(record))
         {
             var pointer = part.Pointer.ToInt64();
             if (!aliases.TryGetValue(pointer, out var id))
             {
-                id = identities.TryGetValue(pointer, out var prior) && known.TryGetValue(prior, out var fact) &&
-                    fact.Sku == part.GetPartId() && fact.NativeType == part.GetIl2CppType().FullName ? prior : allocator.Allocate();
+                // A water-cooling edit reloaded the PC on the other game, so native instances are new there: keep a part's
+                // ID while the same SKU sits at the same path. Otherwise a part keeps its ID while it is the same instance.
+                var found = edit.Rebuilt ? byPath.TryGetValue(path, out var atPath) && !used.Contains(atPath) ? atPath : default
+                    : identities.TryGetValue(pointer, out var prior) ? prior : default;
+                id = !found.IsNone && known.TryGetValue(found, out var fact) &&
+                    fact.Sku == part.GetPartId() && fact.NativeType == part.GetIl2CppType().FullName ? found : allocator.Allocate();
+                used.Add(id);
                 aliases.Add(pointer, id);
                 facts.Add(new(id, part.GetPartId(), part.GetIl2CppType().FullName));
             }
@@ -390,6 +403,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         }
         UpdateLocal();
         UpdateWireRuns();
+        UpdateReloads();
         if (_world.IsAuthority) UpdateHost();
         UpdatePower();
     }
@@ -407,12 +421,17 @@ internal sealed partial class NativeComponentEdits : IEditNative
             PollWired();
             if (_local == null) return;
         }
+        if (!_local.Done && _local.RecordBefore != null)
+        {
+            PollWater();
+            if (_local == null) return;
+        }
         if (_local.Done)
         {
             _local.Committed = true;
             var actor = _coop.Activity.Get(_world.Local);
             Plugin.Logger.LogInfo($"[edits] edit {_local.Token} finished here ({_local.Result.Outcome}, {_local.Result.Degrees} degrees, mode {_local.Result.Mode}); committing.");
-            if (actor != null && _world.Submit(CommandTypes.ComponentEdit, ComponentEditWorld.Commit(actor.Epoch, _local.Token, _local.Result), out var op))
+            if (actor != null && SendRecord(actor.Epoch) && _world.Submit(CommandTypes.ComponentEdit, ComponentEditWorld.Commit(actor.Epoch, _local.Token, _local.Result), out var op))
             {
                 if (!_world.IsAuthority) _commitOp = op;
             }
@@ -468,7 +487,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
 
     private void Entered(InstallingPartState state)
     {
-        if (_local == null || _local.Entered || state == null) return;
+        if (_local == null || _local.Entered || state == null || ComponentEditWorld.IsWholePc(_local.Request.Gesture)) return;
         // Only one edit of this player runs at a time, so the next edit state on that PC (or in that slot) is it. A
         // removal state and a clicked placeholder may not carry the same slot object as the gesture.
         var slot = state.m_slot; var mesh = state.m_case;
