@@ -194,6 +194,12 @@ The implementation boundary is the accepted change to a PC's durable software re
 
 Every run was stopped by `Stop-Phase6Probe.ps1`; all 21 owner save files were hash-unchanged each time. No game closed unexpectedly and no display driver event was logged during these runs.
 
+### Owner run after 0.19 and fixes (November 1, 2026)
+
+- **Owner report:** the host inserted a USB drive (needed by Add/Remove Programs) while the guest sat at a monitor; the guest went out of sync. Log: `[replay] ... failed: no camera for the bench`. The other game's replay of a part edit builds the game's own work state with a camera; `Camera.main` is null while that player looks at a monitor. Fix: fall back to the player's own `Main Camera` (even disabled), then a hidden spare camera (`NativeEditReplay.Camera`). Owned runs usb-3 to usb-7 replayed the host's USB insert on the guest at a monitor, walking elsewhere and while its PC booted.
+- In two earlier owned runs (usb-1, usb-2) the same replay failed inside the game's `InstallingPartState` constructor (NullReferenceException) for a reason that didn't reproduce in five later runs. The opt-in trace (`PCBS2COOP_TRACE=1` with the phase 6 probe) logs each native step of a replayed install.
+- **Owner decision: reload instead of out of sync.** Command 13 `PcRepair` (`PcRepairWorld`, `NativePcRepair`): when a guest can't show the other player's edit, or can't rebind a PC afterwards, it waits until nothing is edited on that PC, asks the host, and reloads that PC from the host's compressed native record (chunks, hash-checked; power state restored). It then shows "PC reloaded to avoid a desync. Please report if this keeps happening." in the notice and chat. A host that can't show the guest's edit keeps what its game shows (the host is the reference); the guest's copy then fails to rebind and is reloaded to match, which undoes the guest's edit in that rare case. A failed repair (no record in 45 s, reload not finished in 60 s) still reports out of sync. Owned run repair-1: a forced repair on the guest reloaded a running PC (1.1 MB in 76 chunks), which came back on its desktop with the host's software hash.
+
 ### Known limits
 
 - **Polled input inside apps is not mirrored**: Fan Control's curve points (dragged through its own physics raycast and `Input.mousePosition`), the Wormy minigame's keys, BIOS keyboard navigation (`BiosSetting.Update`, `Bios.Update`), gamepad cursor movement. Their buttons, tabs and presets are ordinary UI and do mirror.

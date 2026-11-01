@@ -48,6 +48,9 @@ internal sealed class NativeAssembly : IAssemblyNative
     { _objects = objects; if (activity != null) Handler = new(objects.Model, activity, this); }
     internal void Configure(ActivityWorld activity) => Handler = new(_objects.Model, activity, this);
     private void MainThread() { if (Environment.CurrentManagedThreadId != _thread) throw new InvalidOperationException("Assembly bindings require the main thread."); }
+    /// <summary>A repaired PC may bind again.</summary>
+    internal void ClearFault(NetObjectId pc) => _faults.Remove(pc);
+
     public void Reset() { MainThread(); _bindings.Clear(); _prepared.Clear(); _preparedProfiles.Clear(); _faults.Clear(); _rebind.Clear(); }
     /// <summary>An accepted change replaced native instances on this PC (a panel removed or refitted): bind it again
     /// once its native work has finished (no edit state, no moving latch).</summary>
@@ -130,7 +133,7 @@ internal sealed class NativeAssembly : IAssemblyNative
                 (_bindings.TryGetValue(pc.Id, out var prior) && prior.Mesh != null && prior.Mesh.Pointer == mesh.Pointer && !_rebind.Contains(pc.Id))) continue;
             if (_rebind.Contains(pc.Id) && !CanCaptureNative) continue;
             // A water-cooling reload shows the finished record before the host's settle updates the facts: bind after it.
-            if (c.Edits?.Reloading(pc.Id) == true) continue;
+            if (c.Edits?.Reloading(pc.Id) == true || c.Repair?.Reloading(pc.Id) == true) continue;
             // A freshly loaded PC can still be running the native load's own latch animation; check again later.
             if (mesh.GetComponentsInChildren<CPin>(true).Any(p => p != null && p.IsAnimating())) continue;
             try
@@ -138,7 +141,13 @@ internal sealed class NativeAssembly : IAssemblyNative
                 var record = _objects.CaptureRecord(pc.Id); NativeObjectState.CheckParts(pc, record); Bind(pc, mesh, record);
                 _rebind.Remove(pc.Id);
             }
-            catch (Exception e) { _faults.Add(pc.Id); c.ProjectionFailed($"PC {pc.Id}'s assembly could not be rebound after its load", e); }
+            catch (Exception e)
+            {
+                _faults.Add(pc.Id);
+                // A guest whose copy no longer matches the host's reloads that PC (NativePcRepair); the host is the reference.
+                if (c.Repair != null && !c.Session.World!.IsAuthority) c.Repair.Failed(pc.Id, $"PC {pc.Id}'s assembly could not be rebound after its load", e);
+                else c.ProjectionFailed($"PC {pc.Id}'s assembly could not be rebound after its load", e);
+            }
         }
         try { BindMissing(); }
         catch (Exception e) { c.ProjectionFailed("A loaded PC's assembly manifest could not be published", e); }

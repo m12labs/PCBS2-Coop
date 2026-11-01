@@ -418,12 +418,12 @@ internal sealed class NativeObjectState : IWorldState
     /// <summary>The other player finished a water-cooling edit on this PC: replace it on its bench with their finished
     /// record (owner decision, October 29, 2026: the other game reloads that PC). Same loader and binding as a remote drop,
     /// without the drop's unplugging.</summary>
-    internal void ReloadOnBench(PcFact pc, BenchSlot bench, ComputerSave record)
+    internal void ReloadOnBench(PcFact pc, BenchSlot bench, ComputerSave record, string why = "the other player finished building water cooling on the PC this player was working on; leaving its work view.")
     {
         var mesh = bench.GetCaseInSlot();
         if (mesh == null || IdOf(mesh) != pc.Id || bench.m_caseLoadingToSlot) throw new InvalidDataException($"bench does not show PC {pc.Id} on this game");
         _settleDrops.Remove(pc.Id);
-        LeaveWork(mesh, "the other player finished building water cooling on the PC this player was working on; leaving its work view.");
+        LeaveWork(mesh, why);
         NativeProjection.Run(() => bench.DestroyComputer());
         UnbindMesh(pc.Id);
         var input = NativePcCodec.Read(NativePcCodec.Write(record));

@@ -448,6 +448,8 @@ internal sealed class Phase6Probe
             if (command.StartsWith("aim:", StringComparison.Ordinal)) Aim(command);
             else if (command == "desktop-report") Event("desktop-report", DesktopReport());
             else if (command.StartsWith("screen-dump:", StringComparison.Ordinal)) Event("screen-dump", ScreenDump(command[12..]));
+            else if (command.StartsWith("repair:", StringComparison.Ordinal) && uint.TryParse(command[7..], out var repairPc))
+                CoopRunner.Instance?.Coop.Repair?.Failed(new NetObjectId(repairPc), "probe: pretend this game couldn't show a change", new InvalidDataException("probe"));
             else Event("command-unknown", command);
         }
     }

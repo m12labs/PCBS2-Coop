@@ -45,7 +45,7 @@ internal sealed partial class NativeComponentEdits
 
     // ---------------- native reads ----------------
 
-    private static bool Running(Case mesh)
+    internal static bool Running(Case mesh)
     {
         try { return mesh != null && mesh.GetMotherboard()?.GetComputerRunning() == true; }
         catch (Exception) { return false; }
@@ -131,7 +131,7 @@ internal sealed partial class NativeComponentEdits
     }
 
     /// <summary>A cable is animating or loading on that PC, or its power button is moving.</summary>
-    private static bool CablesBusy(Case mesh)
+    internal static bool CablesBusy(Case mesh)
     {
         var db = PartsDatabase.s_instance;
         if ((db?.m_loadCableOperations?.Count ?? 0) + (db?.m_loadPlugOperations?.Count ?? 0) > 0) return true;
@@ -274,7 +274,7 @@ internal sealed partial class NativeComponentEdits
             _wireRuns.Remove(run);
             var what = $"{run.Edit.Gesture} {run.Edit.Token} on PC {run.Pc}";
             if (run.Errors.Count > 0)
-                _coop.ProjectionFailed($"The other player's {what} was accepted, but this game could not show it all", new InvalidDataException(string.Join("; ", run.Errors)));
+                NotShown(run.Pc, what + " (in part)", new InvalidDataException(string.Join("; ", run.Errors)));
             else Plugin.Logger.LogInfo($"[cables] {what}: shown here.");
             if (_world.IsAuthority) _ready.Add(run.Edit.Token);
         }

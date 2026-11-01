@@ -297,22 +297,22 @@ internal sealed partial class NativeComponentEdits : IEditNative
             var plan = Plan(pc, edit);
             var replay = new LiveReplay { Plan = plan };
             _live[edit.Token] = replay;
-            plan.Finished = Shown(edit.Token, what, replay);
+            plan.Finished = Shown(pc.Id, edit.Token, what, replay);
             CoopController.Instance.Replays.Start(plan);
             Plugin.Logger.LogInfo($"[edits] {what}: started there; playing it here.");
         }
         catch (Exception e)
         {
             _live[edit.Token] = new LiveReplay { Over = true };
-            _coop.ProjectionFailed($"The other player's {what} was accepted, but this game could not show it", e);
+            NotShown(pc.Id, what, e);
         }
     }
 
     /// <summary>A replay's completion: report a failure, and let the host settle once the edit is committed.</summary>
-    private System.Action<string> Shown(OperationId token, string what, LiveReplay live = null) => error =>
+    private System.Action<string> Shown(NetObjectId pc, OperationId token, string what, LiveReplay live = null) => error =>
     {
         if (live != null) live.Over = true;
-        if (error != null) _coop.ProjectionFailed($"The other player's {what} was accepted, but this game could not show it", new InvalidDataException(error));
+        if (error != null) NotShown(pc, what, new InvalidDataException(error));
         // A live replay can only fail before the commit; the host settles once the editor committed (or left).
         if (_world.IsAuthority && (live == null || Handler.Find(token) is not { Stage: EditStage.Running })) _ready.Add(token);
         if (error == null) Plugin.Logger.LogInfo($"[edits] {what}: shown here.");
@@ -341,14 +341,23 @@ internal sealed partial class NativeComponentEdits : IEditNative
                 return;
             }
             var plan = Plan(pc, edit);
-            plan.Finished = Shown(token, what);
+            plan.Finished = Shown(pc.Id, token, what);
             CoopController.Instance.Replays.Start(plan);
         }
         catch (Exception e)
         {
-            _coop.ProjectionFailed($"The other player's {what} was accepted, but this game could not show it", e);
+            NotShown(pc.Id, what, e);
             if (_world.IsAuthority) _ready.Add(token);
         }
+    }
+
+    /// <summary>This game couldn't show the other player's edit: repair that PC instead of going out of sync
+    /// (owner decision, November 1, 2026; <see cref="NativePcRepair"/>).</summary>
+    private void NotShown(NetObjectId pc, string what, Exception e)
+    {
+        var message = $"The other player's {what} was accepted, but this game could not show it";
+        if (_coop.Repair != null) _coop.Repair.Failed(pc, message, e);
+        else _coop.ProjectionFailed(message, e);
     }
 
     public void Cancelled(in MutationContext ctx, ComponentEdit edit)

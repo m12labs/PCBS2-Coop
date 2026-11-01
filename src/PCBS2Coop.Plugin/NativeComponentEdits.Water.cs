@@ -194,7 +194,7 @@ internal sealed partial class NativeComponentEdits
     {
         _reloads.Remove(r);
         var what = $"water-cooling edit {r.Edit.Token} on PC {r.Pc}";
-        if (error != null) _coop.ProjectionFailed($"The other player's {what} was accepted, but this game could not show it", new InvalidDataException(error));
+        if (error != null) NotShown(r.Pc, what, new InvalidDataException(error));
         else Plugin.Logger.LogInfo($"[water] {what}: reloaded here.");
         if (_world.IsAuthority) _ready.Add(r.Edit.Token);
     }
