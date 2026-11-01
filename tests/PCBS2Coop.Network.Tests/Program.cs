@@ -16,7 +16,7 @@ WorkstationTests.Run(t);
 MechanismTests.Run(t);
 BiosTests.Run(t);
 SoftwareTests.Run(t);
-MonitorInputTests.Run(t);
+DesktopInputTests.Run(t);
 PanelTests.Run(t);
 ComponentEditTests.Run(t);
 WorldSyncTests.Run(t);

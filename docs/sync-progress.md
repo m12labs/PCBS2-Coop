@@ -1,5 +1,16 @@
 # PCBS2 Co-op synchronization progress
 
+**November 1, 2026 — phase 6 mirrored desktop input, version 0.19 (code, model tests and short owned two-game runs).** Owner decisions: both games run the same apps from the same clicks (mirror input); your own clicks act instantly; the BIOS mirrors live; the host's software record and results win; tablets stay personal.
+
+- Clicks, drags, the scroll wheel and typing on a shared PC's desktop, BIOS and boot screens run on the other game too (command 11). Each player sees their own name at their pointer and "+ Host"/"+ Guest" where the other player's pointer is.
+- Holding F2/Delete into BIOS opens it on both games; BIOS values change live on both; Apply and Factory Reset stay one host-ordered change.
+- The monitor power key and Start menu Shut Down are shared power gestures.
+- A guest who joins while a PC is running gets the host's open apps; a PC stuck on its boot screen after the guest's load is restarted once.
+- The guest adopts the host's software record when they differ (an OS install and a first power-on create random files on each game).
+- Owned runs mirror-1 to mirror-11 verified BIOS entry/navigation/apply, desktop clicks, window drag, typing, wallpaper, simultaneous clicks, late join and shared power-off; owner saves unchanged every time. Not mirrored: Fan Control curve points, Wormy keys, BIOS keyboard navigation.
+
+**577/577** model/network checks; Release **0 warnings/errors**; 0.19 deployed. The owner's full two-game test is next ([checklist](audit/phase-6.md#owner-test-checklist-two-games)).
+
 **October 31, 2026 — phase 6 paused at the owner's request; local baseline commit requested.** The [resumption handoff](audit/phase-6.md#resumption-handoff-october-31-2026) records the exact source, deployment and verification boundary. Current source targets 0.19 and adds an untested host software-record transfer; cursor transport, labeled overlays and the actor-specific press model remain groundwork. Remote mouse clicks, typing and shared live app/window state are still open. Deployment-disabled Release build: zero warnings/errors; network checks: **574/574**. The 0.19 source has not been deployed or run in game. No game process was running at the stop; no push.
 
 **October 30, 2026 — phase 6 app-window input probe.** In one isolated host run the owner opened and closed Add Programs and OCCT. The OS window list tracked both launches/closes, and the probe identified the app icon and close-button UI paths. OCCT uses a separate app hierarchy; the first raycaster appeared before the desktop canvas, so probe readiness now waits for the actual desktop. This is input and window evidence only; guest clicks, shared app contents and software result projection are still open. The owned game process is closed and all 21 normal solo saves are unchanged. See [phase 6 evidence](audit/phase-6.md#gpu-watchdog-incidents-during-phase-6-probes).

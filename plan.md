@@ -453,7 +453,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** SW lifecycle/BIOS/OS/files/windows/monitor/LCD; HW display/power association; PW monitor/tablet/camera separation.
 
-**Status: paused at the owner's request on October 31, 2026.** 6b BIOS implementation remains in validation; two-instance game verification, boot/software behavior and the shared desktop are open. Current 0.19 source includes an untested boot-drive software-record transfer and two-pointer groundwork; it is not a full test build. The [phase 6 resumption handoff](docs/audit/phase-6.md#resumption-handoff-october-31-2026) records the stopping point. The owner chose two labeled mouse pointers on the shared desktop; both players can click. Save/Continue follows the game's normal boot behavior. Since 5c each game runs its own boot screen for a shared powered PC, and power is restored after a load (`NativeComponentEdits.UpdatePower`); `PcFact.Powered` is bench-only.
+**Status: implemented in 0.19 (November 1, 2026); validating with the owner's two-game test.** Owner decisions: mirror desktop/BIOS/boot-screen input so both games run the same apps; a player's own input acts instantly; live BIOS with Apply/Factory Reset host-ordered; the host's software record (and so its benchmark results) wins; tablets stay personal; two labeled pointers, both click; Save/Continue follow the game's normal boot. Short owned two-instance runs verified BIOS entry and navigation, BIOS apply, desktop clicks, window drag, typing, wallpaper, simultaneous clicks, late join and shared power-off. Polled-input app controls (Fan Control curve points, Wormy keys, BIOS keyboard navigation) are known limits. Details: [mirrored desktop input](docs/audit/phase-6.md#mirrored-desktop-input-019-november-1-2026).
 
 #### 6a. Focused audit and mouse policy
 
@@ -464,21 +464,21 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 6b. Boot, BIOS and software state
 
-- **Status:** BIOS apply/reset implemented in 0.18 and validating; remaining boot/OS/software work and two-instance acceptance are open.
+- **Status:** Implemented in 0.19 and validating: BIOS apply/reset (0.18 command), BIOS entry and live navigation mirrored, boot-drive software record reconciled to the host's, power key and Start menu Shut Down shared. Owner's two-game acceptance (OS/program install, USB clone, save/rejoin) is next.
 - **Outcome and audit IDs:** one PC-owned image/configuration and agreed boot stage across peers (SW-001–SW-005, SW-007, F6-A, F6-D–F6-F).
 - **Dependencies and scope:** obtain native coroutine/save and screen-asset evidence from 6a's gap list; define PC identity, BIOS pending/applied values, boot/OS/install/clone results, native side effects and versioned state before implementation. The opt-in [6b probe](docs/audit/phase-6.md#6b-probe-start-and-verified-boundaries-october-30-2026) now checks BIOS commit/reset and bench-to-virtual-computer binding in disposable saves; ordinary host BIOS apply/reset and named Save/Load passed in an owned operator run; two-instance projection and late join remain to test. Preserve the game's native PC record and host-ordered world contract.
 - **Validation and completion:** both actors' BIOS/software actions and boot outcomes agree after late join, Save/Continue and `/sync`; one-shot side effects happen once, with owned game checks and model/network tests recorded.
 
 #### 6c. Shared desktop and two-actor mouse input
 
-- **Status:** Cursor transport, labeled overlays and actor-specific press model implemented offline; native click dispatch and shared desktop/app state remain open. One host-only monitor-entry probe confirmed PC binding but entered before the OS raycaster existed.
+- **Status:** Implemented in 0.19 and validating: command 11 `DesktopInput` mirrors pointer, wheel and text-field input through a virtual pointer per actor; open apps reconcile to the host's; labeled pointers drawn. Owned runs mirror-1 to mirror-11 passed the basic cases; polled-input app controls are not mirrored.
 - **Outcome and audit IDs:** the same logical desktop/apps/windows appear on both monitors while two labeled actor pointers can move, click, type and drag concurrently (SW-006, SW-008–SW-009, SW-028–SW-029, F6-A–F6-C, F6-E).
 - **Dependencies and scope:** probe the concrete monitor EventSystem, cursor prefab and flat/wide/curved mapping; carry actor identity and stable PC/window/target IDs through host ordering. Keep each player's camera, tablet and keyboard focus personal; project accepted shared state locally.
 - **Validation and completion:** both actor directions, simultaneous same/different-window gestures, stale targets, lost mouse-up, text entry, display swaps and different resolutions converge; open desktop state is correct for late join, Save/Continue and `/sync`.
 
 #### 6d. Displays, tablets and acceptance
 
-- **Status:** Not started.
+- **Status:** Partly covered: personal tablets are excluded from capture and replay; monitor binding follows the bench PC. LCD/monitor-swap/curved-monitor cases await the owner's test.
 - **Outcome and audit IDs:** the correct PC screen is visible on its monitor and supported LCDs, remote activity is visible, and personal tablets do not redirect the shared PC's input (SW-006–SW-007, F6-B–F6-F).
 - **Dependencies and scope:** 6b–6c; verify monitor/case/component display bindings, stock wallpapers and personal tablet behavior. Keep custom asset transfer in phase 12 and simulation/app outcomes in phase 7 as specified above.
 - **Validation and completion:** run the [phase 6 acceptance cases](docs/audit/phase-6.md#acceptance-plan-owner-run-game-checks-not-run-in-this-audit) with two owned instances and disposable saves; log native/model agreement and remaining limits before closing the phase.

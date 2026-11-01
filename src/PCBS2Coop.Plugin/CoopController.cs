@@ -68,6 +68,7 @@ internal sealed partial class CoopController
     public NativeBios Bios { get; private set; }
     /// <summary>Host-published resulting OS software on the PC's boot drive (phase 6b).</summary>
     public NativeSoftwareSync Software { get; private set; }
+    public NativeDesktopInput Desktop { get; private set; }
     private string _notice;
     private float _noticeUntil;
     public string ActiveNotice => _notice != null && Time.realtimeSinceStartup < _noticeUntil ? _notice : null;
@@ -345,7 +346,7 @@ internal sealed partial class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
         else if (Replays.Busy) Replays.Reset();
 
         _localCursor = inWorkshop && Session.World is { Admitted: true } ? NativeMonitorCursor.Observe(this) : default;
@@ -710,6 +711,8 @@ internal sealed partial class CoopController
         Edits = new NativeComponentEdits(this, world);
         Bios = new NativeBios(this, world);
         Software = new NativeSoftwareSync(this, world);
+        Desktop = new NativeDesktopInput(this, world);
+        Desktop.Bind();
         world.Register(CommandTypes.DiagnosticMarker, Markers);
         world.RegisterState(Markers);
         world.RegisterState(Objects);
@@ -724,6 +727,7 @@ internal sealed partial class CoopController
         world.Register(CommandTypes.ComponentEdit, Edits.Handler);
         world.Register(CommandTypes.Bios, Bios.Handler);
         world.Register(CommandTypes.Software, Software.Handler);
+        world.Register(CommandTypes.DesktopInput, Desktop.Handler);
         world.RegisterState(Software.Handler, optional: true);
         // Optional: saves from before 0.10 have no workstation state; the host binds it from its loaded world.
         world.RegisterState(Workstations, optional: true);

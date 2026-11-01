@@ -17,6 +17,7 @@ internal sealed class NativeDesktopPointers
     }
 
     private readonly Dictionary<NetObjectId, Overlay> _overlays = new();
+    private readonly HashSet<NetObjectId> _noStyle = new();
 
     public void Reset()
     {
@@ -33,9 +34,15 @@ internal sealed class NativeDesktopPointers
         foreach (var pc in coop.Objects.Model.Pcs.Where(p => p.Location.Place == PcPlace.Bench))
         {
             var os = coop.Objects.FindBench(pc.Id)?.m_workStation?.m_virtualComputer?.m_os;
-            var canvas = os?.m_desktop?.canvas;
-            var style = os?.m_timeDisplay;
-            if (canvas == null || style?.font == null) continue;
+            var canvas = os?.m_desktop?.canvas?.rootCanvas; // the fractions are of the root screen (NativeDesktopInput)
+            if (canvas == null) continue;
+            TMP_Text style = os.m_timeDisplay;
+            if (style == null || style.font == null) style = canvas.GetComponentInChildren<TMP_Text>(true);
+            if (style == null || style.font == null)
+            {
+                if (_noStyle.Add(pc.Id)) Plugin.Logger.LogWarning($"[desktop] PC {pc.Id}: no screen font for the pointer labels.");
+                continue;
+            }
             seen.Add(pc.Id);
             var key = canvas.Pointer.ToInt64();
             if (!_overlays.TryGetValue(pc.Id, out var overlay) || overlay.Root == null || overlay.Canvas != key)
@@ -60,6 +67,10 @@ internal sealed class NativeDesktopPointers
     {
         var root = Ui.NewRect("PCBS2Coop pointers", canvas.transform);
         Ui.Stretch(root, 0, 0);
+        // App windows sit on nested canvases with their own sorting; draw the labels above all of them.
+        var layer = root.gameObject.AddComponent<Canvas>();
+        layer.overrideSorting = true;
+        layer.sortingOrder = 30000;
         var size = Mathf.Clamp(root.rect.height * .026f, 14f, 26f);
         var local = Ui.NewText("Local pointer label", root, style, localName, size, TextAlignmentOptions.MidlineLeft);
         var remote = Ui.NewText("Remote pointer", root, style, "+ " + remoteName, size, TextAlignmentOptions.MidlineLeft);
@@ -74,6 +85,9 @@ internal sealed class NativeDesktopPointers
             text.raycastTarget = false;
             text.gameObject.SetActive(false);
         }
+        // The monitor camera renders only the screen's layer; new objects start on Default.
+        foreach (var t in root.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = canvas.gameObject.layer;
+        Plugin.Logger.LogInfo($"[desktop] pointer labels added to screen '{canvas.name}' (layer {canvas.gameObject.layer}).");
         local.color = new Color(.3f, .8f, 1f);
         remote.color = new Color(1f, .75f, .25f);
         return new Overlay { Canvas = canvas.Pointer.ToInt64(), Root = root, Local = local, Remote = remote };

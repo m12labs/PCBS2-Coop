@@ -192,17 +192,18 @@ internal sealed class NativeBios : IBiosNative
         }
     }
 
-    private static bool Bypass => NativeProjection.Active || !NativePcLifecycle.InCoopWorkshop;
+    private static bool Bypass => (NativeProjection.Active && !NativeDesktopInput.Injecting) || !NativePcLifecycle.InCoopWorkshop;
 
     [HarmonyPatch(typeof(Bios), "ApplyRestart")]
     internal static class ApplyIntercept
     {
-        private static bool Prefix(Bios __instance) => Bypass || (CoopController.Instance?.Bios?.Request(__instance, reset: false) ?? false);
+        // A replayed click on the other player's Apply does nothing here: their request brings the result.
+        private static bool Prefix(Bios __instance) => !NativeDesktopInput.Injecting && (Bypass || (CoopController.Instance?.Bios?.Request(__instance, reset: false) ?? false));
     }
 
     [HarmonyPatch(typeof(Bios), "ResetSettings")]
     internal static class ResetIntercept
     {
-        private static bool Prefix(Bios __instance) => Bypass || (CoopController.Instance?.Bios?.Request(__instance, reset: true) ?? false);
+        private static bool Prefix(Bios __instance) => !NativeDesktopInput.Injecting && (Bypass || (CoopController.Instance?.Bios?.Request(__instance, reset: true) ?? false));
     }
 }

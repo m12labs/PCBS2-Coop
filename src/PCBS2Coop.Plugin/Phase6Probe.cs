@@ -181,8 +181,11 @@ internal sealed class Phase6Probe
         catch (Exception e) { Plugin.Logger.LogError("PHASE6 probe hooks failed: " + e); }
     }
 
+    private int _commandsRead;
+
     public void Update()
     {
+        try { Commands(); } catch (Exception e) { Event("command-error", e.ToString()); }
         if (!Safe || Time.realtimeSinceStartup < _nextSample) return;
         _nextSample = Time.realtimeSinceStartup + 0.25f;
         try
@@ -399,5 +402,123 @@ internal sealed class Phase6Probe
             });
         }
         return rows.ToArray();
+    }
+    // ---------------- operator commands (commands.txt next to events.jsonl) ----------------
+
+    private void Commands()
+    {
+        if (!Safe) return;
+        var file = Path.Combine(Path.GetDirectoryName(_file)!, "commands.txt");
+        if (!File.Exists(file)) { Directory.CreateDirectory(Path.GetDirectoryName(file)!); File.WriteAllText(file, ""); return; }
+        var lines = File.ReadAllLines(file);
+        while (_commandsRead < lines.Length)
+        {
+            var command = lines[_commandsRead++].Trim();
+            if (command.Length == 0) continue;
+            Event("operator-command", command);
+            if (command.StartsWith("aim:", StringComparison.Ordinal)) Aim(command);
+            else if (command == "desktop-report") Event("desktop-report", DesktopReport());
+            else if (command.StartsWith("screen-dump:", StringComparison.Ordinal)) Event("screen-dump", ScreenDump(command[12..]));
+            else Event("command-unknown", command);
+        }
+    }
+
+    private static object DesktopReport()
+    {
+        var coop = CoopRunner.Instance?.Coop;
+        if (coop?.Objects.Initialized != true) return "not ready";
+        var local = NativeDesktopInput.LocalMonitor(coop);
+        return new
+        {
+            role = coop.Session.Role.ToString(),
+            monitor = local.Pc.Value,
+            pcs = coop.Objects.Model.Pcs.Where(p => p.Location.Place == PcPlace.Bench).Select(pc =>
+            {
+                var vc = coop.Objects.FindBench(pc.Id)?.m_workStation?.m_virtualComputer;
+                var os = vc?.m_os;
+                string software = null, error = null;
+                try
+                {
+                    var drive = vc?.ComputerSave?.GetBiosConfig(false)?.GetBootDrive();
+                    if (drive?.m_software != null)
+                        software = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(NativeSoftwareCodec.Write(drive.m_software)))[..16];
+                }
+                catch (Exception e) { error = e.Message; }
+                var root = os?.m_desktop?.canvas?.rootCanvas;
+                return new
+                {
+                    pc = pc.Id.Value,
+                    powered = SafeBool(() => vc.IsPoweredOn()),
+                    surface = vc == null ? null : NativeDesktopInput.SurfaceOf(vc)?.ToString(),
+                    windows = DesktopWindows(os),
+                    software, error,
+                    rootMode = root?.renderMode.ToString(),
+                    rootCamera = root?.worldCamera?.name,
+                    rootCasters = root == null ? 0 : root.GetComponentsInChildren<UnityEngine.UI.GraphicRaycaster>(false).Length,
+                    rootSize = root == null ? null : root.GetComponent<RectTransform>()?.rect.size.ToString(),
+                    bios = SafeName(() => vc.GetBios()?.GetComponentInParent<Canvas>()?.rootCanvas?.name),
+                    vcCanvas = SafeName(() => vc.m_canvas?.rootCanvas?.name),
+                    desktopCanvas = root?.name,
+                };
+            }).ToArray()
+        };
+    }
+
+    private static bool? SafeBool(Func<bool> f) { try { return f(); } catch { return null; } }
+    private static string SafeName(Func<string> f) { try { return f(); } catch (Exception e) { return "!" + e.Message; } }
+
+    /// <summary>Names, active flags and components of a PC's screen canvas tree (depth-limited).</summary>
+    private static object ScreenDump(string arg)
+    {
+        var coop = CoopRunner.Instance?.Coop;
+        if (!uint.TryParse(arg, out var id) || coop?.Objects.Initialized != true) return "bad pc";
+        var vc = coop.Objects.FindBench(new NetObjectId(id))?.m_workStation?.m_virtualComputer;
+        if (vc == null) return "no vc";
+        var rows = new List<string>();
+        void Walk(Transform t, int depth, string path)
+        {
+            if (rows.Count > 600 || depth > 7) return;
+            var comps = string.Join(",", t.GetComponents<Component>().Select(c => c?.GetIl2CppType().Name).Where(n => n != "Transform" && n != "RectTransform" && n != "CanvasRenderer"));
+            rows.Add($"{path} {t.name} {(t.gameObject.activeInHierarchy ? "on" : "off")} [{comps}]");
+            for (var i = 0; i < t.childCount; i++) Walk(t.GetChild(i), depth + 1, path.Length == 0 ? i.ToString() : path + "/" + i);
+        }
+        Walk(vc.transform, 0, "");
+        return rows;
+    }
+
+    private static void Aim(string command)
+    {
+        var bits = command.Split(':');
+        if (bits.Length != 3 || !int.TryParse(bits[2], out var index) || index < 0) throw new ArgumentException("aim:<bench|peripheral>:<index>");
+        var root = LocalPlayer.Root;
+        if (Camera.main == null || root == null) throw new InvalidOperationException("No workshop player.");
+        Component target = bits[1] switch
+        {
+            "bench" => Object.FindObjectOfType<SaveLoadSystem>().benchSlots[index],
+            "peripheral" => Object.FindObjectsOfType<PeripheralSlot>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
+            _ => throw new ArgumentException("Unknown aim target.")
+        };
+        var col = target is BenchSlot bench ? bench.m_caseCol : target.GetComponentInChildren<Collider>();
+        var point = col != null ? col.bounds.center : target.transform.position + Vector3.up;
+        var reset = (target as BenchSlot)?.PlayerResetPosition;
+        var pos = reset != null ? reset.transform.position : point + target.transform.forward * 1.3f;
+        pos.y = root.position.y;
+        var cc = LocalPlayer.Controller;
+        var wasEnabled = cc != null && cc.enabled;
+        if (wasEnabled) cc.enabled = false;
+        try { root.position = pos; }
+        finally { if (wasEnabled) cc.enabled = true; }
+        var cam = Camera.main;
+        var dir = point - cam.transform.position;
+        var yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+        var pitch = -Mathf.Atan2(dir.y, new Vector2(dir.x, dir.z).magnitude) * Mathf.Rad2Deg;
+        foreach (var look in root.GetComponentsInChildren<MouseLook>(true))
+        {
+            var parentYaw = look.transform.parent != null ? look.transform.parent.eulerAngles.y : 0;
+            look.rotationX = look.transform == root ? yaw : yaw - parentYaw;
+            look.rotationY = -pitch;
+        }
+        cam.transform.rotation = Quaternion.Euler(pitch, yaw, 0);
+        _current?.Event("camera-setup", new { target = target.name, path = DesktopPath(target.transform, null), position = pos.ToString(), aim = point.ToString() });
     }
 }

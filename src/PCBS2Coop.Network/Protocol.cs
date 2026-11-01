@@ -130,8 +130,8 @@ public static class CommandTypes
     public const ushort ComponentEdit = 9;
     /// <summary>Host-ordered BIOS apply and factory reset on a shared PC.</summary>
     public const ushort Bios = 10;
-    /// <summary>Actor-scoped monitor button and drag transitions, ordered on the shared desktop.</summary>
-    public const ushort MonitorInput = 11;
+    /// <summary>Mirrored desktop, BIOS and boot-screen input of one actor on a shared PC (<see cref="DesktopInputWorld"/>).</summary>
+    public const ushort DesktopInput = 11;
     /// <summary>Host-published BIOS/software records for a boot drive.</summary>
     public const ushort Software = 12;
 }

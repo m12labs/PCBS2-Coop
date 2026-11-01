@@ -19,7 +19,6 @@ internal sealed class NativeSoftwareSync : ISoftwareNative
     private readonly CoopController _coop;
     private readonly WorldSync _world;
     private readonly Dictionary<NetObjectId, Observation> _observed = new();
-    private readonly Queue<(MutationContext Context, NetObjectId Pc, string DrivePath, byte[] Bytes, float Deadline)> _deferred = new();
     private float _nextSample;
     public SoftwareWorld Handler { get; }
 
@@ -27,7 +26,7 @@ internal sealed class NativeSoftwareSync : ISoftwareNative
     {
         _coop = coop; _world = world;
         Handler = new SoftwareWorld(coop.Objects.Model, coop.Activity, this, world.IsAuthority);
-        world.GenerationStarted += (uint _, string _) => { _observed.Clear(); _deferred.Clear(); _nextSample = 0; };
+        world.GenerationStarted += (uint _, string _) => { _observed.Clear(); _host.Clear(); _nextSample = 0; };
     }
 
     public string CheckHost(in CommandContext ctx, PcFact pc, PartLink bootDrive)
@@ -45,10 +44,68 @@ internal sealed class NativeSoftwareSync : ISoftwareNative
     public void Changed(in MutationContext ctx, PcFact pc, PartLink bootDrive, byte[] record)
     {
         if (_world.IsAuthority) return; // The source is already installed on the host's native drive.
-        try { Project(pc, bootDrive.Path, record); }
-        catch (InvalidOperationException)
-        { _deferred.Enqueue((ctx, pc.Id, bootDrive.Path, record, Time.realtimeSinceStartup + 10f)); }
-        catch (Exception e) { _coop.ProjectionFailed($"Software on PC {pc.Id} could not be shown here", e); }
+        // Phase 6 mirrors desktop input, so this game usually reaches the same record by itself. Installing an OS (and a
+        // PC's first power-on) generates random files on each game, though; keep the host's latest record and adopt it
+        // once this game's PC has settled (Reconcile).
+        _host[pc.Id] = new HostRecord
+        {
+            Generation = ctx.Generation, DrivePath = bootDrive.Path, Bytes = record,
+            Hash = Convert.ToHexString(SHA256.HashData(record)), Received = Time.realtimeSinceStartup,
+        };
+    }
+
+    private sealed class HostRecord
+    {
+        public uint Generation;
+        public string DrivePath = "", Hash = "", LocalHash = "";
+        public byte[] Bytes = Array.Empty<byte>();
+        public float Received, LocalChangedAt;
+        public bool Reported;
+    }
+
+    private readonly Dictionary<NetObjectId, HostRecord> _host = new();
+    private float _nextReconcile;
+
+    /// <summary>Guest: compares this game's boot-drive record with the host's latest and adopts the host's when they
+    /// still differ after both have been stable for a while and no mirrored input for that PC is waiting.</summary>
+    private void Reconcile()
+    {
+        if (_world.IsAuthority || _host.Count == 0 || Time.realtimeSinceStartup < _nextReconcile) return;
+        _nextReconcile = Time.realtimeSinceStartup + 1f;
+        foreach (var (id, host) in _host.ToArray())
+        {
+            var pc = _coop.Objects.Model.Pcs.SingleOrDefault(x => x.Id == id);
+            if (host.Generation != _world.Generation || pc == null || pc.Location.Place != PcPlace.Bench) { _host.Remove(id); continue; }
+            try
+            {
+                var vc = _coop.Objects.FindBench(id)?.m_workStation?.m_virtualComputer;
+                var record = vc?.ComputerSave ?? _coop.Objects.RecordFor(id);
+                if (record == null || _coop.Objects.IdOf(record) != id) continue;
+                var drive = record.GetBiosConfig(false)?.GetBootDrive();
+                if (drive?.m_software == null) continue;
+                if (!NativeObjectState.Parts(record).TryGetValue(host.DrivePath, out var hostDrive) || hostDrive?.Pointer != drive.Pointer)
+                    continue; // the boot drive differs here; a later host record or the PC reload settles it
+                var local = Convert.ToHexString(SHA256.HashData(NativeSoftwareCodec.Write(drive.m_software)));
+                if (local == host.Hash)
+                {
+                    if (!host.Reported) Plugin.Logger.LogInfo($"[software] PC {id}: this game's software matches the host's.");
+                    _host.Remove(id);
+                    continue;
+                }
+                if (local != host.LocalHash) { host.LocalHash = local; host.LocalChangedAt = Time.realtimeSinceStartup; continue; }
+                var quiet = Time.realtimeSinceStartup - Math.Max(host.LocalChangedAt, host.Received);
+                if (quiet < 2f || _coop.Desktop?.Busy(id) == true || (vc != null && NativeDesktopInput.SurfaceOf(vc) == DesktopSurface.Boot && quiet < 10f))
+                    continue;
+                Project(pc, host.DrivePath, host.Bytes);
+                host.LocalHash = host.Hash;
+                host.Reported = true;
+            }
+            catch (Exception e)
+            {
+                _host.Remove(id);
+                _coop.ProjectionFailed($"Software on PC {id} could not settle here", e);
+            }
+        }
     }
 
     private void Project(PcFact pc, string path, byte[] bytes)
@@ -62,23 +119,12 @@ internal sealed class NativeSoftwareSync : ISoftwareNative
             throw new InvalidDataException("The accepted boot drive is not present here.");
         var software = NativeSoftwareCodec.Read(bytes); // Host-produced bytes only.
         NativeProjection.Run(() => drive.m_software = software);
-        Plugin.Logger.LogInfo($"[software] PC {pc.Id} boot drive {path}: accepted host software result projected.");
+        Plugin.Logger.LogInfo($"[software] PC {pc.Id} boot drive {path}: this game's software differed from the host's; adopted the host's record ({bytes.Length} bytes).");
     }
 
     internal void Update()
     {
-        while (_deferred.TryPeek(out var next))
-        {
-            if (!_world.Admitted || _world.Generation != next.Context.Generation) { _deferred.Clear(); break; }
-            var pc = _coop.Objects.Model.Pcs.SingleOrDefault(x => x.Id == next.Pc);
-            if (pc == null) { _deferred.Dequeue(); continue; }
-            try { Project(pc, next.DrivePath, next.Bytes); _deferred.Dequeue(); }
-            catch (InvalidOperationException) when (Time.realtimeSinceStartup < next.Deadline) { break; }
-            catch (Exception e)
-            {
-                _deferred.Dequeue(); _coop.ProjectionFailed($"Software on PC {next.Pc} could not settle here", e); break;
-            }
-        }
+        if (_world.Admitted && _coop.WorldReady && _coop.Objects.Initialized) Reconcile();
         if (!_world.IsAuthority || !_world.Admitted || !_coop.WorldReady || !_coop.Objects.Initialized ||
             Time.realtimeSinceStartup < _nextSample) return;
         _nextSample = Time.realtimeSinceStartup + .5f;

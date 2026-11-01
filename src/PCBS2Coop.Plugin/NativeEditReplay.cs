@@ -428,8 +428,11 @@ internal sealed class NativeEditReplay
             AccessTools.Method(typeof(InputButton), nameof(InputButton.IsHeld)),
             AccessTools.Method(typeof(InputButton), nameof(InputButton.IsUp)),
         };
-        private static bool Prefix(ref bool __result)
+        private static bool Prefix(InputButton __instance, System.Reflection.MethodBase __originalMethod, ref bool __result)
         {
+            // Phase 6: a boot this game follows into BIOS sees the BIOS key held (NativeDesktopInput.BootFollow).
+            if (NativeDesktopInput.ForceHeld(__instance) && __originalMethod.Name == nameof(InputButton.IsHeld))
+            { __result = true; return false; }
             if (_step == null) return true;
             __result = false;
             return false;

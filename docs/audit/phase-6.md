@@ -1,6 +1,6 @@
 # Phase 6 audit: boot, BIOS, OS and visible computer screens
 
-**Status (October 31, 2026):** phase 6 is paused at the owner's request. BIOS apply/reset in 0.18 passed one host-only game check; two-instance validation remains open. Source now targets 0.19 with a host software-record transfer and two-pointer groundwork; remote clicks, typing and shared live windows are not implemented. See the [resumption handoff](#resumption-handoff-october-31-2026). Decompiled evidence below comes from the locally available game dump. The dump manifest identifies Unity `6000.2.6f2`, Windows x86-64 IL2CPP, build GUID `92d05e5a20c14d41aacbb9c6a804d5a3`, and `GameAssembly.dll` SHA-256 `646148bbbece7076064891df335668a770482810d91ba0fc7d3e5a4be5301aaf` ([manifest](../../artiffacts/decompiled/manifest.json)). The preserved decompile inputs include executable/native metadata, but this workspace does not contain extracted Unity scenes/prefabs or screen asset bundles. Asset hierarchy and serialized monitor/OS prefab wiring therefore remain an explicit gap. Runtime behavior is explicitly labeled where known; everything else needs an owned in-game probe before hooks are selected.
+**Status (November 1, 2026):** 0.19 mirrors desktop, BIOS and boot-screen input between the two games (owner decision: mirror input; own clicks act instantly), shares BIOS entry, the monitor power key and Start menu Shut Down, reconciles open apps and the boot drive's software record, and draws both players' pointer labels. Short owned two-instance runs (mirror-1 to mirror-11) verified the main paths; the owner's full two-game test is next. See [mirrored desktop input](#mirrored-desktop-input-019-november-1-2026). Decompiled evidence below comes from the locally available game dump. The dump manifest identifies Unity `6000.2.6f2`, Windows x86-64 IL2CPP, build GUID `92d05e5a20c14d41aacbb9c6a804d5a3`, and `GameAssembly.dll` SHA-256 `646148bbbece7076064891df335668a770482810d91ba0fc7d3e5a4be5301aaf` ([manifest](../../artiffacts/decompiled/manifest.json)). The preserved decompile inputs include executable/native metadata, but this workspace does not contain extracted Unity scenes/prefabs or screen asset bundles. Asset hierarchy and serialized monitor/OS prefab wiring therefore remain an explicit gap. Runtime behavior is explicitly labeled where known; everything else needs an owned in-game probe before hooks are selected.
 
 ## Goal and scope
 
@@ -159,6 +159,61 @@ Offline implementation has begun: player-state packets carry one transient norma
 
 The implementation boundary is the accepted change to a PC's durable software record, after any install/uninstall/copy coroutine settles. A host command should carry a validated software delta or snapshot and apply it without repeating OS install, app or achievement side effects. Native save/snapshot already carries the host's PC record, but live guest projection and clone-drive contents need explicit checks. The visible desktop/window model remains separate, transient state; Save/Continue follows the game's normal boot behavior per owner decision.
 
+## Mirrored desktop input (0.19, November 1, 2026)
+
+### Owner decisions (November 1, 2026)
+
+- **Mirror input**: every click, drag, scroll and key on a shared PC's desktop also runs on the other game, so both games run the same real apps (not a video stream, not window-list-only sync).
+- **Instant locally**: a player's own input acts at once on their own game and is sent to the other game at once. Simultaneous conflicting clicks can split the desktops; the open-apps reconcile and `/sync` repair that.
+- **Live BIOS**: BIOS navigation mirrors too; Apply / Factory Reset stay the 0.18 host-ordered BIOS command, so the saved setting changes once.
+- **Benchmark results**: the host's result is the one kept (its software record wins). 3DMark scores are computed from the hardware (no random input in `ThreedMarkApp`), so both games normally show the same score; only `ComputerSim` temperature readings add random noise.
+- **Tablets** stay fully personal (not captured, not replayed).
+- Earlier: two labeled pointers, both click; Save/Continue follow the game's normal boot.
+
+### Design
+
+- **Command 11 `DesktopInput`** (`DesktopInputWorld`, replaces the unused 0.19 `MonitorInputWorld`): a batch of up to 64 events of one actor on one PC: `Move`, `Down`, `Up`, `Scroll`, `Text` (field path + full text), `Submit`, `Leave`, `EnterBios`, `Windows` (host only: open app IDs). Coordinates are fractions of the PC screen's root canvas, so different window resolutions and monitor shapes map to the same point. The host only checks the actor epoch and that the PC is benched (releases pass after a move); there is no desktop lock. Nothing is saved.
+- **Capture** (`NativeDesktopInput`): while this player is in `LookingAtMonitorState` on a bound bench PC, the screen is Desktop (`InOS` + desktop canvas), BIOS (`IsInBios`, checked first: `IsPoweredOn()` reads false in BIOS) or Boot (`m_on`). The pointer is the local cursor mapped through the root canvas's event camera (curved monitors: the mesh's texture coordinate). Mouse buttons come from `Input.GetMouseButton` (Rewired fallback), the wheel from `Input.mouseScrollDelta`. A click that opens the monitor is not sent (buttons held on entry, and presses in the first 0.5 s). The focused TMP or legacy input field's text is sent whenever it changes (path = sibling indices from the root canvas), Enter as `Submit`. Moves are coalesced and sent at most 30 times a second; anything else is sent the same frame.
+- **Replay** on the other game: a virtual pointer per actor (`PointerEventData`, pointer ID 7700 + actor) runs Unity's own sequence through `ExecuteEvents` (enter/exit, down, initialize-potential-drag, begin/drag/end drag, up, click, drop, scroll). The OS canvas is world-space and its event camera is the camera of whoever looks at it (run mirror-1: `MonitorCamera` while looking, null otherwise), so the replay places a disabled helper camera square in front of the screen and makes it the canvas's camera only while the replayed event runs. `WindowFrame` drag/resize read the press camera, so windows move by the same amount. Hits inside `VirtualComputer.m_screenBlocker` (shown on a screen nobody is using) are skipped. The selection is given back afterwards, and an input field a replayed click focused is switched off for five frames so this player's keys never type into it; the other player's typing arrives as `Text`. Events wait up to 4 s for this game's PC to reach the same screen (boot timing), then are dropped with a `[desktop]` warning. Replayed native code runs inside `NativeProjection` with `NativeDesktopInput.Injecting` set; the BIOS Apply/Reset intercepts do nothing for a replayed click (the editor's own request brings the result).
+- **BIOS entry**: the boot coroutine opens the BIOS when `PCBSInput.m_enterBios`/`m_enterBiosAlt` is held while the current state is `LookingAtMonitorState`. When the other game entered a PC's BIOS, this game's `VirtualComputer._StartupSequence_d__69.MoveNext` runs with the key read as held (`NativeEditReplay.InputGuard`) and a stand-in `LookingAtMonitorState` as `GameController.m_currentState` (restored in the postfix), for up to 20 s; a desktop already past the prompt is restarted into BIOS.
+- **Power**: the power key in `LookingAtMonitorState.Tick` and Start menu → Shut Down call `Motherboard.TurnOn/TurnOff` directly; inside those two scopes the call becomes the phase 5 `Power` gesture (`RequestPower`). Restart from the Start menu is mirrored as a click (power stays on).
+- **Open apps** (`NativeDesktopInput.Windows.cs`): the host publishes each desktop's open app IDs when they change and when a guest presence arrives. The guest opens/closes apps (`OS.Launch` / `OS.CloseWindow`) to match once its desktop has been quiet for 3 s. A PC still on its boot screen 20 s after the host reported its desktop is restarted once: a PC that was on when the guest loaded the world hits an exception in the game's boot coroutine (`JobTutorialHintUi.SetSpriteAssetForText`, run mirror-8) and stays on the boot screen.
+- **Software record**: the host still publishes each OS PC's boot-drive record (command 12) once it is stable. The guest now compares it with its own and adopts the host's only when they still differ after both were stable for 2 s and no mirrored input for that PC is waiting. Installing an OS and a PC's first power-on generate random files on each game (`ComputerSave.InstallOS` → `ComputerSoftware` ctor/`Init`, `VirtualComputer.FindSim` → `InstallRandomUserFiles`), so this is still needed.
+- **Pointer labels**: the overlay is a nested canvas (sorting 30000) on the screen's layer, under the root canvas; each player sees their own name at their pointer and "+ Host"/"+ Guest" where the other player's pointer is (transient `PlayerState.Cursor`).
+
+### Owned two-instance runs (November 1, 2026, isolated saves, Windows-level screenshots only)
+
+| Run | Result |
+| --- | --- |
+| mirror-1 | Hooks installed without alias errors. The monitor power key became a shared `Power` gesture. Both games' records hashed the same. Desktop icons need a double click. No replay yet (diagnosed with logging). |
+| mirror-2 | F2 opened the host's BIOS; `IsPoweredOn()` reads false in BIOS, so nothing was captured (fixed: BIOS checked first). |
+| mirror-3/4 | The guest's boot followed the host into BIOS. The first replayed click hit the guest's `ScreenBlocker` (fixed). Then: CPU OC tab, Ratio + twice on the host and + once on the guest gave x47.75 / 4775 MHz on both, with the same hover help text. The guest's Apply changes and restart gave one host-ordered BIOS apply; both restarted to the desktop with the same software hash. A host double click opened Add/Remove Programs on both; the guest's title-bar drag moved the window to the same place on both; typing "occt" in its search box showed on both; the guest's close closed it on both. |
+| mirror-5 to 8 | Late-join setup (the host opened an app before the guest joined); found the guest's PC stuck on its boot screen after the load (game exception above). |
+| mirror-9 | Late join: the guest restarted the stuck PC, reached the desktop and opened Add/Remove Programs to match. A simultaneous host Remove-tab click and guest Select Wallpaper double click gave the same two windows on both. A stock wallpaper picked by the host showed on both and the records matched. |
+| mirror-10/11 | Start menu Shut Down became a shared power-off (both games off; the game itself unplugs the bench's external cables on power-off and plugs them back on power-on, so the gesture lists them). Pointer labels render on both games. |
+
+Every run was stopped by `Stop-Phase6Probe.ps1`; all 21 owner save files were hash-unchanged each time. No game closed unexpectedly and no display driver event was logged during these runs.
+
+### Known limits
+
+- **Polled input inside apps is not mirrored**: Fan Control's curve points (dragged through its own physics raycast and `Input.mousePosition`), the Wormy minigame's keys, BIOS keyboard navigation (`BiosSetting.Update`, `Bios.Update`), gamepad cursor movement. Their buttons, tabs and presets are ordinary UI and do mirror.
+- The open-apps reconcile corrects only which apps are open, not window positions or what is inside an app. If simultaneous clicks split the desktops, close and reopen the app or use `/sync`.
+- A guest's change to data the host owns through the software record (something only the guest changed during a split) is replaced by the host's record.
+- Live temperatures and graphs can differ slightly (random noise in `ComputerSim`); results are phase 7.
+- Case/component LCDs, monitor swaps and curved monitors (texture-coordinate path) were not exercised in these runs.
+- USB clone and OS install from USB were not run; they are mirrored clicks plus the software-record reconcile.
+
+### Owner test checklist (two games)
+
+1. The host powers a benched PC on with P while looking at its monitor; the guest's copy powers on. Hold F2/Delete on the boot screen: both open BIOS.
+2. In BIOS both players change values (CPU OC Ratio +/-, tabs); both screens agree. Apply changes and restart (either player): one restart, both reach the desktop with the new value. Try Factory Reset.
+3. On the desktop: double-click icons, drag and resize windows, minimize/maximize, Start menu, type in a search box, pick a wallpaper. Both players at once, on the same window and on different ones.
+4. Install a program from a USB drive (Add/Remove Programs) and uninstall it; install an OS on an empty drive if possible; run 3DMark and OCCT and compare results.
+5. Start menu Restart and Shut Down; the P key from the monitor.
+6. Late join: the host opens apps on a running PC, then the guest joins. The guest's PC should reach the desktop (restarted once if stuck) with the same apps open.
+7. `/sync`, Save/Continue (normal boot), then compare. Labels: each player sees their own name and "+ other player" on a shared desktop.
+8. Evidence: `[desktop]`, `[software]`, `[bios]`, `[cables]` lines in `BepInEx\LogOutput.log` / `LogOutput.1.log`.
+
 ## Runtime verification ledger
 
 - **Verified in running game before this audit (repo records):** phase 5 power projection is marked synced, but full 5d game acceptance remains pending; every peer presently runs its own boot display. The owner’s broader 0.17 build-through-PC run does not constitute phase 6 validation.
@@ -166,7 +221,7 @@ The implementation boundary is the accepted change to a PC's durable software re
 - **Not runtime-verified by this audit:** BIOS synchronization on two instances, other OS/window hooks, software/install persistence, cursor routing, curved display input, shared OS screen and in-flight late join. The host-only BIOS Save/Load check above is verified.
 - **6b/6c probes after the audit:** owned isolated host runs checked co-op startup, PC/virtual-computer binding and monitor entry, as recorded above. BIOS apply/reset has an unverified two-instance synchronization path; mouse clicks and OS state do not. No owner solo save was used by the probes, and no file was committed.
 
-## Resumption handoff (October 31, 2026)
+## Resumption handoff (October 31, 2026; superseded by the 0.19 mirrored input above)
 
 The owner asked to pause phase 6 until usage resets and then requested a local baseline commit. This is a stopping point, not a phase completion or a build ready for the owner's full two-game desktop test. Do not push without a new request. At the stop, no `PCBS2` process was running. The last deployed game DLLs came from the 0.18 `desktop-app-1` probe; the current 0.19 source build was **not deployed**. A Release build with deployment disabled finished with zero warnings/errors, and the network suite passed **574/574** checks. Neither result validates the new code in the running game.
 
