@@ -128,25 +128,46 @@ public static class CommandTypes
     public const ushort CasePanel = 8;
     /// <summary>Host-ordered component installs and removals with the game's own animations (<see cref="ComponentEditWorld"/>).</summary>
     public const ushort ComponentEdit = 9;
+    /// <summary>Host-ordered BIOS apply and factory reset on a shared PC.</summary>
+    public const ushort Bios = 10;
+    /// <summary>Actor-scoped monitor button and drag transitions, ordered on the shared desktop.</summary>
+    public const ushort MonitorInput = 11;
+    /// <summary>Host-published BIOS/software records for a boot drive.</summary>
+    public const ushort Software = 12;
 }
 
-/// <summary>World-space snapshot of one player. Position is the feet (bottom of the character controller).</summary>
+/// <summary>One actor's pointer on a shared PC monitor. Coordinates are fractions of that PC's desktop
+/// rectangle, independent of each player's screen resolution and monitor geometry.</summary>
+public readonly record struct MonitorCursor(NetObjectId Pc, float X, float Y, bool Visible)
+{
+    public bool IsValid => Visible
+        ? !Pc.IsNone && float.IsFinite(X) && float.IsFinite(Y) && X is >= 0 and <= 1 && Y is >= 0 and <= 1
+        : Pc.IsNone && X == 0 && Y == 0;
+
+    public void Write(NetDataWriter w) { Pc.Write(w); w.Put(X); w.Put(Y); w.Put(Visible); }
+    public static MonitorCursor Read(NetDataReader r) => new(NetObjectId.Read(r), r.GetFloat(), r.GetFloat(), r.GetBool());
+}
+
+/// <summary>World-space snapshot of one player and their transient monitor pointer. Position is the feet
+/// (bottom of the character controller).</summary>
 public readonly record struct PlayerState(float X, float Y, float Z, float Yaw, bool InWorkshop)
 {
     /// <summary>Positions outside this range are treated as corrupt. The workshop is tens of metres across.</summary>
     public const float MaxCoordinate = 10_000f;
+    public MonitorCursor Cursor { get; init; }
 
     public void Write(NetDataWriter w)
     {
         w.Put((byte)MessageType.PlayerState);
-        w.Put(X); w.Put(Y); w.Put(Z); w.Put(Yaw); w.Put(InWorkshop);
+        w.Put(X); w.Put(Y); w.Put(Z); w.Put(Yaw); w.Put(InWorkshop); Cursor.Write(w);
     }
 
     public static PlayerState Read(NetDataReader r) =>
-        new(r.GetFloat(), r.GetFloat(), r.GetFloat(), r.GetFloat(), r.GetBool());
+        new(r.GetFloat(), r.GetFloat(), r.GetFloat(), r.GetFloat(), r.GetBool()) { Cursor = MonitorCursor.Read(r) };
 
     public bool IsValid =>
-        Ok(X) && Ok(Y) && Ok(Z) && float.IsFinite(Yaw) && MathF.Abs(Yaw) <= 100_000f;
+        Ok(X) && Ok(Y) && Ok(Z) && float.IsFinite(Yaw) && MathF.Abs(Yaw) <= 100_000f && Cursor.IsValid &&
+        (!Cursor.Visible || InWorkshop);
 
     private static bool Ok(float v) => float.IsFinite(v) && MathF.Abs(v) <= MaxCoordinate;
 }

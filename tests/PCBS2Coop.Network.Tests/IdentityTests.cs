@@ -47,6 +47,17 @@ internal static class IdentityTests
             t.Check(new PlayerState(1, 2, 3, 90, true).IsValid, "normal player state is valid");
             t.Check(!new PlayerState(float.NaN, 0, 0, 0, true).IsValid && !new PlayerState(0, float.PositiveInfinity, 0, 0, true).IsValid
                     && !new PlayerState(0, 0, 20_000, 0, true).IsValid, "NaN, infinite or far-away positions are invalid");
+            var cursor = new MonitorCursor(new NetObjectId(42), .25f, .75f, true);
+            var state = new PlayerState(1, 2, 3, 90, true) { Cursor = cursor };
+            var stateWriter = new NetDataWriter(); state.Write(stateWriter);
+            var stateReader = new NetDataReader(stateWriter.CopyData()); stateReader.GetByte();
+            t.Check(PlayerState.Read(stateReader) == state && stateReader.AvailableBytes == 0,
+                "monitor pointer and actor position round-trip in one latest-state packet");
+            t.Check(state.IsValid && !new PlayerState(1, 2, 3, 90, false) { Cursor = cursor }.IsValid &&
+                !new MonitorCursor(new NetObjectId(42), float.NaN, 0, true).IsValid &&
+                !new MonitorCursor(default, .5f, .5f, true).IsValid &&
+                !new MonitorCursor(new NetObjectId(42), 1.1f, 0, true).IsValid,
+                "a visible pointer needs a workshop PC and normalized finite coordinates");
             t.Check(Compatibility.HashIds(new[] { "b", "a", "a" }) == Compatibility.HashIds(new[] { "a", "b" }), "catalog hash ignores order and duplicates");
         }
 

@@ -17,9 +17,9 @@ public static class CoopSavePair
     private const ulong Magic = 0x3152494150324350; // PC2PAIR1
     private const ulong BundleMagic = 0x31454C444E423250;
     private const int MaxMetadataBytes = Protocol.MaxModStateBytes + 2 * MaxCarrierBytes + 4096;
-    /// <summary>Earlier versions whose co-op saves this build reads unchanged: 0.17 changed only network messages (edit
-    /// progress) and when the host saves, not what a save holds (owner decision, October 30, 2026).</summary>
-    private static readonly string[] SameFormat = { "0.16" };
+    /// <summary>Earlier versions whose co-op saves this build reads: 0.18's BIOS changes live in the native PC record,
+    /// and 0.19's software transfer state is optional. 0.17 changed edit progress and host save timing only.</summary>
+    private static readonly string[] SameFormat = { "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);

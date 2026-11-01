@@ -531,7 +531,7 @@ public sealed class CoopSession : IDisposable
 
             if (type == MessageType.PlayerState)
             {
-                if (method != SessionDelivery.LatestState || reader.AvailableBytes < 17) { Stats.MalformedMessages++; return; }
+                if (method != SessionDelivery.LatestState || reader.AvailableBytes != 34) { Stats.MalformedMessages++; return; }
                 var s = PlayerState.Read(reader);
                 if (!s.IsValid) { Stats.InvalidPlayerStates++; return; }
                 Stats.PlayerStatesReceived++;

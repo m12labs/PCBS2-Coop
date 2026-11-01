@@ -24,6 +24,7 @@ public sealed class CoopRunner : MonoBehaviour
     private AutoTest _autoTest;
     private Probe _probe;
     private Phase3Probe _phase3Probe;
+    private Phase6Probe _phase6Probe;
     private SteamInviteMenu _steamMenu;
     private SteamProbe _steamProbe;
 
@@ -35,6 +36,7 @@ public sealed class CoopRunner : MonoBehaviour
         _autoTest = AutoTest.FromEnvironment();
         if (Probe.Enabled) _probe = new Probe();
         if (Phase3Probe.Enabled) _phase3Probe = new Phase3Probe();
+        if (Phase6Probe.Enabled) _phase6Probe = new Phase6Probe();
         if (SteamProbe.Enabled) _steamProbe = new SteamProbe();
     }
 
@@ -68,6 +70,7 @@ public sealed class CoopRunner : MonoBehaviour
         _autoTest?.Update(this);
         _probe?.Update(this);
         _phase3Probe?.Update(this);
+        _phase6Probe?.Update();
         _steamProbe?.Update(this);
     }
 

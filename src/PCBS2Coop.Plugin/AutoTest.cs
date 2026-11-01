@@ -41,6 +41,7 @@ internal sealed class AutoTest
     private bool _invalidRefused;
     private bool _passed;
     private long _statesAtPause;
+    private int _phase6MenuRetries;
     private WorldSync _hookedWorld;
 
     public static bool IsEnabled => Role is "host" or "join";
@@ -74,7 +75,7 @@ internal sealed class AutoTest
     {
         // Phase 3 audit uses the same isolated host/join setup, then leaves the controls to the operator.
         // Do not run the marker/pause/departure sequence underneath the object-action probes.
-        if (Phase3Probe.Enabled && _step >= 5) return;
+        if ((Phase3Probe.Enabled || Phase6Probe.Enabled) && _step >= 5) return;
         var now = Time.realtimeSinceStartup;
         if (_walking && _role == "join") Walk(now);
         HookWorld(r);
@@ -100,7 +101,18 @@ internal sealed class AutoTest
                 break;
             case 2:
             {
-                if (!r.Menu.CoopReady) { Fail("the co-op list did not open from the 'Co-op' entry."); break; }
+                if (!r.Menu.CoopReady)
+                {
+                    // A second visible game can still be finishing the main-menu fade when the pointer click lands.
+                    // Retry only the opt-in phase 6 operator run; never continue into an unopened list.
+                    if (Phase6Probe.Enabled && _phase6MenuRetries++ < 5)
+                    {
+                        if (!r.Menu.CoopShown) Click(r.Menu.Entry);
+                        Next(now + 2);
+                        break;
+                    }
+                    Fail("the co-op list did not open from the 'Co-op' entry."); break;
+                }
                 Shot(r, "coop-menu");
                 if (ProbeResume && _role == "host")
                 {
@@ -422,22 +434,24 @@ internal sealed class AutoTest
         {
             var dir = Phase3Probe.Enabled
                 ? Path.Combine(_dir, Phase3Probe.Phase, Phase3Probe.RunId, $"saves-{_role}")
-                : Path.Combine(_dir, $"saves-{_role}");
+                : Phase6Probe.Enabled
+                    ? Path.Combine(_dir, "phase6", Phase6Probe.RunId, $"saves-{_role}")
+                    : Path.Combine(_dir, $"saves-{_role}");
             // Audit runs use fresh, named folders and retain earlier evidence. A resume reopens only its own run's folder.
             if (ProbeResume)
             {
                 if (_role != "host") throw new IOException("Only a probe host can resume a run.");
                 if (!File.Exists(Path.Combine(dir, "Coop", "autofreebuild.binary.zip"))) throw new IOException("Resume needs this run's existing co-op save.");
             }
-            else if (Phase3Probe.Enabled && Directory.Exists(dir)) throw new IOException("Use a fresh probe run ID; its saves already exist.");
-            if (!Phase3Probe.Enabled && Directory.Exists(dir)) Directory.Delete(dir, true);
+            else if ((Phase3Probe.Enabled || Phase6Probe.Enabled) && Directory.Exists(dir)) throw new IOException("Use a fresh probe run ID; its saves already exist.");
+            if (!Phase3Probe.Enabled && !Phase6Probe.Enabled && Directory.Exists(dir)) Directory.Delete(dir, true);
             Directory.CreateDirectory(dir);
             var original = SaveLoadSystem.s_saveDir;
             var target = dir.Replace('\\', '/');
             SaveLoadSystem.s_saveDir = target;
             if (SaveLoadSystem.s_saveDir != target) return false;
             IsolatedSaveDir = target;
-            if (Phase3Probe.Enabled)
+            if (Phase3Probe.Enabled || Phase6Probe.Enabled)
             {
                 // PC import/export is a separate game folder; isolate it as well as world saves.
                 SaveLoadSystem.s_pcSharingDefaultDir = target + "/PCs";
@@ -482,6 +496,9 @@ internal sealed class AutoTest
 
     private void Shot(CoopRunner r, string name)
     {
+        // Phase 6 evidence is written as text events. GPU readback has returned a null texture
+        // during recent operator runs, so this probe must not request screenshots.
+        if (Phase6Probe.Enabled) return;
         var path = Path.Combine(_dir, $"autotest-{_role}-{name}.png");
         r.StartCoroutine(Capture(path).WrapToIl2Cpp());
     }
@@ -490,9 +507,18 @@ internal sealed class AutoTest
     {
         yield return new WaitForEndOfFrame();
         var tex = ScreenCapture.CaptureScreenshotAsTexture(1);
-        File.WriteAllBytes(path, ImageConversion.EncodeToPNG(tex));
-        UnityEngine.Object.Destroy(tex);
-        Plugin.Logger.LogInfo($"AUTOTEST screenshot: {path}");
+        if (tex == null)
+        {
+            Plugin.Logger.LogWarning("AUTOTEST screenshot skipped: GPU readback returned no texture.");
+            yield break;
+        }
+        try
+        {
+            File.WriteAllBytes(path, ImageConversion.EncodeToPNG(tex));
+            Plugin.Logger.LogInfo($"AUTOTEST screenshot: {path}");
+        }
+        catch (Exception e) { Plugin.Logger.LogWarning("AUTOTEST screenshot failed: " + e.Message); }
+        finally { UnityEngine.Object.Destroy(tex); }
     }
 
     [HarmonyPatch]

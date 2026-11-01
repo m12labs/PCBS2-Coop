@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). **Phase 6 is next** (owner decision, October 30, 2026): it starts with its focused audit. Phases 6–9 and 11–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). **Phase 6 is paused** (October 31, 2026): 6a records its focused audit and the two labeled pointer decision; 6b has a host-ordered BIOS apply/reset path in 0.18, with two-instance gameplay validation and the remaining boot/software work pending. Phases 7–9 and 11–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -453,7 +453,35 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** SW lifecycle/BIOS/OS/files/windows/monitor/LCD; HW display/power association; PW monitor/tablet/camera separation.
 
-**Status: Next** (owner decision, October 30, 2026). Start with the focused audit in `docs/audit/phase-6.md`. Known inputs: since 5c each game runs its own boot screen for a shared powered PC, and power is restored after a load (`NativeComponentEdits.UpdatePower`); `PcFact.Powered` is bench-only.
+**Status: paused at the owner's request on October 31, 2026.** 6b BIOS implementation remains in validation; two-instance game verification, boot/software behavior and the shared desktop are open. Current 0.19 source includes an untested boot-drive software-record transfer and two-pointer groundwork; it is not a full test build. The [phase 6 resumption handoff](docs/audit/phase-6.md#resumption-handoff-october-31-2026) records the stopping point. The owner chose two labeled mouse pointers on the shared desktop; both players can click. Save/Continue follows the game's normal boot behavior. Since 5c each game runs its own boot screen for a shared powered PC, and power is restored after a load (`NativeComponentEdits.UpdatePower`); `PcFact.Powered` is bench-only.
+
+#### 6a. Focused audit and mouse policy
+
+- **Status:** Complete for source inspection; the asset and runtime probes listed in the audit remain implementation prerequisites.
+- **Outcome and audit IDs:** identify the boot, OS/software, desktop input, display and save boundaries for SW-001–SW-009, SW-028–SW-029 and the phase 6 display/input factors F6-A–F6-F.
+- **Evidence:** [phase 6 audit](docs/audit/phase-6.md) records the exact decompile build, native control-flow anchors, current mod baseline, missing screen assets, host-ordered state/input recommendation and concrete two-instance checks. No phase 6 gameplay path was verified in a running game.
+- **Owner decision:** show two labeled pointers on the same desktop; both players can click without an exclusive desktop-control lock.
+
+#### 6b. Boot, BIOS and software state
+
+- **Status:** BIOS apply/reset implemented in 0.18 and validating; remaining boot/OS/software work and two-instance acceptance are open.
+- **Outcome and audit IDs:** one PC-owned image/configuration and agreed boot stage across peers (SW-001–SW-005, SW-007, F6-A, F6-D–F6-F).
+- **Dependencies and scope:** obtain native coroutine/save and screen-asset evidence from 6a's gap list; define PC identity, BIOS pending/applied values, boot/OS/install/clone results, native side effects and versioned state before implementation. The opt-in [6b probe](docs/audit/phase-6.md#6b-probe-start-and-verified-boundaries-october-30-2026) now checks BIOS commit/reset and bench-to-virtual-computer binding in disposable saves; ordinary host BIOS apply/reset and named Save/Load passed in an owned operator run; two-instance projection and late join remain to test. Preserve the game's native PC record and host-ordered world contract.
+- **Validation and completion:** both actors' BIOS/software actions and boot outcomes agree after late join, Save/Continue and `/sync`; one-shot side effects happen once, with owned game checks and model/network tests recorded.
+
+#### 6c. Shared desktop and two-actor mouse input
+
+- **Status:** Cursor transport, labeled overlays and actor-specific press model implemented offline; native click dispatch and shared desktop/app state remain open. One host-only monitor-entry probe confirmed PC binding but entered before the OS raycaster existed.
+- **Outcome and audit IDs:** the same logical desktop/apps/windows appear on both monitors while two labeled actor pointers can move, click, type and drag concurrently (SW-006, SW-008–SW-009, SW-028–SW-029, F6-A–F6-C, F6-E).
+- **Dependencies and scope:** probe the concrete monitor EventSystem, cursor prefab and flat/wide/curved mapping; carry actor identity and stable PC/window/target IDs through host ordering. Keep each player's camera, tablet and keyboard focus personal; project accepted shared state locally.
+- **Validation and completion:** both actor directions, simultaneous same/different-window gestures, stale targets, lost mouse-up, text entry, display swaps and different resolutions converge; open desktop state is correct for late join, Save/Continue and `/sync`.
+
+#### 6d. Displays, tablets and acceptance
+
+- **Status:** Not started.
+- **Outcome and audit IDs:** the correct PC screen is visible on its monitor and supported LCDs, remote activity is visible, and personal tablets do not redirect the shared PC's input (SW-006–SW-007, F6-B–F6-F).
+- **Dependencies and scope:** 6b–6c; verify monitor/case/component display bindings, stock wallpapers and personal tablet behavior. Keep custom asset transfer in phase 12 and simulation/app outcomes in phase 7 as specified above.
+- **Validation and completion:** run the [phase 6 acceptance cases](docs/audit/phase-6.md#acceptance-plan-owner-run-game-checks-not-run-in-this-audit) with two owned instances and disposable saves; log native/model agreement and remaining limits before closing the phase.
 
 ### 7. Simulation, tests, tuning and functional app results
 

@@ -3,7 +3,7 @@ param(
     [ValidateSet('host', 'join')][string]$Role = 'host',
     [string]$GameDir,
     [switch]$Deploy,
-    [ValidateSet('3', '4')][string]$Phase = '3',
+    [ValidateSet('3', '4', '6')][string]$Phase = '3',
     # Relaunch a host on this run's own disposable saves (fresh-process Continue); the earlier process must have exited.
     [switch]$Resume
 )

@@ -1,5 +1,5 @@
 param([Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9-]{1,48}$')][string]$RunId,
-    [ValidateSet('3', '4')][string]$Phase = '3')
+    [ValidateSet('3', '4', '6')][string]$Phase = '3')
 $ErrorActionPreference = 'Stop'
 $probeWorkspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $probeRecordDir = Join-Path $probeWorkspace ".local/phase$Phase-$RunId"

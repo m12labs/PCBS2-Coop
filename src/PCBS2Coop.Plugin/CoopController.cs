@@ -24,6 +24,8 @@ internal sealed partial class CoopController
     private float _nextSend;
     private float _lastRemoteAt = -1;
     private PlayerState _remote;
+    private MonitorCursor _localCursor;
+    private readonly NativeDesktopPointers _pointers = new();
     private RemotePlayerView _view;
     private readonly WorldReadiness _readiness = new();
 
@@ -62,6 +64,10 @@ internal sealed partial class CoopController
     public NativeEditReplay Replays { get; } = new();
     /// <summary>Host-ordered component installs and removals (task 4e, command 9).</summary>
     public NativeComponentEdits Edits { get; private set; }
+    /// <summary>Host-ordered BIOS apply and factory reset (phase 6b).</summary>
+    public NativeBios Bios { get; private set; }
+    /// <summary>Host-published resulting OS software on the PC's boot drive (phase 6b).</summary>
+    public NativeSoftwareSync Software { get; private set; }
     private string _notice;
     private float _noticeUntil;
     public string ActiveNotice => _notice != null && Time.realtimeSinceStartup < _noticeUntil ? _notice : null;
@@ -287,6 +293,7 @@ internal sealed partial class CoopController
         Objects.Reset();
         Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; Workstations = null; _notice = null; ResetAutosave();
         DestroyView();
+        _pointers.Reset(); _localCursor = default;
         _lastRemoteAt = -1;
         _hostWorldStarted = false;
         _pendingFile = null;
@@ -338,10 +345,13 @@ internal sealed partial class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
         else if (Replays.Busy) Replays.Reset();
 
+        _localCursor = inWorkshop && Session.World is { Admitted: true } ? NativeMonitorCursor.Observe(this) : default;
         UpdateRemoteView(inWorkshop);
+        _pointers.Update(this, _localCursor, _remote.Cursor,
+            _lastRemoteAt >= 0 && Time.realtimeSinceStartup - _lastRemoteAt < RemoteTimeout && _remote.InWorkshop);
     }
 
     private void UpdateHost()
@@ -431,7 +441,7 @@ internal sealed partial class CoopController
             _initialSave = null; return;
         }
         _initialSaveAt = now + 2;
-        if (SaveLoadSystem.WaitingOnThread() || _pairWrites.Count > 0 || _pendingFile != null || _sync != SyncStep.None || Workstations?.Settled == false) return;
+        if (SaveLoadSystem.WaitingOnThread() || _pairWrites.Count > 0 || _pendingFile != null || _sync != SyncStep.None || Workstations?.Settled == false || Software?.Handler.Busy == true) return;
         var saves = Object.FindObjectOfType<SaveLoadSystem>();
         if (saves == null) return;
         var file = CoopWorldNames.FileOf(_initialSave);
@@ -445,6 +455,7 @@ internal sealed partial class CoopController
 
     private void TakeSnapshot()
     {
+        if (Software?.Handler.Busy == true) return; // A native software result is still being transferred.
         var saves = Object.FindObjectOfType<SaveLoadSystem>();
         var level = Object.FindObjectOfType<LevelLoadPersistency>();
         if (saves == null) return;
@@ -532,6 +543,8 @@ internal sealed partial class CoopController
         {
             if (SaveLoadSystem.WaitingOnThread() || _pairWrites.Count > 0 || _pendingFile != null)
                 throw new InvalidOperationException("The previous co-op save is still being paired.");
+            if (Software?.Handler.Busy == true)
+                throw new InvalidOperationException("A software result is still being shared; wait before saving.");
             var s = Object.FindObjectOfType<SaveLoadSystem>();
             var wc = Object.FindObjectOfType<WorkshopController>();
             var db = PartsDatabase.s_instance;
@@ -695,6 +708,8 @@ internal sealed partial class CoopController
         Mechanisms = new NativeMechanisms(this, world);
         Panels = new NativeCaseAccess(this, world);
         Edits = new NativeComponentEdits(this, world);
+        Bios = new NativeBios(this, world);
+        Software = new NativeSoftwareSync(this, world);
         world.Register(CommandTypes.DiagnosticMarker, Markers);
         world.RegisterState(Markers);
         world.RegisterState(Objects);
@@ -707,6 +722,9 @@ internal sealed partial class CoopController
         world.Register(CommandTypes.Mechanism, Mechanisms.Handler);
         world.Register(CommandTypes.CasePanel, Panels.Handler);
         world.Register(CommandTypes.ComponentEdit, Edits.Handler);
+        world.Register(CommandTypes.Bios, Bios.Handler);
+        world.Register(CommandTypes.Software, Software.Handler);
+        world.RegisterState(Software.Handler, optional: true);
         // Optional: saves from before 0.10 have no workstation state; the host binds it from its loaded world.
         world.RegisterState(Workstations, optional: true);
         world.Rejected += (OperationId op, RejectReason reason, string text) => Plugin.Logger.LogWarning($"[world] {op} refused: {reason} {text}");
@@ -743,7 +761,7 @@ internal sealed partial class CoopController
         if (local != null && Time.realtimeSinceStartup >= _nextSend)
         {
             _nextSend = Time.realtimeSinceStartup + SendInterval;
-            Session.SendState(local.Value);
+            Session.SendState(local.Value with { Cursor = _localCursor });
         }
 
         var fresh = _lastRemoteAt >= 0 && Time.realtimeSinceStartup - _lastRemoteAt < RemoteTimeout;
