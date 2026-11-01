@@ -352,6 +352,19 @@ internal sealed class NativeEditReplay
         return work != null && mesh != null && work.m_case != null && work.m_case.Pointer == mesh.Pointer;
     }
 
+    private static Camera _spare;
+
+    /// <summary>A disabled camera that never renders; the replayed state only reads it (and sets its field of view).</summary>
+    private static Camera SpareCamera()
+    {
+        if (_spare != null) return _spare;
+        var go = new GameObject("PCBS2Coop edit replay camera");
+        UnityEngine.Object.DontDestroyOnLoad(go);
+        _spare = go.AddComponent<Camera>();
+        _spare.enabled = false;
+        return _spare;
+    }
+
     /// <summary>The bench's own work camera: the base state takes its workstation from it. It is not claimed.</summary>
     private static Camera Camera(Plan p)
     {
@@ -361,6 +374,10 @@ internal sealed class NativeEditReplay
         var camera = bench.m_workStation != null ? bench.m_workStation.GetComponent<UnityEngine.Camera>() : null;
         if (camera == null) camera = bench.orbitCamera;
         if (camera == null) camera = UnityEngine.Camera.main;
+        // Camera.main is null while this player looks at a monitor (owner's 0.19 run: the guest sat at a desktop
+        // while the host inserted a USB drive). Use the player's own camera even when disabled, else a hidden one.
+        if (camera == null) camera = GameObject.Find("Player")?.transform.Find("Main Camera")?.GetComponent<UnityEngine.Camera>();
+        if (camera == null) camera = SpareCamera();
         if (camera == null) throw new InvalidDataException("no camera for the bench");
         if (camera.GetComponent<WorkStation>() == null)
             Plugin.Logger.LogWarning($"[replay] {p.Label}: the camera {camera.name} has no workstation; using it anyway.");

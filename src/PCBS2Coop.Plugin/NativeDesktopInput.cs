@@ -509,7 +509,7 @@ internal sealed partial class NativeDesktopInput : IDesktopInputNative
         }
         Injecting = true;
         try { NativeProjection.Run(action); }
-        catch (Exception e) { Plugin.Logger.LogWarning($"[desktop] PC {p.Pc}: replayed input failed: {e.Message}"); }
+        catch (Exception e) { Plugin.Logger.LogWarning($"[desktop] PC {p.Pc}: replayed input failed: {e}"); }
         finally
         {
             Injecting = false;

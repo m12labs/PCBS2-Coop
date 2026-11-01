@@ -159,6 +159,11 @@ internal sealed class Phase6Probe
     private static void BeforeReset(Bios __instance) => BiosEvent("bios-reset-before", __instance);
     private static void AfterReset(Bios __instance) => BiosEvent("bios-reset-after", __instance);
 
+    private static void TraceStep(System.Reflection.MethodBase __originalMethod)
+    { if (NativeEditReplay.Active) Plugin.Logger.LogInfo($"[replay-trace] enter {__originalMethod.DeclaringType?.Name}.{__originalMethod.Name}"); }
+    private static void TraceDone(System.Reflection.MethodBase __originalMethod)
+    { if (NativeEditReplay.Active) Plugin.Logger.LogInfo($"[replay-trace] done {__originalMethod.DeclaringType?.Name}.{__originalMethod.Name}"); }
+
     private void InstallHooks()
     {
         var harmony = new Harmony(Plugin.Guid + ".phase6-probe");
@@ -177,6 +182,30 @@ internal sealed class Phase6Probe
         {
             Hook(typeof(Bios), "ApplyRestart", nameof(BeforeApply), nameof(AfterApply));
             Hook(typeof(Bios), "ResetSettings", nameof(BeforeReset), nameof(AfterReset));
+            // Which native step of a replayed install fails when this player isn't at that bench (owner, Nov 1).
+            if (Environment.GetEnvironmentVariable("PCBS2COOP_TRACE") == "1")
+            foreach (var (type, name) in new[]
+            {
+                (typeof(Slot), nameof(Slot.InstantiatePart)), (typeof(Slot), nameof(Slot.InstantiatePreloadedPart)),
+                (typeof(WorkStation), nameof(WorkStation.AddSelectable)), (typeof(Case), nameof(Case.DisableInvalidPSUConnectors)),
+                (typeof(Case), nameof(Case.OnChangePart)), (typeof(Motherboard), nameof(Motherboard.OnChangePart)),
+                (typeof(Case), nameof(Case.RefreshCustomisations)), (typeof(Slot), nameof(Slot.GetHomePos)),
+                (typeof(InstallingPartState), nameof(InstallingPartState.FixupSubSlots)),
+                (typeof(InstallingPartState), nameof(InstallingPartState.FinishInit)),
+                (typeof(GameController), nameof(GameController.GetCableType)), (typeof(GameController), nameof(GameController.SetCableType)),
+                (typeof(CareerStatus), nameof(CareerStatus.RemoveItemFromInventory)),
+            })
+            {
+                var method = AccessTools.GetDeclaredMethods(type).FirstOrDefault(m => m.Name == name);
+                if (method == null) { Plugin.Logger.LogWarning($"PHASE6 probe: {type.Name}.{name} not found."); continue; }
+                if (GamePatches.FoldedWith(method) is { } folded) { Plugin.Logger.LogWarning($"PHASE6 probe: {type.Name}.{name} folded with {folded.Name}; skipped."); continue; }
+                try
+                {
+                    harmony.Patch(method, prefix: new HarmonyMethod(typeof(Phase6Probe).GetMethod(nameof(TraceStep), BindingFlags.Static | BindingFlags.NonPublic)),
+                        postfix: new HarmonyMethod(typeof(Phase6Probe).GetMethod(nameof(TraceDone), BindingFlags.Static | BindingFlags.NonPublic)));
+                }
+                catch (Exception e) { Plugin.Logger.LogWarning($"PHASE6 probe: {type.Name}.{name} not traced: {e.Message}"); }
+            }
         }
         catch (Exception e) { Plugin.Logger.LogError("PHASE6 probe hooks failed: " + e); }
     }
