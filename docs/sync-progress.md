@@ -1,5 +1,7 @@
 # PCBS2 Co-op synchronization progress
 
+**November 1, 2026 — phase 6 complete (owner's two-game test).** The owner tested 0.19 in two games and everything passed except one case: the host inserted a USB drive while the guest sat at a monitor, and the guest went out of sync. Fixed: the other game's replay of a part edit now finds a camera while that player is at a monitor. Owner decision: when a game can't show a change, it reloads that PC from the host's record and says "PC reloaded to avoid a desync. Please report if this keeps happening." instead of going out of sync (command 13). **583/583** checks; Release 0/0; deployed. Next: phase 7 (simulation, tests, tuning and app results).
+
 **November 1, 2026 — phase 6 mirrored desktop input, version 0.19 (code, model tests and short owned two-game runs).** Owner decisions: both games run the same apps from the same clicks (mirror input); your own clicks act instantly; the BIOS mirrors live; the host's software record and results win; tablets stay personal.
 
 - Clicks, drags, the scroll wheel and typing on a shared PC's desktop, BIOS and boot screens run on the other game too (command 11). Each player sees their own name at their pointer and "+ Host"/"+ Guest" where the other player's pointer is.
