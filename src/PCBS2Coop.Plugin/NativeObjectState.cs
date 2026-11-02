@@ -85,8 +85,12 @@ internal sealed class NativeObjectState : IWorldState
     private static WorkshopController Workshop => Object.FindObjectOfType<WorkshopController>() ?? throw new InvalidDataException("Workshop unavailable.");
     /// <summary>The inventory as rows. <paramref name="variants"/> false gives the rows as 0.21 wrote them (no variant
     /// marks), so its saves keep loading.</summary>
-    private static List<string> CatalogRows(bool variants = true)
+    private static List<string> CatalogRows(bool variants = true, bool custom = true)
     {
+        // A custom cable bought in the Cable app (phase 11) isn't stock either.
+        var customIds = new HashSet<string>(StringComparer.Ordinal);
+        if (custom && PartsDatabase.s_instance?.CustomCableDescs is { } descs)
+            foreach (var d in descs) if (!string.IsNullOrEmpty(d?.m_id)) customIds.Add(d.m_id);
         // A Free Build template is reusable stock, not a physical part. Identity is minted when a PC is created.
         var parts = CareerStatus.Get()?.GetInventory() ?? throw new InvalidDataException("Inventory unavailable.");
         var rows = new List<string>();
@@ -96,6 +100,7 @@ internal sealed class NativeObjectState : IWorldState
         {
             if (p == null) { rows.Add("null"); continue; }
             var variant = PartVariants.Of(p);
+            if (custom && (customIds.Contains(p.GetPartId()) || p.TryCast<CableSetPartInstance>() != null)) variant = variant == "" ? "custom" : variant + "; custom";
             rows.Add(p.GetIl2CppType().FullName + ":" + p.GetPartId() + (!variants || variant == "" ? "" : "/" + variant));
         }
         rows.Sort(StringComparer.Ordinal);
@@ -110,7 +115,9 @@ internal sealed class NativeObjectState : IWorldState
     private static string CatalogHash(List<string> rows) => CatalogV2 + RowsHash(rows.Where(Stock));
     /// <summary>The binding as saved: 0.21 stock-only, or the whole inventory as 0.20 and earlier wrote it.</summary>
     private static bool CatalogMatches(string saved, List<string> rows, List<string> plain) =>
-        saved != null && (saved.StartsWith(CatalogV2, StringComparison.Ordinal) ? saved == CatalogHash(rows) || saved == CatalogHash(plain) : saved == RowsHash(plain));
+        saved != null && (saved.StartsWith(CatalogV2, StringComparison.Ordinal)
+            ? saved == CatalogHash(rows) || saved == CatalogHash(plain) || saved == CatalogHash(CatalogRows(custom: false)) // 0.22 had no custom marks
+            : saved == RowsHash(plain));
     private static string RowsHash(IEnumerable<string> rows) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", rows))));
     /// <summary>The inventory rows at this game's last capture or load, to say what changed (diagnostics only).</summary>
     private static List<string> s_lastCatalogRows;
@@ -817,7 +824,7 @@ internal sealed class NativeObjectState : IWorldState
             }
             _carrierRecords = _loadingCarriers == null ? new() : new(_loadingCarriers);
             var loadedRows = CatalogRows();
-            if (!CatalogMatches(catalog, loadedRows, CatalogRows(variants: false)))
+            if (!CatalogMatches(catalog, loadedRows, CatalogRows(variants: false, custom: false)))
             {
                 Plugin.Logger.LogWarning($"[objects] the loaded Free Build inventory ({loadedRows.Count} entries) differs from the saved one; " +
                     (s_lastCatalogRows != null ? "since this game's last capture: " + Diff(s_lastCatalogRows, loadedRows) : "entries: " + string.Join(", ", loadedRows)) + ".");

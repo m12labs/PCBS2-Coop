@@ -118,7 +118,8 @@ internal sealed class NativeSoftwareSync : ISoftwareNative
             bios?.GetBootDrive()?.Pointer != drive.Pointer)
             throw new InvalidDataException("The accepted boot drive is not present here.");
         var software = NativeSoftwareCodec.Read(bytes); // Host-produced bytes only.
-        NativeProjection.Run(() => drive.m_software = software);
+        // Phase 11: keep the light objects the running lights hold, with the host's settings.
+        NativeProjection.Run(() => { NativeCustomization.KeepLights(drive.m_software, software); drive.m_software = software; });
         Plugin.Logger.LogInfo($"[software] PC {pc.Id} boot drive {path}: this game's software differed from the host's; adopted the host's record ({bytes.Length} bytes).");
     }
 

@@ -12,15 +12,22 @@ namespace PCBS2Coop;
 /// tables are used by one player at a time ("Someone is using the delidding table.") and only their result is shared:
 /// when a session ends, whatever it changed in the user's inventory (the delidded CPU, the water-cooled card with its
 /// pads and paste) is sent to the other game, which makes the same inventory change. Nobody sees the procedure; the
-/// other player's capsule shows a label instead. Case modding is refused in co-op until phase 11.
+/// other player's capsule shows a label instead. Phase 11 adds the case-modding table the same way: its result is the
+/// finished case design, which the other game puts in its design list and shows by reloading that PC on the table
+/// (NativeToolBenches.Designs.cs), and switching a table's tool (NativeToolBenches.Switch.cs).
 /// <para>The tool states open as the game opens them (<c>BenchToolSlot</c> and <c>DeskLogic</c> closures construct
 /// them). This class claims the table when its state appears and closes the state again if the claim is refused.</para>
 /// </summary>
-internal sealed class NativeToolBenches : IToolBenchNative
+internal sealed partial class NativeToolBenches : IToolBenchNative
 {
     private sealed class Session
     {
         public State State;
+        public BenchToolSlot Table;
+        /// <summary>Case modding: the PC on the table when the session started.</summary>
+        public NetObjectId Pc;
+        /// <summary>Case modding: the design's hash when the session started (null: always share it).</summary>
+        public string DesignBefore;
         public string Bench;
         public BenchTool Tool;
         public Dictionary<string, List<PartInstance>> Before;
@@ -51,7 +58,8 @@ internal sealed class NativeToolBenches : IToolBenchNative
     private void Notice(string text) => _coop.Notice(text.Replace(Handler.Name + ": ", ""));
 
     /// <summary>The label over the other player's capsule while they use a table, or null.</summary>
-    internal string LabelOf(ActorSlot actor) => Handler.Of(actor) is { } u ? (u.Tool == BenchTool.Delid ? "Delidding" : "Water cooling") : null;
+    internal string LabelOf(ActorSlot actor) => Handler.Of(actor) is { } u
+        ? u.Tool switch { BenchTool.Delid => "Delidding", BenchTool.WaterCooling => "Water cooling", _ => "Case modding" } : null;
 
     /// <summary>The bench key of a tool table (its own bench slot, or the table itself).</summary>
     internal static string Key(BenchToolSlot table)
@@ -76,6 +84,7 @@ internal sealed class NativeToolBenches : IToolBenchNative
     {
         if (state.TryCast<DeliddingState>() is { } delid) return (delid.BenchToolSlot, BenchTool.Delid);
         if (state.TryCast<WaterCoolingState>() is { } water) return (water.m_BenchToolSlot, BenchTool.WaterCooling);
+        if (state.TryCast<CaseModdingState>() is { } mod) return (mod.ToolSlot, BenchTool.CaseModding);
         return (null, default);
     }
 
@@ -85,20 +94,20 @@ internal sealed class NativeToolBenches : IToolBenchNative
     internal void Entered(State state)
     {
         if (state == null || Bypass) return;
-        if (state.TryCast<CaseModdingState>() != null)
-        {
-            Notice("Case modding isn't shared in co-op yet.");
-            StateExit.Leave(state);
-            return;
-        }
         var (table, tool) = Table(state);
-        if (table == null && state.TryCast<DeliddingState>() == null && state.TryCast<WaterCoolingState>() == null) return;
+        if (table == null && state.TryCast<DeliddingState>() == null && state.TryCast<WaterCoolingState>() == null && state.TryCast<CaseModdingState>() == null) return;
         if (_session != null && _session.State.Pointer == state.Pointer) return;
         var key = table == null ? null : Key(table);
         var why = key == null ? "That tool table isn't known." : !Ready ? "The shared world isn't ready on this game yet."
             : Handler.Busy(key, _world.Local) ?? (_session != null ? "Your last tool table session is still being shared." : null);
         if (why != null) { Notice(why); StateExit.Leave(state); return; }
-        _session = new Session { State = state, Bench = key, Tool = tool, Before = Inventory() };
+        _session = new Session
+        {
+            State = state, Table = table, Bench = key, Tool = tool,
+            Before = tool == BenchTool.CaseModding ? null : Inventory(),
+            DesignBefore = tool == BenchTool.CaseModding ? DesignHash(table) : null,
+            Pc = tool == BenchTool.CaseModding ? PcOn(table).Id : default,
+        };
         _submittingUse = true;
         try
         {
@@ -117,6 +126,7 @@ internal sealed class NativeToolBenches : IToolBenchNative
     private void OnRejected(OperationId op, RejectReason reason, string text)
     {
         if (op.Actor != _world.Local) return;
+        if (SwitchRejected(op, text)) return;
         var s = _session;
         if (s != null && (_submittingUse || s.Use == op))
         {
@@ -139,7 +149,8 @@ internal sealed class NativeToolBenches : IToolBenchNative
     internal void Snapshotted()
     {
         if (_session == null) return;
-        _session.Before = Inventory();
+        if (_session.Tool == BenchTool.CaseModding) _session.DesignBefore = null; // the guest gets this design as it is now
+        else _session.Before = Inventory();
         _announce = true;
     }
 
@@ -168,7 +179,7 @@ internal sealed class NativeToolBenches : IToolBenchNative
         }
         _session = null;
         byte[] result;
-        try { result = Result(s.Before, Inventory()); }
+        try { result = s.Tool == BenchTool.CaseModding ? DesignResult(s) : Result(s.Before, Inventory()); }
         catch (Exception e)
         {
             result = null;
@@ -182,7 +193,7 @@ internal sealed class NativeToolBenches : IToolBenchNative
             var data = result.AsSpan(i * ToolBenchWorld.MaxChunkBytes, Math.Min(ToolBenchWorld.MaxChunkBytes, result.Length - i * ToolBenchWorld.MaxChunkBytes)).ToArray();
             _world.Submit(CommandTypes.ToolBench, ToolBenchWorld.Chunk(actor.Epoch, s.Bench, i, total, data), out _);
         }
-        _world.Submit(CommandTypes.ToolBench, ToolBenchWorld.Leave(actor.Epoch, s.Bench, result), out _);
+        _world.Submit(CommandTypes.ToolBench, ToolBenchWorld.Leave(actor.Epoch, s.Bench, s.Tool, result), out _);
         Plugin.Logger.LogInfo($"[tools] {ToolBenchWorld.ToolName(s.Tool)} table {s.Bench}: session over; {(result == null ? "nothing changed" : $"result {result.Length} bytes")}.");
     }
 
@@ -198,7 +209,7 @@ internal sealed class NativeToolBenches : IToolBenchNative
 
     // ---------------- the inventory result ----------------
 
-    private static Dictionary<string, List<PartInstance>> Inventory()
+    internal static Dictionary<string, List<PartInstance>> Inventory()
     {
         var result = new Dictionary<string, List<PartInstance>>(StringComparer.Ordinal);
         var inventory = CareerStatus.Get()?.GetInventory() ?? throw new InvalidDataException("Inventory unavailable.");
@@ -215,6 +226,17 @@ internal sealed class NativeToolBenches : IToolBenchNative
     /// <summary>What changed between two inventories: the kinds of item that went (by key) and the items that came
     /// (whole), compressed; null when nothing changed.</summary>
     private static byte[] Result(Dictionary<string, List<PartInstance>> before, Dictionary<string, List<PartInstance>> after)
+    {
+        var w = InventoryChange(before, after);
+        if (w == null) return null;
+        using var output = new MemoryStream();
+        using (var zip = new DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal, true)) zip.Write(w.Data, 0, w.Length);
+        if (output.Length > ToolBenchWorld.MaxBytes) throw new InvalidDataException("the table result is too large to share");
+        return output.ToArray();
+    }
+
+    /// <summary>The inventory change, uncompressed, or null when nothing changed (also used by the Cable app's purchases).</summary>
+    internal static NetDataWriter InventoryChange(Dictionary<string, List<PartInstance>> before, Dictionary<string, List<PartInstance>> after)
     {
         var removed = new List<string>(); var added = new List<byte[]>();
         foreach (var (key, list) in before)
@@ -237,24 +259,36 @@ internal sealed class NativeToolBenches : IToolBenchNative
         var w = new NetDataWriter();
         w.Put(removed.Count); foreach (var k in removed) w.Put(k);
         w.Put(added.Count); foreach (var x in added) { w.Put(x.Length); w.Put(x); }
-        using var output = new MemoryStream();
-        using (var zip = new DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal, true)) zip.Write(w.Data, 0, w.Length);
-        if (output.Length > ToolBenchWorld.MaxBytes) throw new InvalidDataException("the table result is too large to share");
-        Plugin.Logger.LogInfo($"[tools] table result: out [{string.Join(", ", removed)}], in {added.Count} item(s).");
-        return output.ToArray();
+        Plugin.Logger.LogInfo($"[tools] inventory change: out [{string.Join(", ", removed)}], in {added.Count} item(s).");
+        return w;
     }
 
-    private static void Apply(byte[] compressed)
+    /// <summary>Decompresses a shared result, refusing one that expands beyond <paramref name="limit"/>.</summary>
+    internal static byte[] Inflate(byte[] compressed, long limit)
     {
         using var input = new MemoryStream(compressed);
         using var zip = new DeflateStream(input, CompressionMode.Decompress);
         using var raw = new MemoryStream(); var chunk = new byte[16384]; int read;
         while ((read = zip.Read(chunk, 0, chunk.Length)) != 0)
         {
-            if (raw.Length + read > 2 * MaxItems * MaxItemBytes) throw new InvalidDataException("The table result expands beyond limits.");
+            if (raw.Length + read > limit) throw new InvalidDataException("The shared result expands beyond limits.");
             raw.Write(chunk, 0, read);
         }
-        var r = new NetDataReader(raw.ToArray());
+        return raw.ToArray();
+    }
+
+    internal static byte[] Deflate(byte[] data, int length)
+    {
+        using var output = new MemoryStream();
+        using (var zip = new DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal, true)) zip.Write(data, 0, length);
+        return output.ToArray();
+    }
+
+    private static void Apply(byte[] compressed) => ApplyInventoryChange(new NetDataReader(Inflate(compressed, 2 * MaxItems * MaxItemBytes)));
+
+    /// <summary>Makes the same inventory change as another game (<see cref="InventoryChange"/>).</summary>
+    internal static void ApplyInventoryChange(NetDataReader r)
+    {
         var removed = new List<string>(); var added = new List<PartInstance>();
         var n = r.GetInt(); if (n is < 0 or > MaxItems) throw new InvalidDataException("Invalid table result.");
         for (var i = 0; i < n; i++) removed.Add(r.GetString(4096));
@@ -274,7 +308,7 @@ internal sealed class NativeToolBenches : IToolBenchNative
             NativeProjection.Run(() => status.RemoveItemFromInventory(match));
         }
         foreach (var part in added) NativeProjection.Run(() => status.AddItemToInventory(part, false, false, true, false));
-        Plugin.Logger.LogInfo($"[tools] the other player's table result is in this inventory: out [{string.Join(", ", removed)}], in [{string.Join(", ", added.Select(PartVariants.Key))}].");
+        Plugin.Logger.LogInfo($"[tools] the other player's change is in this inventory: out [{string.Join(", ", removed)}], in [{string.Join(", ", added.Select(PartVariants.Key))}].");
     }
 
     // ---------------- IToolBenchNative ----------------
@@ -284,8 +318,9 @@ internal sealed class NativeToolBenches : IToolBenchNative
         if (!ctx.FromLocalPlayer) Plugin.Logger.LogInfo($"[tools] the other player uses the {ToolBenchWorld.ToolName(use.Tool)} table {use.Bench}.");
     }
 
-    public void Left(in MutationContext ctx, BenchUse use, byte[] result)
+    public void Left(in MutationContext ctx, BenchUse use, byte[] result, int design)
     {
+        if (use.Tool == BenchTool.CaseModding) { DesignLeft(ctx, use, result, design); return; }
         if (ctx.FromLocalPlayer) return;
         Plugin.Logger.LogInfo($"[tools] the other player left the {ToolBenchWorld.ToolName(use.Tool)} table {use.Bench}{(result == null ? "" : " with a result")}.");
         if (result == null) return;
@@ -302,6 +337,16 @@ internal sealed class NativeToolBenches : IToolBenchNative
         {
             try { Current?.Destroyed(__instance); }
             catch (Exception e) { Plugin.Logger.LogError("[tools] delid trace failed: " + e); }
+        }
+    }
+
+    [HarmonyPatch(typeof(CaseModdingState), nameof(CaseModdingState.OnStateDestroy))]
+    internal static class CaseModDestroyTrace
+    {
+        private static void Postfix(CaseModdingState __instance)
+        {
+            try { Current?.Destroyed(__instance); }
+            catch (Exception e) { Plugin.Logger.LogError("[tools] case-modding trace failed: " + e); }
         }
     }
 

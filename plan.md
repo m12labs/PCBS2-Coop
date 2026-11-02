@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). Phase 6 is **Complete** (0.19, closed November 1, 2026 after the owner's two-game test). Phase 7 is **Implemented, not tested in game** (0.20, November 1, 2026): all of 7a–7d are coded with model tests and short owned runs; the owner's full two-game test is deferred to a later day. Phase 8 is **Implementing** (started November 1, 2026 at the owner's request; [audit](docs/audit/phase-8.md) and owner decisions done; 8b–8f in 0.21, run in game in owned two-game runs on November 2 with eight fixes; 8g's owner pass is next). Phase 9 is **Implemented, not tested in game** (0.22, November 2, 2026; [audit](docs/audit/phase-9.md)): thermal paste, the delidding and water-cooling tables (result only, one player per table) and refusals for cleaning and case modding. Phases 11–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). Phase 6 is **Complete** (0.19, closed November 1, 2026 after the owner's two-game test). Phase 7 is **Implemented, not tested in game** (0.20, November 1, 2026): all of 7a–7d are coded with model tests and short owned runs; the owner's full two-game test is deferred to a later day. Phase 8 is **Implementing** (started November 1, 2026 at the owner's request; [audit](docs/audit/phase-8.md) and owner decisions done; 8b–8f in 0.21, run in game in owned two-game runs on November 2 with eight fixes; 8g's owner pass is next). Phase 9 is **Implemented, not tested in game** (0.22, November 2, 2026; [audit](docs/audit/phase-9.md)): thermal paste, the delidding and water-cooling tables (result only, one player per table) and refusals for cleaning and case modding. Phase 11 is **Implemented, not tested in game** (0.23, November 2, 2026; [audit](docs/audit/phase-11.md)): the case-modding table (result only, host-given design numbers), table switching, Lighting settings with the host's effect clock, and Cable app purchases. Phases 12–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -674,7 +674,44 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** HW customization/cable/LED/fan factors; SW GIF/content/lighting/music-driven effects; PW animation timing.
 
-**Note (October 29, 2026):** the owner asked for LED strips (strips only) with phase 10. The strip tool (`LEDStripState`) has no creator in this build, and the owner confirmed it can't be opened in game. Strips in loaded PC records are preserved; there is nothing to share yet ([phase 10 audit](docs/audit/phase-10.md#led-strips-phase-11-finding)). The phase itself is not started.
+**Note (October 29, 2026):** the owner asked for LED strips (strips only) with phase 10. The strip tool (`LEDStripState`) has no creator in this build, and the owner confirmed it can't be opened in game. Strips in loaded PC records are preserved; there is nothing to share yet ([phase 10 audit](docs/audit/phase-10.md#led-strips-phase-11-finding)).
+
+**Status: Implemented, not tested in game** (0.23, November 2, 2026; started at the owner's request). Focused audit and owner decisions: [docs/audit/phase-11.md](docs/audit/phase-11.md). Owner decisions: the case-modding table shares its finished design (one player per table, prompt and label; live co-op painting may come later); Lighting changes are shared after a short pause, last change wins; effects follow the host's clock; Cable app purchases are shared; switching a table's tool is shared; DLC stickers and themes are allowed; code first, the owner tests in game. Main findings: case designs live in a world-level list keyed by a per-game ID (clashes possible); Lighting changes don't reach the other game properly (colour wheel not mirrored, the phase 6 software record swap doesn't re-light, and opening the app may take over the other player's view); custom cable kinds bought mid-session are unknown on the other game. Proposed tasks 11b–11j and seven owner questions are in the audit.
+
+#### 11a. Focused audit and owner decisions
+
+- **Status:** Complete (static decompile and mod source, no game run; owner answered all seven questions).
+
+#### 11b–11c. Case designs and the case-modding table
+
+- **Status:** Implemented (0.23), not tested in game.
+- **Outcome and audit IDs:** command 15 `CaseModding` tool and host-given design numbers (canonical leave); the other game replaces the design and reloads the PC on the table (HW-036–039, HW-061–064, HW-077; PW-008, PW-029).
+
+#### 11d–11e. Lighting
+
+- **Status:** Implemented (0.23), not tested in game.
+- **Outcome and audit IDs:** command 16 `Lights` (live lights, presets, peripherals), copied into the other game's light objects; phase 6's record adoption keeps the live light objects; a Lighting open for someone else doesn't take over the view (HW-042, HW-045, HW-050, SW-012).
+
+#### 11f. Cable app purchases
+
+- **Status:** Implemented (0.23), not tested in game.
+- **Outcome and audit IDs:** command 16 `Purchase` (new cable kinds and inventory items); the mirrored Buy click is skipped (HW-026, HW-027, SW-049).
+
+#### 11g. Effect clock
+
+- **Status:** Implemented (0.23), not tested in game: command 16 `Clock` from the host (HW-067, PW-070).
+
+#### 11h. Table switching
+
+- **Status:** Implemented (0.23), not tested in game: command 15 `Switch`, refused while the other player uses that table.
+
+#### 11i. Tests and version
+
+- **Status:** Done: **677/677**, Release 0/0, deployed (0.23 reads 0.22 saves).
+
+#### 11j. Two-game acceptance
+
+- **Status:** Not started: the owner's test (audit "Owner test (0.23)").
 
 ### 12. Workshop environment, remaining Free Build apps and content
 

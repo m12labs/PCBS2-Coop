@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.22**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.23**. Tick a line when it passes, and note the date if it fails.
 
 ## Workbench: building a PC ([phase 4](audit/phase-4.md), 4f)
 
@@ -65,9 +65,36 @@ Current build: **0.22**. Tick a line when it passes, and note the date if it fai
 - [ ] The other player gets "Someone is using the water-cooling table."
 - [ ] Esc halfway through: nothing shared
 
-## Case modding table ([phase 9](audit/phase-9.md))
+## Tool tables: switching ([phase 11](audit/phase-11.md))
 
-- [ ] Opening it shows "Case modding isn't shared in co-op yet" and closes again
+- [ ] Switch a table to delidding, water cooling, case modding and back to the PC from each side: the other game's table switches too
+- [ ] Switching a table the other player is using is refused with the prompt
+
+## Case modding table ([phase 11](audit/phase-11.md))
+
+- [ ] Paint a case, add stickers and a theme, close the table, host and guest each: the other game shows the same design
+- [ ] Undo, redo and clear, then close: the other game shows what was left
+- [ ] Customize two different new cases, one from each side: each keeps its own design on both games
+- [ ] The other player gets "Someone is using the case modding table." and sees "Case modding"
+- [ ] The PC on a table in use can't be picked up by the other player
+- [ ] A heavily painted case still shares
+- [ ] Save, Continue and a guest join after case modding: designs still there
+
+## Lighting ([phase 11](audit/phase-11.md))
+
+- [ ] Change colours (wheel and swatches), effects, speed and direction on a running PC, host and guest each: the other game's lights change without a restart
+- [ ] Save and load a preset from each side
+- [ ] Keyboard and mouse lighting from each side
+- [ ] Opening Lighting doesn't change the other player's view
+- [ ] Breathe or rainbow after a guest joins: in step on both games
+- [ ] Power off and on, then Continue: colours kept
+
+## Cable app ([phase 11](audit/phase-11.md))
+
+- [ ] Is the Cable app in Free Build (PC desktop or tablet)?
+- [ ] Buy a custom cable set: it is in both inventories
+- [ ] Plug one of its cables in from each side
+- [ ] Save and Continue after buying
 
 ## PC screens, BIOS and software ([phase 6](audit/phase-6.md), passed; quick check after updates)
 

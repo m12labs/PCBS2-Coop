@@ -86,11 +86,20 @@ internal static class GamePatches
             tools.PatchAll(typeof(NativeComponentEdits.VacuumRefusal));
             tools.PatchAll(typeof(NativeToolBenches.DelidDestroyTrace));
             tools.PatchAll(typeof(NativeToolBenches.WaterDestroyTrace));
+            tools.PatchAll(typeof(NativeToolBenches.CaseModDestroyTrace));
+            tools.PatchAll(typeof(NativeToolBenches.SwitchIntercept));
+            tools.PatchAll(typeof(NativeToolBenches.ClearIntercept));
+            var looks = new Harmony(Plugin.Guid + ".customization");
+            looks.PatchAll(typeof(NativeCustomization.LightingChangeHook));
+            looks.PatchAll(typeof(NativeCustomization.LightingOpenScope));
+            looks.PatchAll(typeof(NativeCustomization.LightingCameraGuard));
+            looks.PatchAll(typeof(NativeCustomization.LightingStateGuard));
+            looks.PatchAll(typeof(NativeCustomization.BuyHook));
             foreach (var method in Harmony.GetAllPatchedMethods())
                 if (FoldedWith(method) is { } other)
                     Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");
             Ready = true;
-            Plugin.Logger.LogInfo("Game hooks installed (save, save menus, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input, simulation, paste and tool tables).");
+            Plugin.Logger.LogInfo("Game hooks installed (save, save menus, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input, simulation, paste, tool tables, lighting and the Cable app).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
     }

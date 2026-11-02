@@ -1,5 +1,12 @@
 # PCBS2 Co-op synchronization progress
 
+**November 2, 2026 — phase 11 PC customization and lighting, version 0.23 (code and model tests only, not run in game).** [Phase 11 audit](audit/phase-11.md); the owner answered its seven questions the same day.
+- Case-modding table: one player at a time ("Someone is using the case modding table.", "Case modding" under the name). When the table closes, the other game shows the finished paint, stickers and theme. The host hands out each case's design number, so two cases never share a design.
+- Switching a table between delidding, water cooling and case modding is shared, and refused while the other player uses that table.
+- Lighting app: colours (wheel included), effects, presets and peripheral lights are shared after a short pause. The other game's lights change in place with no restart. Opening Lighting no longer takes over the other player's view. Animated effects follow the host's timing.
+- Cable app: a bought custom cable set appears in both inventories and its cables work on both games.
+- **677/677** checks; Release 0/0; deployed. 0.23 loads 0.22 co-op saves.
+
 **November 2, 2026 — phase 9 paste and tool tables, version 0.22 (code and model tests only, not run in game).** [Phase 9 audit](audit/phase-9.md); the owner answered its eight questions the same day.
 - Thermal paste: putting paste on or taking it off with the Q-tip on a shared PC asks the host first; the other player waits on that PC, sees "Applying thermal paste" under your name, and their game sets the paste the same way when you close the tool.
 - Delidding and water-cooling tables: one player at a time ("Someone is using the delidding table."), with "Delidding" or "Water cooling" under the user's name. Only the result is shared: the delidded CPU or water-cooled part goes into both inventories, and installing it on either game installs that same kind of item.
@@ -231,7 +238,7 @@ Detailed evidence: [PW-001–075](audit/player-workshop-and-presentation.md).
 | Capsule/visor and Host/Client label | | | ✅ | No animation rig or player collision. |
 | Look pitch, gait, remote activity/tool/target/pose | | ✅ | | Phase 3d shares actor work targets and resource claims. Head/body/tool animation, gait, pitch and visible activity poses remain later work. |
 | PC/package/post-it pickup/carry/drop/store/spawn/despawn | | ✅ | | Phase 3e: catalog case spawn/switch, in-world carried-case delete and confirmed storage delete are host-approved changes applied once on both peers (E3–E5). Phase 3f adds host-approved pickup/drop/swap/store/retrieve, matching peer placement, a remote package box, races, departure recovery and stale-load suppression (F2/F5/F7, 0.8); packages and physical notes are refused (3g, 0.10): a world containing one can't be hosted. |
-| Bench/tool/workstation assignment and independent activities | | ✅ | | Phase 3d verifies independent native work benches/cameras, shared-PC activity and part-claim conflicts. Remote activity stays outside native singleton fields. Live transfers/workstation associations are 3f/3g. Phase 9 (0.22): one player per delidding/water-cooling table (command 15), case modding refused until phase 11. |
+| Bench/tool/workstation assignment and independent activities | | ✅ | | Phase 3d verifies independent native work benches/cameras, shared-PC activity and part-claim conflicts. Remote activity stays outside native singleton fields. Live transfers/workstation associations are 3f/3g. Phase 9 (0.22): one player per delidding/water-cooling table (command 15). Phase 11 (0.23): the case-modding table the same way, and switching a table's tool is shared (refused while in use). |
 | Job notes, package visuals, status/sale placards and ghost meshes | ✅ | | | Must follow underlying PC/job/location. |
 | Doors, workshop travel/upgrade and room customization | ✅ | | | Furniture/material/prefab/collision/AR-preview-versus-commit. |
 | Company name plate and generated textures | ✅ | | | Text, position, theme and material appearance. |
@@ -254,8 +261,8 @@ Detailed evidence: [HW-001–078](audit/hardware-and-building.md).
 | Paste/Q-tip/dust/cleaning/delid/varnish/pads | | ✅ | | Phase 9 (0.22, not tested in game): thermal paste on/off is a host-ordered whole-PC edit set in place on the other game; the delidding and water-cooling tables (pads, GPU paste) share their finished inventory items, one player per table. Cleaning is refused until career co-op (dust only builds up when a career day passes). The paste picture itself is each game's default. |
 | Cable endpoints/connectors/custom colours/pins/routing | | | ✅ | Phase 5b (0.15): plugging in and unplugging, automatic splitters and custom-colour cables, replayed with the game's animation. Hand-routing has no caller in this build. Marked synced by the owner (October 30, 2026); their full test (5d) is pending. |
 | Water loops/pipes/fittings/coolant/fill/drain/pump/run/direction | | | ✅ | Phase 10b (0.16): pipes, coolant fill/drain, water blocks, pumps and reservoirs; the other game reloads the finished PC (owner decision). The water-cooling workbench is not shared. Marked synced by the owner (October 30, 2026); their full test is pending. |
-| Case themes/paint/material/stickers/brush strokes/transforms | ✅ | | | Saved primitives, asset keys, DLC and customization IDs. |
-| LEDs/RGB/strip nodes and fan curves/direction/flipping/spin/blur | ✅ | | | Config, simulation and visual phase differ. |
+| Case themes/paint/material/stickers/brush strokes/transforms | | ✅ | | Phase 11 (0.23, not tested in game): the case-modding table shares the finished design when it closes (one player per table); the host gives out design numbers; the other game reloads the PC on the table. Live co-op painting is not planned yet. |
+| LEDs/RGB/strip nodes and fan curves/direction/flipping/spin/blur | | ✅ | | Phase 11 (0.23, not tested in game): Lighting settings, presets and peripheral lights shared after each change, lights change in place. Fan flip with installs (4e); reverse spin is fixed per fan; blur follows fan speed. LED strips: the tool can't be opened in this build. |
 | Peripheral/desk/monitor/LCD assignment, plugs and power | | ✅ | | Phase 3g (0.10): workbench peripheral swaps (monitor, keyboard, mouse, mouse pad, headset) are host-approved and applied once on both games, verified in owned two-instance runs (G1–G7). Phase 5c (0.15): physical power (case and HUD buttons) is shared and restored after a load; each game runs its own boot screen. Desk/LCD assignment, screens and LED config remain (phases 6, 11). |
 | Condition/breakage/repair and powered/damage presentation | ✅ | | | Logical consequences versus visual damage evidence. |
 
@@ -273,9 +280,9 @@ Detailed evidence: [SW-001–053](audit/screens-software-and-simulation.md).
 | Windows/z-order/taskbar/minimize/maximize/cursor/focus/typing | | ✅ | | Phase 6 mirrors input; open apps reconcile, window positions don't. |
 | Wallpaper/images/GIF capture/trim/frame/encode/save | ✅ | | | Static pipeline evidenced; assets/runtime formats unverified. |
 | Cinebench/3DMark/OCCT progress/results/video/telemetry | | ✅ | | Runs start on both games from mirrored clicks (same load, same temperatures in run sim-1); the host's software record keeps results. A guest joining mid-test doesn't run it. |
-| Fan/lighting/airflow/thermal/power/noise apps and overlays | | ✅ | | Fan Control curves shared on Apply/presets (0.20, also on late join); lighting colours not yet (phase 11); airflow app is on the personal tablet. |
+| Fan/lighting/airflow/thermal/power/noise apps and overlays | | ✅ | | Fan Control curves shared on Apply/presets (0.20, also on late join); Lighting settings shared since 0.23 (phase 11); airflow app is on the personal tablet. |
 | Temperature/load/voltage/wattage/throttle/failure schedules | | ✅ | | Each game simulates from the same inputs; readings differ only by the game's sensor noise. Failures follow the host (0.20). |
-| RGB effect/flow direction/speed/phase/music/thermal inputs | ✅ | | | Settings and source signals versus derived frames. |
+| RGB effect/flow direction/speed/phase/music/thermal inputs | | ✅ | | Phase 11 (0.23, not tested in game): settings shared; the effect clock follows the host's. Music-reactive lights follow each game's music until music is shared; temperature lights follow each game's sensors. |
 | Tablet camera feeds and app lifecycle | ✅ | | | Target: personal tablet per player with remotely visible physical screen/activity; camera/input isolation remains necessary. |
 | Notes/music/minigames/tuning/catalogue/shop/decoration apps | ✅ | | | Per-app model/result side effects versus personal UI. |
 

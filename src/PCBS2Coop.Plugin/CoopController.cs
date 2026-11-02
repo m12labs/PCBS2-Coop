@@ -73,6 +73,7 @@ internal sealed partial class CoopController
     /// <summary>The host's PC failures and shared fan curves (phase 7, command 14).</summary>
     public NativeSimulation Simulation { get; private set; }
     public NativeToolBenches ToolBenches { get; private set; }
+    public NativeCustomization Customization { get; private set; }
     private string _notice;
     private float _noticeUntil;
     public string ActiveNotice => _notice != null && Time.realtimeSinceStartup < _noticeUntil ? _notice : null;
@@ -385,7 +386,7 @@ internal sealed partial class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Simulation?.Update(); ToolBenches?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Simulation?.Update(); ToolBenches?.Update(); Customization?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
         else if (Replays.Busy) Replays.Reset();
 
         UpdateRejoinPosition(inWorkshop);
@@ -760,6 +761,7 @@ internal sealed partial class CoopController
         Repair = new NativePcRepair(this, world);
         Simulation = new NativeSimulation(this, world);
         ToolBenches = new NativeToolBenches(this, world);
+        Customization = new NativeCustomization(this, world);
         world.Register(CommandTypes.DiagnosticMarker, Markers);
         world.RegisterState(Markers);
         world.RegisterState(Objects);
@@ -778,6 +780,7 @@ internal sealed partial class CoopController
         world.Register(CommandTypes.PcRepair, Repair.Handler);
         world.Register(CommandTypes.Simulation, Simulation.Handler);
         world.Register(CommandTypes.ToolBench, ToolBenches.Handler);
+        world.Register(CommandTypes.Customization, Customization.Handler);
         world.RegisterState(Software.Handler, optional: true);
         // Optional: saves from before 0.10 have no workstation state; the host binds it from its loaded world.
         world.RegisterState(Workstations, optional: true);
