@@ -37,6 +37,16 @@ internal sealed partial class CoopController
     private string _syncFile;
     private bool _syncSaving;
     private bool _syncGuestLeft;
+    /// <summary>The sync is a world switch from the pause menu (Load or Free Build Reset): what to load, or null.</summary>
+    private WorldSwitch _switch;
+    private sealed class WorldSwitch
+    {
+        public WorldSwitch(string saveName, string file, string stem, bool reset) { SaveName = saveName; File = file; Stem = stem; Reset = reset; }
+        public string SaveName { get; }
+        public string File { get; }
+        public string Stem { get; }
+        public bool Reset { get; }
+    }
     // Guest
     private bool _guestSync;
     private float _guestSyncDeadline, _guestSyncMenuAt = -1;
@@ -86,7 +96,7 @@ internal sealed partial class CoopController
 
     private void ResetSync()
     {
-        _sync = SyncStep.None; _syncMenuAt = -1; _syncRequestUntil = -1; _syncFile = null; _syncSaving = false; _syncGuestLeft = false;
+        _sync = SyncStep.None; _syncMenuAt = -1; _syncRequestUntil = -1; _syncFile = null; _syncSaving = false; _syncGuestLeft = false; _switch = null;
         _guestSync = false; _guestSyncMenuAt = -1; _faultAnnounced = false; _projectionFault = null;
     }
 
@@ -201,16 +211,19 @@ internal sealed partial class CoopController
                 if (now > _syncDeadline) { FailSync("the world didn't settle for saving"); return; }
                 if (!_readiness.Ready || Workstations?.Settled == false || _pairWrites.Count > 0 || _pendingFile != null || SaveLoadSystem.WaitingOnThread()) return;
                 if (!Objects.Assembly.PrepareReload()) return;
-                SaveForSync();
+                if (_switch != null) SaveForSwitch(); else SaveForSync();
                 return;
             case SyncStep.Pairing:
                 if (now > _syncDeadline) { FailSync("the save took too long"); return; }
                 if (_pairWrites.Count > 0 || SaveLoadSystem.WaitingOnThread()) return;
                 if (_saveError != null) { FailSync(_saveError); return; }
-                _syncFile = File.Exists(_syncFile + ".zip") ? _syncFile + ".zip" : _syncFile; // as the pair writer resolves it
-                if (!File.Exists(_syncFile + ".coop")) { FailSync("the co-op save wasn't paired"); return; }
+                if (_syncFile != null)
+                {
+                    _syncFile = File.Exists(_syncFile + ".zip") ? _syncFile + ".zip" : _syncFile; // as the pair writer resolves it
+                    if (!File.Exists(_syncFile + ".coop")) { FailSync("the co-op save wasn't paired"); return; }
+                }
                 _sync = SyncStep.ToMenu; _syncMenuAt = -1; _syncDeadline = now + SyncMenuTimeout;
-                AddChat("Sync: saved. Reloading the world.");
+                AddChat(_switch == null ? "Sync: saved. Reloading the world." : _switch.Reset ? "Resetting the world to the default build." : $"Loading \"{CoopSaves.DisplayName(_switch.File)}\".");
                 var loader = Object.FindObjectOfType<NewLoadingScreen>();
                 if (loader == null) { FailSync("no loading screen was found"); return; }
                 loader.LoadScene(CoopRunner.MenuScene, false);
@@ -229,8 +242,10 @@ internal sealed partial class CoopController
                 {
                     _sync = SyncStep.None;
                     _faultAnnounced = false;
-                    AddChat(Session.IsJoined ? "Sync: the world is reloaded. Sending it to Client." : "Sync: the world is reloaded.");
-                    Plugin.Logger.LogInfo($"[sync] host reloaded at generation {Session.World.Generation}.");
+                    var what = _switch == null ? "Sync: the world is reloaded." : _switch.Reset ? "The world is reset." : "The world is loaded.";
+                    AddChat(Session.IsJoined ? what + " Sending it to Client." : what);
+                    Plugin.Logger.LogInfo($"[sync] host reloaded at generation {Session.World.Generation} ({_hostWorldKind}).");
+                    _switch = null;
                 }
                 else if (now > _syncDeadline) LeaveToMenu($"The sync's reload took too long (still waiting: {_readiness.Waiting}).", false);
                 return;
@@ -258,10 +273,80 @@ internal sealed partial class CoopController
         Plugin.Logger.LogInfo($"[sync] saving '{path}'.");
     }
 
+    /// <summary>
+    /// Host, from the pause menu (owner decision, phase 8): load another co-op save, or reset the world to the default
+    /// build (<paramref name="saveName"/> null), without ending the session. It runs like /sync: the current world is
+    /// saved first if anything changed, the guest leaves to its menu, the host loads the chosen save and starts a new
+    /// generation, and the guest is admitted from a fresh snapshot. Returns why it can't start, or null.
+    /// </summary>
+    internal string StartWorldSwitch(string saveName)
+    {
+        if (Session.Role != Role.Host || CoopSaves.Current != CoopSaves.Mode.Host) return "you aren't hosting a co-op world";
+        if (_sync != SyncStep.None) return "a sync is already running";
+        if (!_hostWorldStarted || !_readiness.Ready || CoopRunner.Instance?.Scene != CoopRunner.WorkshopScene) return "the world is still loading";
+        if (_pendingFile != null || (Session.IsJoined && Session.GuestState is GuestState.Loading or GuestState.Leaving)) return "Client is still loading the world";
+        WorldSwitch target;
+        if (saveName == null)
+        {
+            var name = CoopSaves.FindSaveName(f => f.StartsWith("defaultFreebuild.binary", StringComparison.OrdinalIgnoreCase));
+            if (name == null) return "the game's default build isn't in the co-op folder";
+            target = new WorldSwitch(name, name, CoopSaves.WorldStem, true);
+        }
+        else
+        {
+            string file = null;
+            foreach (var info in SaveLoadSystem.GetSaveGamesWindows())
+                if (info.m_name == saveName) { file = info.m_info?.Name; break; }
+            if (file == null) return "that save isn't in the co-op folder";
+            var path = CoopSaves.NativeFile(CoopSaves.CoopDir, file);
+            if (CoopSaveBackups.Restore(path, CoopSaves.BackupDir, out var unreadable))
+            {
+                Plugin.Logger.LogWarning($"[saves] '{file}' didn't load ({unreadable}); its backup was put back and loads instead.");
+                NoteRestored(new[] { CoopSaves.DisplayName(file) });
+            }
+            if (!CoopSaveBackups.Readable(path, out var problem)) return "that save can't be loaded in co-op (" + problem.TrimEnd('.') + ")";
+            if (!ResolveStart(HostStart.Load(saveName), out var stem, out _, out var error)) return error;
+            target = new WorldSwitch(saveName, file, stem, false);
+        }
+        _syncRequestUntil = -1;
+        _switch = target;
+        _syncGuestLeft = Session.BeginResync(target.Reset ? "the host is resetting the world" : "the host is loading another world");
+        _copiesToSend.Clear();
+        _sync = SyncStep.Saving;
+        _syncDeadline = Time.realtimeSinceStartup + SyncSaveTimeout;
+        AddChat(target.Reset ? "Resetting the world: saving it first, then both games load the default build."
+            : $"Loading \"{CoopSaves.DisplayName(target.File)}\": saving this world first, then both games load it.");
+        Plugin.Logger.LogInfo($"[sync] world switch to '{target.SaveName}' (reset {target.Reset}); guest told to leave: {_syncGuestLeft}.");
+        return null;
+    }
+
+    /// <summary>A world switch saves the world being left as an ordinary save (Exit does the same), unless nothing
+    /// changed since the last save. A refused save doesn't stop the switch.</summary>
+    private void SaveForSwitch()
+    {
+        _syncFile = null; _saveError = null;
+        if (_savedRevision != Session.World.Revision)
+        {
+            var saves = Object.FindObjectOfType<SaveLoadSystem>();
+            string path = null;
+            try { path = saves?.CreateSaveGame(SaveLoadSystem.s_autoFreeBuildSaveName, false, ""); }
+            catch (Exception e) { _saveError ??= e.Message; }
+            if (string.IsNullOrEmpty(path) || _saveError != null)
+            {
+                AddChat($"Couldn't save this world first ({(_saveError ?? OutOfSync ?? "the save was refused").TrimEnd('.')}); continuing without saving.");
+                _saveError = null;
+            }
+            else _syncFile = path;
+        }
+        _sync = SyncStep.Pairing;
+        _syncDeadline = Time.realtimeSinceStartup + SyncPairTimeout;
+    }
+
     /// <summary>On the main menu after the sync save: continue that exact paired save, as Host Continue does, without
-    /// ending the session. The next generation start restores its facts.</summary>
+    /// ending the session. The next generation start restores its facts. A world switch loads its target instead.</summary>
     private void ReloadForSync()
     {
+        if (_switch is { } target) { ReloadForSwitch(target); return; }
         var fileName = Path.GetFileName(_syncFile);
         var bare = fileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? fileName[..^4] : fileName;
         var name = CoopSaves.FindSaveName(f => f.Equals(fileName, StringComparison.OrdinalIgnoreCase) || f.Equals(bare, StringComparison.OrdinalIgnoreCase))
@@ -276,11 +361,26 @@ internal sealed partial class CoopController
         LoadNamedFreeBuild(name);
     }
 
+    private void ReloadForSwitch(WorldSwitch target)
+    {
+        var name = CoopSaves.FindSaveName(f => f.Equals(target.File, StringComparison.OrdinalIgnoreCase)) ?? target.SaveName;
+        _loadingPair = target.Reset ? null : CoopSavePair.ReadSidecar(CoopSaves.NativeFile(CoopSaves.CoopDir, target.File));
+        CoopSaves.SwitchWorld(target.Stem);
+        _hostWorldStarted = false;
+        _hostWorldKind = target.Reset ? "co-op world reset to the default build" : "co-op world loaded from the pause menu";
+        _readiness.Reset();
+        Objects.Reset(); Activity?.Reset(); Workstations?.Reset(); ResetAutosave(); DestroyView();
+        _guestPoses.Clear(); // another world: where the guest stood no longer applies
+        Plugin.Logger.LogInfo($"[sync] host loads '{name}' from '{CoopSaves.CoopDir}' ({_hostWorldKind}).");
+        LoadNamedFreeBuild(name);
+    }
+
     private void FailSync(string why)
     {
         Plugin.Logger.LogWarning("[sync] failed: " + why);
         _sync = SyncStep.None;
-        AddChat($"Sync failed: {why}." + (_syncGuestLeft ? " Client reloads your current world instead." : ""));
+        AddChat($"{(_switch == null ? "Sync" : "Loading the world")} failed: {why}." + (_syncGuestLeft ? " Client reloads your current world instead." : ""));
+        _switch = null;
         Session.SendChat(ChatKind.System, $"The host's sync failed ({why}). Reloading the host's current world instead.");
         _syncGuestLeft = false;
     }
@@ -292,7 +392,9 @@ internal sealed partial class CoopController
         _guestSync = true; _guestSyncMenuAt = -1;
         _guestSyncDeadline = Time.realtimeSinceStartup + GuestSyncTimeout;
         _guestLoading = false;
-        AddChat($"Host is syncing both games ({by}): returning to the menu, then loading the host's world.");
+        AddChat(by.StartsWith("the host is", StringComparison.Ordinal)
+            ? $"The host is {(by.Contains("resetting") ? "resetting the world" : "loading another world")}: returning to the menu, then loading it."
+            : $"Host is syncing both games ({by}): returning to the menu, then loading the host's world.");
         Objects.Reset(); ResetAutosave(); DestroyView();
         if (CoopRunner.Instance?.Scene == CoopRunner.MenuScene) return;
         var loader = Object.FindObjectOfType<NewLoadingScreen>();

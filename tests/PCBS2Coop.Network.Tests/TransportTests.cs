@@ -7,7 +7,7 @@ internal static class TransportTests
     public static void Run(Checker t)
     {
         t.Section("Framed transport: bounded reliable delivery and native backpressure");
-        var source = new byte[Protocol.MaxModStateBytes + 64]; new Random(91).NextBytes(source);
+        var source = new byte[Protocol.MaxPackedStateBytes + 64]; new Random(91).NextBytes(source);
         var original = (byte[])source.Clone();
         var outgoing = new PacketStream(); var incoming = new PacketStream();
         t.Check(outgoing.Enqueue(source), "oversized legal snapshot mark is queued");
@@ -149,8 +149,11 @@ internal static class TransportTests
     {
         public string Name => "large";
         public void Reset() { }
-        public void Write(NetDataWriter w) => w.Put(new byte[Protocol.MaxModStateBytes - 256]);
-        public void Read(NetDataReader r) { if (r.AvailableBytes != Protocol.MaxModStateBytes - 256) throw new FormatException(); r.GetRemainingBytes(); }
+        // Random bytes don't compress: the mark carries close to the largest packed state.
+        private static readonly byte[] Data = Noise();
+        private static byte[] Noise() { var b = new byte[Protocol.MaxPackedStateBytes - 8192]; new Random(5).NextBytes(b); return b; }
+        public void Write(NetDataWriter w) => w.Put(Data);
+        public void Read(NetDataReader r) { if (!r.GetRemainingBytes().SequenceEqual(Data)) throw new FormatException(); }
     }
 
     private sealed class WaitingTransport : ISessionTransport

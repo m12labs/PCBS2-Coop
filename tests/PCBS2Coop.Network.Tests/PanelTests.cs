@@ -165,6 +165,11 @@ internal static class PanelTests
         t.Check(allocator.Next == ho.NextId && repaired.Resources.Select(r => r.Id).OrderBy(x => x.Value).SequenceEqual(pc.Resources.Select(r => r.Id).OrderBy(x => x.Value)) &&
             AssemblyResources.Dormant(repaired).SetEquals(dormant) && repaired.Resources.Single(r => r.Id == Id(10)).IntegralHome == "case/LeftLid",
             "a /sync repair of a PC with a panel off keeps the panel's home and dormant IDs");
+        t.Check(repaired.Resources.Single(r => r.Id == Id(10)).Coupled.SequenceEqual(new[] { Id(11), Id(12) }),
+            "a capture with a panel off keeps its slot's links to the panel's screws, so a refit matches again");
+        var twice = AssemblyManifest.Repair(repaired, templates, new NetObjectIdAllocator { Next = ho.NextId });
+        t.Check(twice.Resources.Single(r => r.Id == Id(10)).Version == repaired.Resources.Single(r => r.Id == Id(10)).Version,
+            "a second capture with the panel still off changes nothing on its slot");
 
         void Bad(Func<AssemblyResource, AssemblyResource> edit, ulong id, string message)
         {

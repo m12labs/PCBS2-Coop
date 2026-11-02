@@ -14,6 +14,10 @@ internal static class GamePatches
             game.PatchAll(typeof(SaveHook));
             game.PatchAll(typeof(CoopController.GameAutosaveGuard));
             game.PatchAll(typeof(CoopController.ExitSave));
+            var menus = new Harmony(Plugin.Guid + ".save-menus");
+            menus.PatchAll(typeof(CoopController.PauseLoad));
+            menus.PatchAll(typeof(CoopController.FreeBuildReset));
+            menus.PatchAll(typeof(CoopController.GuestNewSave));
             new Harmony(Plugin.Guid + ".objects").PatchAll(typeof(NativeLoadHook));
             new Harmony(Plugin.Guid + ".object-save").PatchAll(typeof(ComputerSaveHook));
             new Harmony(Plugin.Guid + ".object-loading").PatchAll(typeof(ComputerLoadingHook));
@@ -82,7 +86,7 @@ internal static class GamePatches
                 if (FoldedWith(method) is { } other)
                     Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");
             Ready = true;
-            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input, simulation).");
+            Plugin.Logger.LogInfo("Game hooks installed (save, save menus, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input, simulation).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
     }
@@ -125,9 +129,13 @@ internal static class GamePatches
     {
         private static bool Prefix(ref string filename, ref string OverrideName)
         {
-            try { CoopSaves.RedirectAutosave(ref filename, ref OverrideName); }
+            try { CoopSaves.RedirectAutosave(ref filename, ref OverrideName); CoopSaves.RedirectShownName(ref filename, ref OverrideName); }
             catch (Exception e) { Plugin.Logger.LogError(e); }
-            return CoopController.Instance?.BeforeHostSave() ?? true;
+            // Only the host saves the co-op world (owner decision, phase 8); a guest's file would be thrown away anyway.
+            if (CoopSaves.Current == CoopSaves.Mode.Guest) { Plugin.Logger.LogInfo($"[saves] skipped a guest save ('{filename}')."); return false; }
+            var allow = CoopController.Instance?.BeforeHostSave() ?? true;
+            if (allow && !CoopController.TakingSnapshot) CoopSaves.KeepBackup(filename);
+            return allow;
         }
         private static void Postfix(string __result)
         {

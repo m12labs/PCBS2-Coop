@@ -37,6 +37,9 @@ public enum MessageType : byte
     Chat = 12,
     /// <summary>Sync control (<see cref="SyncAction"/>): the guest asks, the host declines or starts one. Reliable ordered.</summary>
     Sync = 13,
+    /// <summary>Host → guest after admission: where the guest stood when it last left this world (<see cref="PlayerState"/>
+    /// layout without the workshop flag). Reliable ordered.</summary>
+    Spawn = 14,
 }
 
 /// <summary>Who wrote a chat line.</summary>
@@ -203,8 +206,11 @@ public static class Protocol
     public const int MaxSnapshotBytes = 64 * 1024 * 1024;
     /// <summary>Size of one snapshot chunk.</summary>
     public const int SnapshotChunkBytes = 32 * 1024;
-    /// <summary>Largest mod-side world state carried with a load snapshot.</summary>
-    public const int MaxModStateBytes = 1024 * 1024;
+    /// <summary>Largest mod-side world state carried with a load snapshot, once expanded. It is compressed on the
+    /// wire and on disk (<see cref="PackState"/>); a fully built PC is about 29 KB expanded and 4 KB packed.</summary>
+    public const int MaxModStateBytes = 16 * 1024 * 1024;
+    /// <summary>Largest compressed world state (snapshot mark, <c>.coop</c> sidecar).</summary>
+    public const int MaxPackedStateBytes = 1024 * 1024;
     public const int MaxShortString = 256;
     public const int MaxDlcEntries = 32;
     public const int MaxWarnings = 16;
@@ -249,6 +255,39 @@ public static class Protocol
         var data = new byte[declaredLength];
         r.GetBytes(data, declaredLength);
         return data;
+    }
+
+    /// <summary>Compress a world state for the wire or disk.</summary>
+    public static byte[] PackState(byte[] state)
+    {
+        if (state.Length > MaxModStateBytes) throw new InvalidDataException($"Mod world state is {state.Length} bytes; the limit is {MaxModStateBytes}.");
+        using var output = new MemoryStream();
+        using (var z = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal, true)) z.Write(state, 0, state.Length);
+        var packed = output.ToArray();
+        if (packed.Length > MaxPackedStateBytes) throw new InvalidDataException($"Mod world state is {packed.Length} bytes compressed; the limit is {MaxPackedStateBytes}.");
+        return packed;
+    }
+
+    /// <summary>Expand a state written by <see cref="PackState"/>, refusing more than <see cref="MaxModStateBytes"/>.</summary>
+    public static byte[] UnpackState(byte[] packed)
+    {
+        if (packed.Length > MaxPackedStateBytes) throw new InvalidDataException("Compressed world state exceeds limits.");
+        try
+        {
+            using var input = new MemoryStream(packed);
+            using var z = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress);
+            using var output = new MemoryStream();
+            var buffer = new byte[81920];
+            int read;
+            while ((read = z.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                if (output.Length + read > MaxModStateBytes) throw new InvalidDataException("World state expansion exceeds limits.");
+                output.Write(buffer, 0, read);
+            }
+            return output.ToArray();
+        }
+        catch (InvalidDataException) { throw; }
+        catch (Exception e) when (e is IOException or NotSupportedException) { throw new InvalidDataException("Damaged compressed world state.", e); }
     }
 
     /// <summary>Exceptions LiteNetLib and our readers throw for short or corrupt messages.</summary>

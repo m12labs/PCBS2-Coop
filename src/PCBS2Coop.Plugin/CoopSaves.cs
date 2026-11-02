@@ -12,6 +12,8 @@ namespace PCBS2Coop;
 /// <item>Guest: plays from <c>Saves/Coop/GuestSession</c> (emptied at each join) and keeps its copy of the host's
 /// world in <c>Saves/Coop/Joined</c> (latest file only).</item>
 /// <item>Host snapshots for a joining guest are written to <c>Saves/Coop/Transfer</c>.</item>
+/// <item>Before the host overwrites a save, its last good pair is kept in <c>Saves/Coop/Backup</c> (owner decision,
+/// phase 8); a save that no longer reads (the game closed while saving) is replaced by it on the main menu.</item>
 /// <item>A world saved before named worlds keeps the game's Free Build file name (<see cref="IsEarlierWorld"/>).
 /// Save zips must never be renamed: the file inside keeps the original name and the game unpacks it under that name.</item>
 /// </list>
@@ -36,12 +38,16 @@ internal static class CoopSaves
     public static string GuestSessionDir => CoopDir + "/GuestSession";
     public static string JoinedDir => CoopDir + "/Joined";
     public static string TransferDir => CoopDir + "/Transfer";
+    public static string BackupDir => CoopDir + "/Backup";
 
     private const string DefaultBuild = "defaultFreebuild.binary";
 
     /// <summary>Save files of co-op worlds that have their <c>.coop</c> pair, newest first.</summary>
     public static List<FileInfo> WorldSaves() =>
         SaveFiles().Where(f => File.Exists(f.FullName + CoopSavePair.Extension)).OrderByDescending(f => f.LastWriteTimeUtc).ToList();
+
+    /// <summary>The newest world save that loads with its pair (Continue), or null.</summary>
+    public static FileInfo NewestReadable() => WorldSaves().FirstOrDefault(f => CoopSaveBackups.Readable(f.FullName, out _));
 
     /// <summary>A co-op world exists (Continue is possible).</summary>
     public static bool HasCoopWorld() => WorldSaves().Count > 0;
@@ -101,6 +107,67 @@ internal static class CoopSaves
         Plugin.Logger.LogInfo($"[saves] autosave goes to '{fileName}'.");
     }
 
+    /// <summary>Host: the Save screen's overwrite names a save by the name it shows ("Co-op World 1" for
+    /// <c>Co-op_World_1.binary</c>, set in its header). Save into that file instead of a new file named after it, so
+    /// overwriting a world doesn't split it.</summary>
+    public static void RedirectShownName(ref string fileName, ref string overrideName)
+    {
+        if (Current != Mode.Host || WorldStem == null || CoopController.TakingSnapshot || string.IsNullOrEmpty(fileName)) return;
+        static string Bare(string n)
+        {
+            if (n.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) n = n[..^4];
+            return n.EndsWith(".binary", StringComparison.OrdinalIgnoreCase) ? n[..^7] : n;
+        }
+        var name = Path.GetFileName(fileName);
+        var bare = Bare(name);
+        var files = SaveFiles().ToList();
+        if (files.Any(f => string.Equals(Bare(f.Name), bare, StringComparison.OrdinalIgnoreCase))) return; // a file of that name exists
+        var shown = files.Where(f => string.Equals(DisplayName(f.Name), bare, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (shown.Count != 1) return;
+        var target = Bare(shown[0].Name) + (name.Length > bare.Length ? name[bare.Length..] : "");
+        fileName = fileName[..^name.Length] + target;
+        overrideName = DisplayName(shown[0].Name);
+        Plugin.Logger.LogInfo($"[saves] the save named '{bare}' goes to its file '{target}'.");
+    }
+
+    /// <summary>Host, just before the game overwrites <paramref name="fileName"/> in the co-op folder: keep its current pair
+    /// as the backup if it reads.</summary>
+    public static void KeepBackup(string fileName)
+    {
+        if (Current != Mode.Host || string.IsNullOrEmpty(fileName) || SaveLoadSystem.s_saveDir != CoopDir) return;
+        try
+        {
+            var path = NativeFile(CoopDir, Path.GetFileName(fileName));
+            if (CoopSaveBackups.Keep(path, BackupDir)) Plugin.Logger.LogInfo($"[saves] kept the previous '{Path.GetFileName(path)}' as its backup.");
+        }
+        catch (Exception e) { Plugin.Logger.LogWarning("[saves] could not keep a backup before saving: " + e.Message); }
+    }
+
+    /// <summary>A save that no longer loads with its pair gets its backup back. Returns the restored saves' names.</summary>
+    public static List<string> RestoreUnreadable()
+    {
+        var restored = new List<string>();
+        foreach (var file in SaveFiles().ToList())
+        {
+            try
+            {
+                if (!CoopSaveBackups.Restore(file.FullName, BackupDir, out var problem)) continue;
+                restored.Add(DisplayName(file.Name));
+                Plugin.Logger.LogWarning($"[saves] '{file.Name}' didn't load ({problem}); its backup was put back (the unreadable copy is in '{BackupDir}').");
+            }
+            catch (Exception e) { Plugin.Logger.LogWarning($"[saves] could not restore the backup of '{file.Name}': {e.Message}"); }
+        }
+        return restored;
+    }
+
+    /// <summary>Host: the world being played changed without leaving the session (pause-menu Load).</summary>
+    public static void SwitchWorld(string stem)
+    {
+        if (Current != Mode.Host) return;
+        WorldStem = stem;
+        Plugin.Logger.LogInfo($"[saves] now hosting world '{CoopWorldNames.WorldName(stem)}' (autosave '{CoopWorldNames.AutoFileOf(stem)}').");
+    }
+
     /// <summary>A save deleted outside the co-op menu leaves its <c>.coop</c> pair behind; remove it.</summary>
     public static void DropOrphanPairs()
     {
@@ -137,7 +204,9 @@ internal static class CoopSaves
     {
         if (File.Exists(file.FullName)) File.Delete(file.FullName);
         if (File.Exists(file.FullName + CoopSavePair.Extension)) File.Delete(file.FullName + CoopSavePair.Extension);
-        Plugin.Logger.LogInfo($"[saves] deleted '{file.Name}' and its pair.");
+        try { CoopSaveBackups.Delete(file.Name, BackupDir); }
+        catch (Exception e) { Plugin.Logger.LogWarning("[saves] could not delete the save's backup: " + e.Message); }
+        Plugin.Logger.LogInfo($"[saves] deleted '{file.Name}', its pair and its backup.");
     }
 
     /// <summary>Guest: write a received load snapshot into the session folder. Returns the full path.</summary>

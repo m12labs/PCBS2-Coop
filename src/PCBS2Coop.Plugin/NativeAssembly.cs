@@ -248,6 +248,8 @@ internal sealed class NativeAssembly : IAssemblyNative
         var ids = actual.Select(r => byKey.TryGetValue((r.Parent, r.Binding), out var known) ? known.Id : default).ToArray();
         IEnumerable<NetObjectId> Live(IEnumerable<NetObjectId> list) => list.Where(id => !dormant.Contains(id));
         bool Same(IEnumerable<NetObjectId> expected, IReadOnlyList<int> native) => Live(expected).SequenceEqual(native.Select(j => ids[j]).OrderBy(x => x.Value));
+        // A slot saved before 0.21 can still list the dynamic pins Scan now leaves out; a fresh scan lists fewer.
+        bool Within(IEnumerable<NetObjectId> expected, IReadOnlyList<int> native) => native.Select(j => ids[j]).All(Live(expected).Contains);
         string List(IEnumerable<NetObjectId> list) => string.Join(",", list.Select(x => x.Value));
         string Natives(IReadOnlyList<int> rows) => string.Join(",", rows.Select(j => ids[j].IsNone ? "?" + actual[j].Binding : ids[j].Value.ToString()));
         for (var i = 0; i < actual.Count; i++)
@@ -261,8 +263,15 @@ internal sealed class NativeAssembly : IAssemblyNative
             if (expected.Open != a.Open) diff.Add($"open {expected.Open}/{a.Open}");
             if (expected.Rotation != a.Rotation || expected.Offset != a.Offset) diff.Add($"rotation {expected.Rotation}:{expected.Offset}/{a.Rotation}:{a.Offset}");
             if (expected.IntegralPart != a.IntegralPart) diff.Add($"integral '{expected.IntegralPart}'/'{a.IntegralPart}'");
-            if (!Same(expected.Dependencies, a.Guards)) diff.Add($"guards [{List(Live(expected.Dependencies))}]/[{Natives(a.Guards)}]");
-            if (!Same(expected.Coupled, a.Coupled)) diff.Add($"coupled [{List(Live(expected.Coupled))}]/[{Natives(a.Coupled)}]");
+            var slotLinks = a.Kind == AssemblyResourceKind.Slot;
+            // A slot's blockers (Slot.blockedBy) depend on how this game got there: the game's own install or panel
+            // gesture adds blockers to neighbouring slots that the other game's replay and a fresh load don't (game run
+            // p8l, the lower GPU slot). They only size edit claims, and the host's game checks every edit natively, so
+            // they are not compared for slots (owner decision, November 2, 2026). Pins and screws are still compared.
+            if (!slotLinks && !Same(expected.Dependencies, a.Guards))
+                diff.Add($"guards [{List(Live(expected.Dependencies))}]/[{Natives(a.Guards)}]");
+            if (!(Same(expected.Coupled, a.Coupled) || slotLinks && Within(expected.Coupled, a.Coupled)))
+                diff.Add($"coupled [{List(Live(expected.Coupled))}]/[{Natives(a.Coupled)}]");
             if (!Same(expected.LoadCloses, a.LoadCloses)) diff.Add("load-closed latches");
             // A fitted panel's home and carried resources are prefab facts; a removed one is remembered by the model only.
             if (a.IntegralPart != "" && (expected.IntegralHome != a.IntegralHome || !expected.Carries.SequenceEqual(a.Carries.Select(j => ids[j]).OrderBy(x => x.Value))))
@@ -451,13 +460,15 @@ internal sealed class NativeAssembly : IAssemblyNative
                 // They are not shared structure; live blockers are checked by the host's game when an edit is validated.
                 if (slot.closePins != null) coupled.AddRange(slot.closePins.Select(c => (Component)c));
                 if (slot.mustBeOpenPins != null) guards.AddRange(slot.mustBeOpenPins.Select(c => (Component)c));
-                if (slot.DynamicClosePins != null) foreach (var c in slot.DynamicClosePins) coupled.Add(c);
-                if (slot.DynamicMustBeOpenPins != null) foreach (var c in slot.DynamicMustBeOpenPins) guards.Add(c);
+                var component = slot.GetComponent();
+                // DynamicClosePins / DynamicMustBeOpenPins are live caches too: an install fills them (Slot.AddToSlot*)
+                // and a removal leaves them filled, while a freshly loaded slot only has what its parts set again (game
+                // runs p8h/p8j: a removed GPU made the world unloadable, a refitted panel made it go out of sync). They
+                // depend on what happened on that game, so they are not shared structure either (0.21).
                 if (slot.fillSlots != null) coupled.AddRange(slot.fillSlots.Select(c => (Component)c));
                 // 4b N3: the native load closes these clips while the slot holds a stick.
                 foreach (var ram in ramGroups[slot.Pointer])
                     if (ram.pins != null) foreach (var clip in ram.pins) { coupled.Add(clip); loadCloses.Add(clip); }
-                var component = slot.GetComponent();
                 if (component != null && !Preview(component))
                     foreach (var attached in component.GetScrews()) coupled.Add(attached);
             }

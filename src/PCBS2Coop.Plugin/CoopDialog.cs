@@ -43,6 +43,8 @@ internal sealed class CoopDialog
     private RectTransform _anchor;
     private Mode _mode;
     private bool _hostWaiting, _steam;
+    /// <summary>The message offers Rejoin (the guest left the host's world unexpectedly).</summary>
+    private bool _rejoin;
     private int _worldCount;
     private string _pendingDelete;
     private float _shownAt;
@@ -53,6 +55,8 @@ internal sealed class CoopDialog
     /// <summary>Waiting for a lobby or a connection: the list behind is not clickable.</summary>
     public bool Busy => IsOpen && _mode == Mode.Waiting;
     public GameObject ApplyButton => _apply;
+    /// <summary>The message or status line shown (probe reports).</summary>
+    internal string StatusText => _status != null ? _status.text : null;
     /// <summary>A world was deleted (the menu updates Continue / Load Game).</summary>
     public Action WorldsChanged { get; set; }
 
@@ -156,6 +160,7 @@ internal sealed class CoopDialog
         _mode = mode;
         _hostWaiting = false;
         _pendingDelete = null;
+        _rejoin = false;
         GameObject focus = null;
         _title.text = "";
         switch (mode)
@@ -197,10 +202,12 @@ internal sealed class CoopDialog
     }
 
     /// <summary>Show a message (for example why the last session ended).</summary>
-    public void OpenMessage(string text, string title = "Co-op")
+    public void OpenMessage(string text, string title = "Co-op", bool rejoin = false)
     {
         Open(Mode.Message);
         _title.text = title;
+        _rejoin = rejoin;
+        if (rejoin) Ui.SetText(_apply.transform, "Rejoin");
         SetStatus(text, true);
     }
 
@@ -319,7 +326,7 @@ internal sealed class CoopDialog
         TopLeft(_status.rectTransform, Pad, y, inner, textHeight);
         y += textHeight + Gap * 1.5f;
 
-        var hasApply = _mode is Mode.NewWorld or Mode.Join or Mode.Options;
+        var hasApply = _mode is Mode.NewWorld or Mode.Join or Mode.Options || (_mode == Mode.Message && _rejoin);
         _apply.SetActive(hasApply);
         var backX = Width - Pad - ButtonWidth;
         TopLeft(_back.GetComponent<RectTransform>(), backX, y, ButtonWidth, ButtonHeight);
@@ -392,6 +399,13 @@ internal sealed class CoopDialog
     {
         switch (_mode)
         {
+            case Mode.Message when _rejoin:
+            {
+                var steam = _coop.RejoinsSteam; var label = _coop.RejoinLabel;
+                if (!_coop.Rejoin(out var error)) { _rejoin = false; OpenMessage("Could not rejoin: " + error); return; }
+                if (!steam) OpenWaiting("Joining a Friend", $"Connecting to {label}…", host: false); // Steam opens its own popup
+                return;
+            }
             case Mode.NewWorld:
             {
                 var stem = CoopWorldNames.StemFromName(_name.text, out var error);

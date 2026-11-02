@@ -13,7 +13,7 @@ internal static class SyncTests
         ResyncWithoutReload(t);
     }
 
-    private sealed class Pair : IDisposable
+    internal sealed class Pair : IDisposable
     {
         public readonly CoopSession Host = new(), Guest = new();
         public readonly TransportTests.FramedLink HostLink = new(), GuestLink = new();

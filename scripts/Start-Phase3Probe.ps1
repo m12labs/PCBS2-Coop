@@ -16,7 +16,8 @@ $probeEvidenceDir = Join-Path $probeGame "BepInEx/PCBS2Coop-diag/phase$Phase/$Ru
 $probeRecordFile = Join-Path $probeRecordDir "$Role-process.json"
 if ($Resume) {
     if ($Role -ne 'host') { throw 'Only a host can resume a probe run.' }
-    if (-not (Test-Path -LiteralPath (Join-Path $probeEvidenceDir "saves-$Role/Coop/autofreebuild.binary.zip"))) { throw 'Nothing to resume: this run has no disposable co-op save.' }
+    $probeCoopSaves = Join-Path $probeEvidenceDir "saves-$Role/Coop"
+    if (-not ((Test-Path -LiteralPath $probeCoopSaves) -and @(Get-ChildItem -LiteralPath $probeCoopSaves -Filter '*.binary*' -File).Count -gt 0)) { throw 'Nothing to resume: this run has no disposable co-op save.' }
     if (Test-Path -LiteralPath $probeRecordFile) {
         $probePrevious = Get-Content -LiteralPath $probeRecordFile -Raw | ConvertFrom-Json
         if (Get-Process -Id $probePrevious.id -ErrorAction SilentlyContinue | Where-Object { $_.StartTime.ToUniversalTime().ToString('O') -eq $probePrevious.startedUtc }) {

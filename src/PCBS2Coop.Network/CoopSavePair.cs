@@ -14,16 +14,42 @@ public static class CoopSavePair
 {
     public const string Extension = ".coop";
     public const int MaxCarrierBytes = 4 * 1024 * 1024;
+    /// <summary>Up to 0.20: the world state is stored as written.</summary>
     private const ulong Magic = 0x3152494150324350; // PC2PAIR1
+    /// <summary>From 0.21: the world state is compressed (<see cref="Protocol.PackState"/>).</summary>
+    private const ulong PackedMagic = 0x3252494150324350; // PC2PAIR2
     private const ulong BundleMagic = 0x31454C444E423250;
-    private const int MaxMetadataBytes = Protocol.MaxModStateBytes + 2 * MaxCarrierBytes + 4096;
+    private const int MaxMetadataBytes = Protocol.MaxPackedStateBytes + 2 * MaxCarrierBytes + 4096;
     /// <summary>Earlier versions whose co-op saves this build reads: 0.18's BIOS changes live in the native PC record,
     /// and 0.19's software transfer state is optional. 0.17 changed edit progress and host save timing only; 0.20 added
-    /// simulation messages (nothing saved).</summary>
-    private static readonly string[] SameFormat = { "0.19", "0.18", "0.17", "0.16" };
+    /// simulation messages (nothing saved). 0.21 compresses the state (both layouts are read).</summary>
+    private static readonly string[] SameFormat = { "0.20", "0.19", "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);
+
+    /// <summary>Why a save from mod version <paramref name="version"/> can't be loaded, or null if it can.</summary>
+    public static string? VersionProblem(string version)
+    {
+        if (Readable(version)) return null;
+        var oldest = SameFormat.Length > 0 ? SameFormat[^1] : ModVersion.Value;
+        return Compare(version, ModVersion.Value) > 0
+            ? $"This co-op world was saved by a newer version of the mod ({Shown(version)}). Update the mod to {Shown(version)} or later to load it."
+            : $"This co-op world was saved by mod version {Shown(version)}. This version ({ModVersion.Value}) loads co-op worlds from {oldest} onwards only.";
+    }
+
+    private static string Shown(string version) => version.Length is > 0 and <= 16 && version.All(c => char.IsDigit(c) || c == '.') ? version : "unknown";
+
+    /// <summary>Orders "major.minor" versions; anything unreadable counts as older.</summary>
+    private static int Compare(string a, string b)
+    {
+        static (int, int) Parse(string v)
+        {
+            var parts = v.Split('.');
+            return parts.Length == 2 && int.TryParse(parts[0], out var major) && int.TryParse(parts[1], out var minor) ? (major, minor) : (-1, -1);
+        }
+        return Parse(a).CompareTo(Parse(b));
+    }
 
     public static SaveMetadata Create(byte[] native, SnapshotPosition position, IReadOnlyList<CarrierPayload> carriers)
     {
@@ -39,10 +65,10 @@ public static class CoopSavePair
     public static byte[] Encode(SaveMetadata metadata)
     {
         Validate(metadata);
-        var w = new NetDataWriter(); w.Put(Magic); w.Put(ModVersion.Value);
+        var w = new NetDataWriter(); w.Put(PackedMagic); w.Put(ModVersion.Value);
         w.Put(metadata.NativeLength); w.Put(metadata.NativeHash);
         w.Put(metadata.Position.Generation); w.Put(metadata.Position.Revision); w.Put(metadata.Position.ChainHash);
-        Protocol.WriteBlob(w, metadata.Position.State);
+        Protocol.WriteBlob(w, Protocol.PackState(metadata.Position.State));
         w.Put(metadata.Carriers.Count);
         foreach (var carrier in metadata.Carriers.OrderBy(x => x.Pc.Value)) { carrier.Pc.Write(w); Protocol.WriteBlob(w, carrier.NativePc); }
         return w.CopyData();
@@ -53,15 +79,18 @@ public static class CoopSavePair
         try
         {
             var r = new NetDataReader(data);
-            if (r.GetULong() != Magic) throw new InvalidDataException("Unsupported co-op save format.");
+            var magic = r.GetULong();
+            // Every layout starts "PC2PAIR" + a digit, then the writer's version: name the version before the layout.
+            if ((magic & 0x00FF_FFFF_FFFF_FFFFUL) != (Magic & 0x00FF_FFFF_FFFF_FFFFUL)) throw new InvalidDataException("This file isn't a co-op save.");
             var version = r.GetString(128);
-            // 0.12 adds per-PC assembly resources and edit binding stamps to the world state; 0.13 adds the latches
-            // a native load closes. The older
-            // object/activity codecs are incompatible; migration belongs to phase 8, never implicit ID minting.
-            if (!Readable(version)) throw new InvalidDataException("Unsupported co-op save version. This build requires a matching-version co-op save; older saves need migration.");
+            // Older object/activity codecs are incompatible and are refused (owner decision, phase 8): never implicit
+            // ID minting.
+            if (VersionProblem(version) is { } problem) throw new InvalidDataException(problem);
+            if (magic != Magic && magic != PackedMagic) throw new InvalidDataException("Unsupported co-op save layout.");
             var size = r.GetInt(); var hash = new byte[32]; r.GetBytes(hash, hash.Length);
             var generation = r.GetUInt(); var revision = r.GetULong(); var chain = r.GetULong();
-            var state = Protocol.ReadBlob(r, Protocol.MaxModStateBytes, out _) ?? throw new InvalidDataException("Invalid world state length.");
+            var stored = Protocol.ReadBlob(r, Protocol.MaxPackedStateBytes, out _) ?? throw new InvalidDataException("Invalid world state length.");
+            var state = magic == PackedMagic ? Protocol.UnpackState(stored) : stored;
             var n = r.GetInt();
             if (n is < 0 or > 2) throw new InvalidDataException("Invalid carrier count.");
             var carriers = new CarrierPayload[n];

@@ -126,7 +126,15 @@ internal sealed partial class CoopController
         if (!_exitSaveStarted) _exitSaveStarted = SaveWorld("leaving", quiet: true);
         var written = _exitSaveStarted && !SaveLoadSystem.WaitingOnThread() && _pairWrites.Count == 0;
         if (!written && now < _exitGiveUp) return;
-        if (!written) Plugin.Logger.LogWarning($"[saves] leaving without a final save: {(_exitSaveStarted ? "it didn't finish in time" : SaveBlocker() ?? "it was refused")}.");
+        if (!written)
+        {
+            var why = _exitSaveStarted ? "it didn't finish in time" : SaveBlocker() ?? "it was refused";
+            Plugin.Logger.LogWarning($"[saves] leaving without a final save: {why}.");
+            // Shown on the main menu (phase 8, G9): the world keeps its last save.
+            _menuMessage = OutOfSync != null
+                ? "The world wasn't saved when you left: this game was out of sync. It keeps its last save. Next time, type /sync before leaving."
+                : $"The world wasn't saved when you left ({why}). It keeps its last save.";
+        }
         var panel = _exitPanel;
         _exitPanel = null;
         _exiting = true;

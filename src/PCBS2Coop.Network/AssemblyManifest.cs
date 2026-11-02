@@ -60,21 +60,36 @@ public sealed class AssemblyManifest : ICanonicalCommandHandler
             if (rows.Count > AssemblyResources.MaxClaimResources || rows.Any(i => i < 0 || i >= ids.Length)) throw new InvalidDataException("Invalid prefab repair reference.");
             return rows.Select(i => ids[i]).OrderBy(i => i.Value).ToArray();
         }
+        var priorById = pc.Resources.ToDictionary(r => r.Id);
+        HashSet<NetObjectId> CarriedBy(AssemblyResource slot)
+        {
+            var found = new HashSet<NetObjectId>(); var queue = new Queue<NetObjectId>(slot.Carries);
+            while (queue.TryDequeue(out var id))
+                if (found.Add(id) && priorById.TryGetValue(id, out var r)) foreach (var c in r.Carries) queue.Enqueue(c);
+            return found;
+        }
+        NetObjectId[] Merge(IEnumerable<NetObjectId> now, IEnumerable<NetObjectId> kept) => now.Union(kept).OrderBy(x => x.Value).ToArray();
         var resources = templates.Select((r, i) =>
         {
             var fact = new AssemblyResource(ids[i], r.Parent, r.Binding, r.NativeType, r.Kind, r.Occupant, r.Open, r.Rotation, r.Offset, Links(r.Guards))
                 { Coupled = Links(r.Coupled), IntegralPart = r.IntegralPart, LoadCloses = Links(r.LoadCloses), IntegralHome = r.IntegralHome, Carries = Links(r.Carries) };
             if (!old.TryGetValue((r.Parent, r.Binding, r.NativeType, r.Kind), out var prior)) return fact;
             // A panel the host's game shows removed keeps what it carries, dormant, so a later refit restores the same IDs.
+            // Its slot also keeps its links to those carried resources (the panel's screws): a refit shows them again, and
+            // a capture between the removal and the refit must not lose them (game run p8k).
             if (fact.Kind == AssemblyResourceKind.Slot && fact.IntegralPart == "" && fact.IntegralHome == "" && prior.IntegralHome != "")
-                fact = fact with { IntegralHome = prior.IntegralHome, Carries = prior.Carries };
+            {
+                var carried = CarriedBy(prior);
+                fact = fact with { IntegralHome = prior.IntegralHome, Carries = prior.Carries,
+                    Dependencies = Merge(fact.Dependencies, prior.Dependencies.Where(carried.Contains)),
+                    Coupled = Merge(fact.Coupled, prior.Coupled.Where(carried.Contains)) };
+            }
             var same = prior.Occupant == fact.Occupant && prior.Open == fact.Open && prior.Rotation == fact.Rotation && prior.Offset == fact.Offset &&
                 prior.IntegralPart == fact.IntegralPart && prior.Dependencies.SequenceEqual(fact.Dependencies) && prior.Coupled.SequenceEqual(fact.Coupled) &&
                 prior.LoadCloses.SequenceEqual(fact.LoadCloses) && prior.IntegralHome == fact.IntegralHome && prior.Carries.SequenceEqual(fact.Carries);
             return fact with { Version = same ? prior.Version : checked(prior.Version + 1) };
         }).ToList();
         var present = resources.Select(r => r.Id).ToHashSet();
-        var priorById = pc.Resources.ToDictionary(r => r.Id);
         var carried = new Queue<NetObjectId>(resources.Where(r => r.IntegralPart == "" && r.IntegralHome != "").SelectMany(r => r.Carries));
         while (carried.TryDequeue(out var id))
             if (present.Add(id) && priorById.TryGetValue(id, out var keep)) { resources.Add(keep); foreach (var c in keep.Carries) carried.Enqueue(c); }

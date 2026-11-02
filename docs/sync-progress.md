@@ -1,5 +1,27 @@
 # PCBS2 Co-op synchronization progress
 
+**November 2, 2026 — phase 8 tested in two games (owned runs, owner away).** Every phase 8 path tried passed in two games on one PC: Rejoin after a dropped connection and the guest coming back where it stood, the host's pause-menu Load and Reset reloading both games, the guest's Save/Load/Reset refused, the hidden backup restoring a broken save, a game closed in the middle of a save, and a fresh-process Continue keeping power and GPU Tuner values. Eight bugs found on the way are fixed:
+
+- A world could no longer be loaded (Continue, `/sync` or a guest join) after a side panel or a GPU came out, and a panel refit after another edit went out of sync. These came from phase 4 and are fixed in how PCs are recorded; older saves still load.
+- Overwriting the world from the Save screen wrote a second file instead of the world's own.
+- Two save-menu hooks landed on one native function (a crash risk); one hook now covers both buttons.
+- A desktop replay error when the other player's pointer was over nothing.
+- When the guest itself installed a part or removed a panel, its game could reload that PC ("PC reloaded to avoid a desync") and drop out of work mode. Fixed on the owner's go-ahead: blocker links on slots are no longer compared on the other game.
+- Clearer messages: a restored save is announced in the world too, and a lost connection says so instead of "PeerNotFound".
+
+**624/624** checks; Release 0/0; deployed. Still open: Steam rejoin, a world over 35 PCs, and the owner's own pass of the deferred cable, water-cooling and simulation checklists.
+
+**November 1, 2026 — phase 8 durable saves and rejoin, version 0.21 (code and model tests only, not run in game).** [Phase 8 audit](audit/phase-8.md) of saves, rejoin and resume across phases 2–7, done without starting the game; the owner answered its nine questions the same day.
+
+- Co-op state is compressed in saves and when a guest joins: a world holds about 250 built PCs instead of 35.
+- The host's last good save is kept as a hidden backup. A save cut off by a crash or a closed game is replaced by it, with a message on the main menu, and Continue picks the newest save that loads.
+- The host's pause-menu Load Game and Free Build Reset now reload both games into the chosen save, like `/sync` (the world is saved first). The guest's Save, Load and Reset are refused with a notice.
+- A guest that drops out gets a Rejoin button, and a rejoining guest comes back where it stood.
+- Older co-op saves (0.15 and earlier) and saves from newer versions are refused with a clear message; 0.16–0.20 saves still load.
+- The main menu says why the world wasn't saved when the host left.
+
+**622/622** model/network checks; Release **0 warnings/errors**; not deployed or run in game yet. The owner's combined two-game session (8g) also covers the deferred tests 4f, 5d, 10b and 7e.
+
 **November 1, 2026 — phase 7 simulation results, version 0.20 (implemented, not tested in game: code, model tests and short owned two-game runs; the owner's full test is deferred).** [Phase 7 audit](audit/phase-7.md). Both games already run the same apps from the same clicks (phase 6), so each simulates the same load; what could still split them is now shared once:
 
 - A PC failure (blue screen) follows the host's game: the guest holds back its own and shows the host's, with the same reason (command 14).

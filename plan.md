@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). Phase 6 is **Complete** (0.19, closed November 1, 2026 after the owner's two-game test). Phase 7 is **Implemented, not tested in game** (0.20, November 1, 2026): all of 7a–7d are coded with model tests and short owned runs; the owner's full two-game test is deferred to a later day. Phases 8–9 and 11–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). Phase 6 is **Complete** (0.19, closed November 1, 2026 after the owner's two-game test). Phase 7 is **Implemented, not tested in game** (0.20, November 1, 2026): all of 7a–7d are coded with model tests and short owned runs; the owner's full two-game test is deferred to a later day. Phase 8 is **Implementing** (started November 1, 2026 at the owner's request; [audit](docs/audit/phase-8.md) and owner decisions done; 8b–8f in 0.21, run in game in owned two-game runs on November 2 with eight fixes; 8g's owner pass is next). Phases 9 and 11–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -536,6 +536,51 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 **Exit:** save/load, guest rejoin and fresh-process resume preserve the same supported PCs/inventory/software/config/results without duplication, stale-world events or interference with solo saves; active-operation behavior follows policy and is evidenced.
 
 **Audit starting points:** SS snapshot/persistence/recovery; CP codec/save/load; every earlier phase's state inventory.
+
+**Status: Implementing (started at the owner's request, November 1, 2026).** [Phase 8 audit](docs/audit/phase-8.md) complete from code, decompile and disposable test saves. The owner answered the nine questions the same day (all recommended options except question 1: the host's pause-menu Load and Reset are allowed and reload both games). 8b–8f are implemented in 0.21. On November 2, owned two-game runs p8a–p8m (the owner away, asking for full testing) passed every phase 8 path tried, after eight fixes (624/624 checks); see the audit's "Game runs". Open: a world over 35 PCs, Steam rejoin, and the owner's pass of 4f/5d/10b/7e.
+
+#### 8a. Focused audit
+
+- **Status:** Complete (code, decompile and offline measurement only).
+- **Outcome and audit IDs:** state inventory for phases 2–7 and gaps G1–G10 (SS-006, SS-009, SS-020, SS-022, SS-025, SS-031–SS-035, SS-040, SS-042; CP-022, CP-024–CP-026, CP-055–CP-059).
+- **Evidence:** [phase 8 audit](docs/audit/phase-8.md); 595/595 model/network checks on 0.20.
+
+#### 8b. Save integrity
+
+- **Status:** Implemented in 0.21; backup restore, a real interrupted save and fresh-process Continue passed in owned runs (p8a, p8d–p8h). A world over 35 PCs is model-tested only.
+- **Outcome:** a world can't outgrow its save, and one interrupted save never makes a world unloadable.
+- **Work:** compress the world state in the sidecar and snapshot mark and raise the limit (G1: about 29 KB per built PC against a 1 MB limit); keep the previous pair as a hidden backup (owner decision 4); Continue and Load check the pair and fall back (G4); the main menu says why an Exit didn't save (G9). Version 0.21; 0.16–0.20 pairs stay readable.
+- **Completion evidence:** `Protocol.PackState`, sidecar layout `PC2PAIR2`, `CoopSaveBackups`, `CoopSaves.KeepBackup`/`RestoreUnreadable`/`NewestReadable`; `PersistenceTests`.
+- **Acceptance:** model tests for a stale sidecar, fallback, a state near the new limit; acceptance cases 4–5.
+
+#### 8c. In-world save, load and reset
+
+- **Status:** Implemented in 0.21; host Load, Reset, Save copy and overwrite, and the guest's refusals passed in owned runs (p8b, p8c). Fixed there: a duplicate hook on one native function, and an overwrite that wrote a new file named after the world's display name.
+- **Outcome:** the pause menu's Load, Free Build Reset and Save can't leave a game off the shared stream (G2, G3, G5). Owner decisions: the host's Load and Reset reload both games like `/sync`; a guest's Save, Load and Reset are refused; Save under a new name stays a saved copy.
+- **Completion evidence:** `CoopSaveMenus.cs` hooks, `CoopController.StartWorldSwitch` on the sync path, guest `CreateSaveGame` skipped.
+- **Scope (decompile):** `LevelLoadPersistency.LoadGameFromSaveLoadMenu`, `ResetFreebuild` (`FreebuildOptions` reset lambda), `SaveLoadMenu` save path on the guest.
+- **Acceptance:** acceptance case 6 on both games.
+
+#### 8d. Save formats
+
+- **Status:** Implemented in 0.21 (model tests).
+- **Outcome:** older and newer co-op saves fail with a clear message (owner decision 8: no migration). `CoopSavePair.VersionProblem`.
+
+#### 8e. Rejoin
+
+- **Status:** Implemented in 0.21; LAN Rejoin and position memory passed in owned runs (p8a–p8l). Steam Rejoin not run (needs two accounts).
+- **Outcome:** a guest that left unexpectedly gets a Rejoin button (LAN or Steam), and a rejoining guest appears where it stood when it left (session message 14 `Spawn`; the host remembers positions while the world is loaded). The joined copy stays a hidden backup (owner decision 7).
+- **Completion evidence:** `CoopRejoin.cs`, `CoopSession.SendSpawn`; spawn model tests.
+
+#### 8f. Recovery tests
+
+- **Status:** Model tests done (`PersistenceTests`, panel repair checks). In-game recovery cases 1, 3 (after the edit), 5, 7 (limit by model only) and 8 passed in owned runs; they found and fixed three ways a world became unloadable after a side panel or GPU came out (see the audit).
+- **Outcome:** the eight recovery paths in the audit are covered by model tests where the network layer can express them and the owner's session where only the game can.
+
+#### 8g. Two-game acceptance and phase close
+
+- **Status:** Owned runs done (November 2, 2026; audit "Game runs"). Next: the owner's pass, which also covers the deferred tests 4f, 5d, 10b and 7e (owner decision 9).
+- **Acceptance:** [acceptance cases](docs/audit/phase-8.md#acceptance-cases-two-games) 1–7.
 
 ### 9. Cleaning, paste, pads and specialist bench tools
 

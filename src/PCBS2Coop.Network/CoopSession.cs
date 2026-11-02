@@ -83,6 +83,8 @@ public sealed class CoopSession : IDisposable
     /// <summary>Guest: the host started a sync (the text says who asked). This guest has left the world
     /// (<see cref="GuestState.Leaving"/>); return to the menu and call <see cref="ReadyForWorld"/>.</summary>
     public event Action<string>? SyncStarted;
+    /// <summary>Guest: the host says where this guest stood when it last left this world.</summary>
+    public event Action<PlayerState>? SpawnReceived;
 
     public string TransportName => _transport?.Name ?? "LAN";
 
@@ -236,6 +238,25 @@ public sealed class CoopSession : IDisposable
         SetGuestState(GuestState.Connected);
         SendGuestStatus(GuestState.Connected);
         return true;
+    }
+
+    /// <summary>Host: tell an admitted guest where to stand (where it was when it last left this world).</summary>
+    public bool SendSpawn(PlayerState at)
+    {
+        if (Role != Role.Host || !IsJoined || GuestState != GuestState.InWorld || !at.IsValid) return false;
+        _writer.Reset();
+        _writer.Put((byte)MessageType.Spawn);
+        _writer.Put(at.X); _writer.Put(at.Y); _writer.Put(at.Z); _writer.Put(at.Yaw);
+        SendReliable(_writer);
+        return true;
+    }
+
+    private void OnSpawn(NetDataReader r)
+    {
+        if (Role != Role.Client || r.AvailableBytes != 16) { Stats.MalformedMessages++; return; }
+        var at = new PlayerState(r.GetFloat(), r.GetFloat(), r.GetFloat(), r.GetFloat(), true);
+        if (!at.IsValid) { Stats.MalformedMessages++; return; }
+        SpawnReceived?.Invoke(at);
     }
 
     private void SendSync(SyncAction action, string text)
@@ -548,6 +569,7 @@ public sealed class CoopSession : IDisposable
             if (type == MessageType.GuestStatus) { OnGuestStatus(reader); return; }
             if (type == MessageType.Chat) { OnChat(reader); return; }
             if (type == MessageType.Sync) { OnSync(reader); return; }
+            if (type == MessageType.Spawn) { OnSpawn(reader); return; }
             if (World == null || !World.Handle(type, reader))
             {
                 Stats.UnknownMessages++;

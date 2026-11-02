@@ -53,7 +53,7 @@ internal sealed class SnapshotSender
         _w.Put(position?.Generation ?? 0);
         _w.Put(position?.Revision ?? 0);
         _w.Put(position?.ChainHash ?? 0);
-        Protocol.WriteBlob(_w, position?.State ?? Array.Empty<byte>());
+        Protocol.WriteBlob(_w, position == null ? Array.Empty<byte>() : Protocol.PackState(position.State));
         o.MarkMessage = _w.CopyData();
         if (purpose == SnapshotPurpose.Load)
         {
@@ -165,12 +165,15 @@ internal sealed class SnapshotReceiver
         var gen = r.GetUInt();
         var rev = r.GetULong();
         var hash = r.GetULong();
-        var state = Protocol.ReadBlob(r, Protocol.MaxModStateBytes, out var len) ?? throw new FormatException($"mod state of {len} bytes is out of range");
+        var packed = Protocol.ReadBlob(r, Protocol.MaxPackedStateBytes, out var len) ?? throw new FormatException($"mod state of {len} bytes is out of range");
         if (purpose is not (SnapshotPurpose.Load or SnapshotPurpose.Copy)) throw new FormatException($"unknown snapshot purpose {(byte)purpose}");
         if (id == 0) throw new FormatException("snapshot id 0");
         Reset();
         _id = id;
         _purpose = purpose;
+        byte[] state;
+        try { state = purpose == SnapshotPurpose.Load ? Protocol.UnpackState(packed) : Array.Empty<byte>(); }
+        catch (InvalidDataException e) { throw new FormatException(e.Message, e); }
         _position = purpose == SnapshotPurpose.Load ? new SnapshotPosition(gen, rev, hash, state) : null;
         return _position;
     }

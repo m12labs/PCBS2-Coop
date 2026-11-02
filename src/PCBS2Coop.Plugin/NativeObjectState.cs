@@ -83,13 +83,36 @@ internal sealed class NativeObjectState : IWorldState
     internal static string BenchKey(BenchSlot b) => b == null ? "" : $"{PathOf(b.transform)}|{b.m_type}|{b.m_spawnStage}|{b.m_deliverySubtype}|{b.m_workStation?.m_benchID}";
     private static SaveLoadSystem Saves => Object.FindObjectOfType<SaveLoadSystem>() ?? throw new InvalidDataException("Save system unavailable.");
     private static WorkshopController Workshop => Object.FindObjectOfType<WorkshopController>() ?? throw new InvalidDataException("Workshop unavailable.");
-    private static string CatalogHash()
+    private static List<string> CatalogRows()
     {
         // A Free Build template is reusable stock, not a physical part. Identity is minted when a PC is created.
         var parts = CareerStatus.Get()?.GetInventory() ?? throw new InvalidDataException("Inventory unavailable.");
         var rows = new List<string>();
         foreach (var p in parts) rows.Add(p == null ? "null" : p.GetIl2CppType().FullName + ":" + p.GetPartId());
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", rows.OrderBy(x => x, StringComparer.Ordinal)))));
+        rows.Sort(StringComparer.Ordinal);
+        return rows;
+    }
+    /// <summary>The catalog binding written since 0.21: the stock rows only, marked with this prefix.</summary>
+    private const string CatalogV2 = "v2:";
+    /// <summary>A removed case panel waits in the inventory as "Case_SKU/Panel" (game run p8i). The game's save doesn't
+    /// keep that entry, so after any reload the inventory has one row fewer. It isn't stock: leave it out.</summary>
+    private static bool Stock(string row) => row.IndexOf('/') < 0;
+    private static string CatalogHash() => CatalogHash(CatalogRows());
+    private static string CatalogHash(List<string> rows) => CatalogV2 + RowsHash(rows.Where(Stock));
+    /// <summary>The binding as saved: 0.21 stock-only, or the whole inventory as 0.20 and earlier wrote it.</summary>
+    private static bool CatalogMatches(string saved, List<string> rows) =>
+        saved != null && (saved.StartsWith(CatalogV2, StringComparison.Ordinal) ? saved == CatalogHash(rows) : saved == RowsHash(rows));
+    private static string RowsHash(IEnumerable<string> rows) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", rows))));
+    /// <summary>The inventory rows at this game's last capture or load, to say what changed (diagnostics only).</summary>
+    private static List<string> s_lastCatalogRows;
+    private static string Diff(List<string> before, List<string> after)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var row in before ?? new List<string>()) { counts.TryGetValue(row, out var n); counts[row] = n - 1; }
+        foreach (var row in after) { counts.TryGetValue(row, out var n); counts[row] = n + 1; }
+        var added = counts.Where(kv => kv.Value > 0).Select(kv => kv.Key + " x" + kv.Value);
+        var removed = counts.Where(kv => kv.Value < 0).Select(kv => kv.Key + " x" + -kv.Value);
+        return $"added [{string.Join(", ", added)}], removed [{string.Join(", ", removed)}]";
     }
     private static List<Observation> Observe(ActorSlot local, PlayerId player)
     {
@@ -618,7 +641,12 @@ internal sealed class NativeObjectState : IWorldState
             else Plugin.Logger.LogWarning($"[objects] /sync retires unrecoverable PC {lost.Id}.");
         var retired = Model.Retired.Concat(Model.Pcs.SelectMany(AllIds).Where(x => !live.Contains(x))).ToArray();
         Model.Replace(Initialized ? Model.WorldId : Guid.NewGuid(), allocator.Next, locations, pcs, retired);
-        _saveBindings = bindings; _carrierRecords = records; _catalog = CatalogHash();
+        var catalogRows = CatalogRows();
+        var catalog = CatalogHash(catalogRows);
+        if (_catalog != null && catalog != _catalog)
+            Plugin.Logger.LogInfo($"[objects] Free Build inventory changed ({catalogRows.Count} entries): {Diff(s_lastCatalogRows, catalogRows)}.");
+        s_lastCatalogRows = catalogRows;
+        _saveBindings = bindings; _carrierRecords = records; _catalog = catalog;
         BindObserved(observations, bindings, Model);
     }
 
@@ -779,7 +807,14 @@ internal sealed class NativeObjectState : IWorldState
                 NativeAssembly.CheckProfile(pc, record);
             }
             _carrierRecords = _loadingCarriers == null ? new() : new(_loadingCarriers);
-            if (catalog != CatalogHash()) throw new InvalidDataException("The saved Free Build catalog binding does not match.");
+            var loadedRows = CatalogRows();
+            if (!CatalogMatches(catalog, loadedRows))
+            {
+                Plugin.Logger.LogWarning($"[objects] the loaded Free Build inventory ({loadedRows.Count} entries) differs from the saved one; " +
+                    (s_lastCatalogRows != null ? "since this game's last capture: " + Diff(s_lastCatalogRows, loadedRows) : "entries: " + string.Join(", ", loadedRows)) + ".");
+                throw new InvalidDataException("The saved Free Build catalog binding does not match.");
+            }
+            s_lastCatalogRows = loadedRows;
         }
         Model.Replace(model.WorldId, model.NextId, model.Locations, model.Pcs, model.Retired);
         _saveBindings = bindings; _catalog = catalog;

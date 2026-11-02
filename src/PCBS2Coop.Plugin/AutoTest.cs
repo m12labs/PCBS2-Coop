@@ -48,7 +48,7 @@ internal sealed class AutoTest
     private static string Role => Environment.GetEnvironmentVariable("PCBS2COOP_AUTOTEST")?.Trim().ToLowerInvariant();
 
     /// <summary>Probe host relaunch: reuse this run's disposable saves and press Continue instead of New Game.</summary>
-    private static bool ProbeResume => Phase3Probe.Enabled && Environment.GetEnvironmentVariable("PCBS2COOP_PROBE_RESUME") == "1";
+    private static bool ProbeResume => (Phase3Probe.Enabled || Phase6Probe.Enabled) && Environment.GetEnvironmentVariable("PCBS2COOP_PROBE_RESUME") == "1";
 
     /// <summary>The disposable save folder, set once the redirect is confirmed. Null means saves are not isolated.</summary>
     internal static string IsolatedSaveDir { get; private set; }
@@ -441,7 +441,7 @@ internal sealed class AutoTest
             if (ProbeResume)
             {
                 if (_role != "host") throw new IOException("Only a probe host can resume a run.");
-                if (!File.Exists(Path.Combine(dir, "Coop", "autofreebuild.binary.zip"))) throw new IOException("Resume needs this run's existing co-op save.");
+                if (!Directory.Exists(Path.Combine(dir, "Coop")) || Directory.GetFiles(Path.Combine(dir, "Coop"), "*.binary*").Length == 0) throw new IOException("Resume needs this run's existing co-op save.");
             }
             else if ((Phase3Probe.Enabled || Phase6Probe.Enabled) && Directory.Exists(dir)) throw new IOException("Use a fresh probe run ID; its saves already exist.");
             if (!Phase3Probe.Enabled && !Phase6Probe.Enabled && Directory.Exists(dir)) Directory.Delete(dir, true);

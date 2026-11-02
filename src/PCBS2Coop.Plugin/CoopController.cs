@@ -84,9 +84,9 @@ internal sealed partial class CoopController
     /// <summary>The main menu was reached from a co-op world: open it on the co-op list. Read once.</summary>
     public bool TakeReturnToCoopMenu() { var r = _returnToCoopMenu; _returnToCoopMenu = false; return r; }
     /// <summary>Show a short message on the workshop status line (for example, why the host refused a request).</summary>
-    public void Notice(string text)
+    public void Notice(string text, float seconds = 6f)
     {
-        _notice = text; _noticeUntil = Time.realtimeSinceStartup + 6f;
+        _notice = text; _noticeUntil = Time.realtimeSinceStartup + seconds;
         Plugin.Logger.LogWarning("[notice] " + text);
     }
     public string PeerLabel => Session.Role == Role.Host ? "Client" : "Host";
@@ -110,6 +110,8 @@ internal sealed partial class CoopController
         Session.RemoteState += (PlayerState s) => { _remote = s; _lastRemoteAt = Time.realtimeSinceStartup; };
         Session.WorldCreated += OnWorldCreated;
         Session.SnapshotReceived += OnSnapshotReceived;
+        Session.GuestStateChanged += OnGuestState;
+        Session.SpawnReceived += (PlayerState at) => { _spawnAt = at; Plugin.Logger.LogInfo($"[world] the host says this player stood at ({at.X:F2}, {at.Y:F2}, {at.Z:F2}) when it left."); };
         HookChatAndSync();
         if (SteamBootstrap.Service != null)
         {
@@ -125,7 +127,26 @@ internal sealed partial class CoopController
         => HostWorld(port, start, null, out error);
 
     /// <summary>The world <paramref name="start"/> names exists (or, for a new one, doesn't yet). Gives its stem and save file.</summary>
-    private static bool ResolveStart(HostStart start, out string stem, out string file, out string error)
+    /// <summary>Host: a backup was put back for the world about to load; said in the world once it starts.</summary>
+    private RestoredNote _restoredNote;
+    private sealed class RestoredNote
+    {
+        public RestoredNote(string full, string brief) { Full = full; Short = brief; }
+        public string Full { get; }
+        public string Short { get; }
+    }
+
+    private void NoteRestored(IEnumerable<string> names)
+    {
+        var list = names.Distinct().ToList();
+        if (list.Count == 0) return;
+        var quoted = string.Join(", ", list.Select(n => $"\"{n}\""));
+        _restoredNote = new RestoredNote(
+            $"The latest save of {quoted} couldn't be read (the game may have closed while saving). Its previous save was loaded instead.",
+            $"Loaded the previous save of {quoted}.");
+    }
+
+    private bool ResolveStart(HostStart start, out string stem, out string file, out string error)
     {
         stem = file = null; error = null;
         switch (start.What)
@@ -135,8 +156,10 @@ internal sealed partial class CoopController
                 if (CoopSaves.WorldExists(stem)) error = $"There is already a world called \"{CoopWorldNames.WorldName(stem)}\".";
                 break;
             case HostStart.Kind.Continue:
-                file = CoopSaves.WorldSaves().FirstOrDefault()?.Name;
-                if (file == null) error = "There is no co-op world to continue.";
+                // The newest save that loads (owner decision, phase 8: an unreadable newest save falls back).
+                NoteRestored(CoopSaves.RestoreUnreadable());
+                file = CoopSaves.NewestReadable()?.Name;
+                if (file == null) error = CoopSaves.HasCoopWorld() ? "None of your co-op worlds can be loaded. See the log for why." : "There is no co-op world to continue.";
                 break;
             default:
                 file = Path.GetFileName(start.Name ?? "");
@@ -185,7 +208,16 @@ internal sealed partial class CoopController
         Plugin.Logger.LogInfo($"[world] host loads the {_hostWorldKind} '{CoopWorldNames.WorldName(stem)}' from '{CoopSaves.CoopDir}' ('{name}').");
         try
         {
-            if (!newWorld) _loadingPair = CoopSavePair.ReadSidecar(CoopSaves.NativeFile(CoopSaves.CoopDir, name));
+            if (!newWorld)
+            {
+                var path = CoopSaves.NativeFile(CoopSaves.CoopDir, name);
+                if (CoopSaveBackups.Restore(path, CoopSaves.BackupDir, out var problem))
+                {
+                    Plugin.Logger.LogWarning($"[saves] '{name}' didn't load ({problem}); its backup was put back and loads instead.");
+                    NoteRestored(new[] { CoopSaves.DisplayName(name) });
+                }
+                _loadingPair = CoopSavePair.ReadSidecar(path);
+            }
             LoadNamedFreeBuild(name); return true;
         }
         catch (Exception e)
@@ -222,6 +254,7 @@ internal sealed partial class CoopController
         LastFailure = null;
         if (!GamePatches.Ready) { error = "The co-op save/object hooks could not be installed. See the log."; return false; }
         if (!Session.Join(address, port, GameInfo.Build(), out error)) return false;
+        _lastJoin = new JoinTarget(address, port, 0);
         BeginBackgroundRun();
         return true;
     }
@@ -260,6 +293,7 @@ internal sealed partial class CoopController
         { Notice("Return to the main menu, then accept the Steam invite again."); return; }
         if (!GamePatches.Ready) { ShowSteamMessage("The co-op hooks are not ready. See the log."); return; }
         LastFailure = null;
+        _lastJoin = new JoinTarget(null, 0, lobby);
         // Open first: opening an ordinary co-op dialog cancels previous attempts.
         CoopRunner.Instance.Menu?.ShowSteamJoining();
         steam.BeginJoin(lobby, GameInfo.Build(), (ISessionTransport transport, string failure) =>
@@ -302,6 +336,7 @@ internal sealed partial class CoopController
         _hostWorldStarted = false;
         _pendingFile = null;
         _copiesToSend.Clear();
+        _guestPoses.Clear(); _spawnAt = null; _restoredNote = null;
         _pairWrites.Clear(); _saveCapture = null; _loadingPair = null; _snapshotPair = null; _saveError = null; _initialSave = null;
         _guestLoading = false;
         GuestLoadStarted = false;
@@ -352,6 +387,7 @@ internal sealed partial class CoopController
         if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Simulation?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
         else if (Replays.Busy) Replays.Reset();
 
+        UpdateRejoinPosition(inWorkshop);
         _localCursor = inWorkshop && Session.World is { Admitted: true } ? NativeMonitorCursor.Observe(this) : default;
         UpdateRemoteView(inWorkshop);
         _pointers.Update(this, _localCursor, _remote.Cursor,
@@ -384,6 +420,8 @@ internal sealed partial class CoopController
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, default), out _);
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Host, Session.LocalIdentity.Player), out _);
                 _hostWorldStarted = true;
+                // Shown longer than other notices: the loading screen may still be fading out.
+                if (_restoredNote != null) { AddChat(_restoredNote.Full); Notice(_restoredNote.Short, 15f); _restoredNote = null; }
                 Plugin.Logger.LogInfo($"[objects] host bound {Objects.Model.Pcs.Count} PCs, next ID {Objects.Model.NextId}, world {Objects.Model.WorldId}.");
                 _initialSaveAt = Time.realtimeSinceStartup + 1; _initialSaveGiveUp = Time.realtimeSinceStartup + 60;
             }
@@ -666,6 +704,7 @@ internal sealed partial class CoopController
         Plugin.Logger.LogWarning("[world] leaving: " + reason);
         LastFailure = reason;
         _menuMessage = reason;
+        OfferRejoin(reason);
         if (failAdmission && Session.IsRunning) Session.FailAdmission(reason);
         Stop(null, reason);
         if (CoopRunner.Instance?.Scene == CoopRunner.MenuScene || _leavingToMenu) return;
@@ -692,7 +731,7 @@ internal sealed partial class CoopController
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, default), out _);
                 Transfers?.RecoverDeparted(); // a PC the guest carried goes to the shared cupboard
             }
-            Plugin.Logger.LogInfo($"[world] the guest left: {reason}. Still hosting.");
+            Plugin.Logger.LogInfo($"[world] the guest left: {reason.TrimEnd('.')}. Still hosting.");
         }
     }
 

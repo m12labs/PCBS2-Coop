@@ -91,9 +91,14 @@ internal sealed class CoopMenu
         _mainList = list;
         _extras = extras;
         // Self tests switch to a disposable save folder only after the menu is up; leave the owner's co-op folder alone.
+        string restoredNote = null;
         if (!AutoTest.IsEnabled && !SteamProbe.Enabled)
         {
             CoopSaves.DropOrphanPairs();
+            var restored = CoopSaves.RestoreUnreadable();
+            if (restored.Count > 0)
+                restoredNote = $"The latest save of {string.Join(", ", restored.Select(n => $"\"{n}\""))} couldn't be read (the game may have closed while saving). " +
+                    "Its previous save was put back.";
         }
 
         // Main list: "Co-op" (a copy of Options) just above Options. It follows Free Build's start-up fade.
@@ -146,7 +151,8 @@ internal sealed class CoopMenu
 
         if (coop.TakeReturnToCoopMenu()) ShowCoop(instant: true);
         var message = coop.TakeMenuMessage();
-        if (message != null) ShowMessage(message);
+        if (message != null) ShowMessage(message, coop.TakeRejoinOffer());
+        else if (restoredNote != null) ShowMessage(restoredNote);
     }
 
     // ---------------- showing the lists ----------------
@@ -155,7 +161,7 @@ internal sealed class CoopMenu
     public void ShowMain() => Go(false, false);
 
     /// <summary>Show a message over the co-op list (for example why a Steam join failed).</summary>
-    public void ShowMessage(string text) { Go(true, true); Dialog.OpenMessage(text); }
+    public void ShowMessage(string text, bool rejoin = false) { Go(true, true); Dialog.OpenMessage(text, rejoin: rejoin); }
 
     /// <summary>A Steam invite was accepted: show the co-op list with the joining popup.</summary>
     public void ShowSteamJoining() { Go(true, true); Dialog.OpenSteamJoining(); }

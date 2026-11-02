@@ -183,7 +183,8 @@ internal sealed partial class NativeDesktopInput : IDesktopInputNative
             }
         }
         found = all.Count > 0;
-        if (!found) return default;
+        // RaycastResult is a wrapped object here: default is null and can't be written into PointerEventData.
+        if (!found) return new RaycastResult();
         return all.OrderByDescending(h => h.sortingLayer).ThenByDescending(h => h.sortingOrder)
             .ThenByDescending(h => h.depth).ThenBy(h => h.distance).First();
     }

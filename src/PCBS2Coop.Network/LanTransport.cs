@@ -83,7 +83,10 @@ public sealed class LanTransport : ISessionTransport
             DisconnectReason.Timeout => "Connection timed out.",
             DisconnectReason.RemoteConnectionClose => detail ?? "The other player left.",
             DisconnectReason.DisconnectPeerCalled => "Disconnected.",
-            _ => info.Reason.ToString()
+            // The other side already dropped this connection (it stopped answering for a while).
+            DisconnectReason.PeerNotFound => "The connection was lost: the other game had already closed it.",
+            DisconnectReason.HostUnreachable or DisconnectReason.NetworkUnreachable => "The connection was lost: the network can't reach the other game.",
+            _ => $"The connection was lost ({info.Reason})."
         };
         Disconnected?.Invoke(reason);
     }
