@@ -70,6 +70,8 @@ internal sealed partial class CoopController
     public NativeSoftwareSync Software { get; private set; }
     public NativeDesktopInput Desktop { get; private set; }
     public NativePcRepair Repair { get; private set; }
+    /// <summary>The host's PC failures and shared fan curves (phase 7, command 14).</summary>
+    public NativeSimulation Simulation { get; private set; }
     private string _notice;
     private float _noticeUntil;
     public string ActiveNotice => _notice != null && Time.realtimeSinceStartup < _noticeUntil ? _notice : null;
@@ -347,7 +349,7 @@ internal sealed partial class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Simulation?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
         else if (Replays.Busy) Replays.Reset();
 
         _localCursor = inWorkshop && Session.World is { Admitted: true } ? NativeMonitorCursor.Observe(this) : default;
@@ -715,6 +717,7 @@ internal sealed partial class CoopController
         Desktop = new NativeDesktopInput(this, world);
         Desktop.Bind();
         Repair = new NativePcRepair(this, world);
+        Simulation = new NativeSimulation(this, world);
         world.Register(CommandTypes.DiagnosticMarker, Markers);
         world.RegisterState(Markers);
         world.RegisterState(Objects);
@@ -731,6 +734,7 @@ internal sealed partial class CoopController
         world.Register(CommandTypes.Software, Software.Handler);
         world.Register(CommandTypes.DesktopInput, Desktop.Handler);
         world.Register(CommandTypes.PcRepair, Repair.Handler);
+        world.Register(CommandTypes.Simulation, Simulation.Handler);
         world.RegisterState(Software.Handler, optional: true);
         // Optional: saves from before 0.10 have no workstation state; the host binds it from its loaded world.
         world.RegisterState(Workstations, optional: true);

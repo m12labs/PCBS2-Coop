@@ -45,7 +45,8 @@ public sealed record BiosSettings(int BaseClock, float CpuMultiplier, float CpuV
     }
 }
 
-public sealed record BiosChange(ulong Epoch, NetObjectId Pc, string ExpectedDigest, bool Reset, BiosSettings? Settings);
+/// <summary>Live: a change made by an OS app while the PC runs (GPU Tuner, phase 7); it is written without a restart.</summary>
+public sealed record BiosChange(ulong Epoch, NetObjectId Pc, string ExpectedDigest, bool Reset, BiosSettings? Settings, bool Live = false);
 
 /// <summary>Read-only host check and native projection for one accepted BIOS edit.</summary>
 public interface IBiosNative
@@ -69,11 +70,12 @@ public sealed class BiosWorld : ICommandHandler
     // configuration with default values; GetBiosConfig would materialize a new native graph.
     public static string Baseline(BiosSettings? settings) => settings?.Digest() ?? new string('0', 64);
 
-    public static byte[] Request(ulong epoch, NetObjectId pc, BiosSettings? expected, BiosSettings? target)
+    public static byte[] Request(ulong epoch, NetObjectId pc, BiosSettings? expected, BiosSettings? target, bool live = false)
     {
         if (expected is { IsValid: false } || target is { IsValid: false }) throw new ArgumentException("Invalid BIOS values.");
+        if (live && target == null) throw new ArgumentException("A live BIOS change needs settings.");
         var w = new NetDataWriter(); w.Put(epoch); pc.Write(w); w.Put(Baseline(expected)); w.Put(target == null);
-        target?.Write(w); return w.CopyData();
+        target?.Write(w); w.Put(live); return w.CopyData();
     }
 
     private static BiosChange Parse(NetDataReader r)
@@ -81,8 +83,10 @@ public sealed class BiosWorld : ICommandHandler
         var epoch = r.GetULong(); var pc = NetObjectId.Read(r); var digest = r.GetString(65); var reset = r.GetBool();
         if (digest.Length != 64 || digest.Any(c => !Uri.IsHexDigit(c))) throw new FormatException("Invalid BIOS baseline.");
         var target = reset ? null : BiosSettings.Read(r);
+        var live = r.GetBool();
+        if (live && reset) throw new FormatException("A live BIOS change can't be a factory reset.");
         if (r.AvailableBytes != 0) throw new FormatException("Trailing BIOS bytes.");
-        return new(epoch, pc, digest, reset, target);
+        return new(epoch, pc, digest, reset, target, live);
     }
 
     public CommandVerdict Validate(in CommandContext ctx, NetDataReader payload)

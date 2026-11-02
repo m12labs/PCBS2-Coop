@@ -139,26 +139,41 @@ internal sealed class NativeBios : IBiosNative
         NativeProjection.Run(() =>
         {
             if (change.Reset) record.m_biosConfig = null;
+            else if (change.Live)
+            {
+                // GPU Tuner (phase 7): the game writes its config in place and refreshes the airflow sim; no restart.
+                var config = record.m_biosConfig ?? record.GetBiosConfig(true) ?? throw new InvalidDataException("BIOS configuration disappeared.");
+                Store(config, change.Settings ?? throw new InvalidDataException("Missing BIOS settings."), record, pc);
+                record.m_biosConfig = config;
+                CaseOf(pc, vc)?.m_airflowSim?.RefreshSimData(2f);
+            }
             else
             {
                 var target = change.Settings ?? throw new InvalidDataException("Missing BIOS settings.");
                 var config = record.GetBiosConfig(false)?.Clone() ?? throw new InvalidDataException("BIOS configuration disappeared.");
-                config.m_baseClock = target.BaseClock; config.m_cpuMultiplier = target.CpuMultiplier; config.m_cpuVoltage = target.CpuVoltage;
-                config.m_RAMClock = target.RamClock; config.m_RAMVoltage = target.RamVoltage;
-                config.m_RAMTimings = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<int>(target.RamTimings.ToArray());
-                config.m_xmp = target.Xmp; config.m_gpuClock = target.GpuClock; config.m_gpuMemClock = target.GpuMemClock;
-                config.m_gpuVoltagePercent = target.GpuVoltagePercent; config.m_gpuClockLast = target.GpuClockLast;
-                config.m_gpuMemClockLast = target.GpuMemClockLast; config.m_gpuVoltLast = target.GpuVoltLast;
-                config.m_OSInstallFlag = target.OsInstallFlag;
-                config.SetBootDrive(Drive(record, pc, target.BootPath));
+                Store(config, target, record, pc);
                 record.m_biosConfig = config;
             }
             // A not-yet-live PC will boot through phase 5's normal power restore using this saved config.
-            if (live != null) vc.Restart();
+            if (live != null && !change.Live) vc.Restart();
         });
-        Plugin.Logger.LogInfo($"[bios] PC {pc.Id} {(change.Reset ? "factory reset" : "settings applied")} by {ctx.Op}" +
-            (live == null ? " (record only)." : " (restarted)."));
+        Plugin.Logger.LogInfo($"[bios] PC {pc.Id} {(change.Reset ? "factory reset" : change.Live ? "GPU Tuner values applied" : "settings applied")} by {ctx.Op}" +
+            (live == null ? " (record only)." : change.Live ? " (live)." : " (restarted)."));
     }
+
+    private static void Store(BiosConfig config, BiosSettings target, ComputerSave record, PcFact pc)
+    {
+        config.m_baseClock = target.BaseClock; config.m_cpuMultiplier = target.CpuMultiplier; config.m_cpuVoltage = target.CpuVoltage;
+        config.m_RAMClock = target.RamClock; config.m_RAMVoltage = target.RamVoltage;
+        config.m_RAMTimings = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<int>(target.RamTimings.ToArray());
+        config.m_xmp = target.Xmp; config.m_gpuClock = target.GpuClock; config.m_gpuMemClock = target.GpuMemClock;
+        config.m_gpuVoltagePercent = target.GpuVoltagePercent; config.m_gpuClockLast = target.GpuClockLast;
+        config.m_gpuMemClockLast = target.GpuMemClockLast; config.m_gpuVoltLast = target.GpuVoltLast;
+        config.m_OSInstallFlag = target.OsInstallFlag;
+        config.SetBootDrive(Drive(record, pc, target.BootPath));
+    }
+
+    private Case CaseOf(PcFact pc, VirtualComputer vc) => vc?.GetComputerSim()?.GetCase() ?? _coop.Objects.FindBench(pc.Id)?.GetCaseInSlot();
 
     public void Changed(in MutationContext ctx, PcFact pc, BiosChange change)
     {
@@ -190,6 +205,77 @@ internal sealed class NativeBios : IBiosNative
                 return;
             }
         }
+    }
+
+    /// <summary>GPU Tuner's Apply/Reset write the PC's BIOS config directly (phase 7). Both games run the click (phase 6
+    /// mirrors it); here each game puts its config back, and the clicker's game asks the host for the change instead.</summary>
+    internal sealed class TunerScope
+    {
+        public ComputerSave Record;
+        public PcFact Pc;
+        public bool HadConfig;
+        public BiosSettings Before;
+    }
+
+    internal TunerScope BeginTuner(GPUTuner tuner)
+    {
+        if (!Active || tuner == null) return null;
+        try
+        {
+            var record = tuner.m_comp;
+            var id = record == null ? default : _coop.Objects.IdOf(record);
+            var pc = id.IsNone ? null : _coop.Objects.Model.Pcs.SingleOrDefault(x => x.Id == id && x.Location.Place == PcPlace.Bench);
+            if (pc == null) return null;
+            return new TunerScope { Record = record, Pc = pc, HadConfig = record.m_biosConfig != null,
+                Before = record.m_biosConfig == null ? null : Capture(record, record.m_biosConfig) };
+        }
+        catch (Exception e) { Plugin.Logger.LogError("[bios] GPU Tuner: " + e); return null; }
+    }
+
+    internal void EndTuner(TunerScope scope, string what)
+    {
+        if (scope == null) return;
+        try
+        {
+            var record = scope.Record;
+            var after = record.m_biosConfig == null ? null : Capture(record, record.m_biosConfig);
+            if (scope.HadConfig) Store(record.m_biosConfig, scope.Before, record, scope.Pc);
+            else record.m_biosConfig = null;
+            if (after == null || after.Digest() == BiosWorld.Baseline(scope.Before)) return;
+            if (NativeDesktopInput.Injecting) return; // the other player's request brings the result
+            var actor = _coop.Activity.Get(_world.Local);
+            if (actor == null || actor.WorkingPc != scope.Pc.Id) { _coop.Notice("GPU Tuner refused: wait for monitor activity to sync."); return; }
+            _submitting = true;
+            try
+            {
+                if (!_world.Submit(CommandTypes.Bios, BiosWorld.Request(actor.Epoch, scope.Pc.Id, scope.Before, after, live: true), out var op))
+                { _coop.Notice("GPU Tuner refused: not connected to the host's world."); return; }
+                if (!_world.IsAuthority) _pending.Add(op);
+                Plugin.Logger.LogInfo($"[bios] PC {scope.Pc.Id} GPU Tuner {what} requested by {op}: core {after.GpuClock}, memory {after.GpuMemClock}, voltage {after.GpuVoltagePercent}%.");
+            }
+            finally { _submitting = false; }
+        }
+        catch (Exception e) { Plugin.Logger.LogError("[bios] GPU Tuner: " + e); _coop.Notice("GPU Tuner refused: " + e.Message); }
+    }
+
+    /// <summary>A player's own click or a replayed one, in co-op; never a projection's own native call.</summary>
+    private static bool TunerShared => NativePcLifecycle.InCoopWorkshop && (!NativeProjection.Active || NativeDesktopInput.Injecting);
+
+    [HarmonyPatch(typeof(GPUTuner), nameof(GPUTuner.OnApply))]
+    internal static class TunerApplyIntercept
+    {
+        // One native function with the Apply button's own lambda (<OnEnable>b__42_0): hook it here only.
+        private static void Prefix(GPUTuner __instance, out TunerScope __state) =>
+            __state = TunerShared ? CoopController.Instance?.Bios?.BeginTuner(__instance) : null;
+        private static void Postfix(TunerScope __state) => CoopController.Instance?.Bios?.EndTuner(__state, "apply");
+    }
+
+    [HarmonyPatch(typeof(GPUTuner), nameof(GPUTuner.OnReset))]
+    internal static class TunerResetIntercept
+    {
+        private static void Prefix(GPUTuner __instance, out TunerScope __state) =>
+            __state = TunerShared ? CoopController.Instance?.Bios?.BeginTuner(__instance) : null;
+        private static void Postfix(TunerScope __state) => CoopController.Instance?.Bios?.EndTuner(__state, "reset");
     }
 
     private static bool Bypass => (NativeProjection.Active && !NativeDesktopInput.Injecting) || !NativePcLifecycle.InCoopWorkshop;

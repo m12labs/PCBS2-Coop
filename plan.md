@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). **Phase 6 is paused** (October 31, 2026): 6a records its focused audit and the two labeled pointer decision; 6b has a host-ordered BIOS apply/reset path in 0.18, with two-instance gameplay validation and the remaining boot/software work pending. Phases 7–9 and 11–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). Phase 6 is **Complete** (0.19, closed November 1, 2026 after the owner's two-game test). Phase 7 is **Implemented, not tested in game** (0.20, November 1, 2026): all of 7a–7d are coded with model tests and short owned runs; the owner's full two-game test is deferred to a later day. Phases 8–9 and 11–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -492,6 +492,40 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 **Exit:** both peers agree on run/config/result and terminal failure state across supported load/tuning cases; overlapping apps balance their load requests; closing/rejoining/pause does not double-apply load or results; displays reflect the accepted PC model.
 
 **Audit starting points:** SW benchmark/OCCT/tuning/telemetry/failure/app factors; HW condition/fan control; SS clocks and callback suppression.
+
+**Status: implemented, not tested in game (0.20, November 1, 2026).** The owner's full two-game test is deferred to a later day; the phase closes after it. [Phase 7 audit](docs/audit/phase-7.md) complete from the decompile; 7b–7d implemented and checked in short owned two-game runs sim-1 to sim-4. The owner answered the audit's seven questions (November 1, 2026; all match 0.20: host decides failures, fan curves shared on Apply, reading noise accepted, late join leaves a running test idle on the guest, fan curves unsaved like solo, GPU Tuner waits for the host, career tuning later). The owner's full two-game test is pending.
+
+#### 7a. Focused audit
+
+- **Status:** Complete (decompile only).
+- **Outcome and audit IDs:** simulation state, time/random inputs, failure paths, load sources, tuning app writes and fan-control persistence (SW-010–SW-016, SW-020–SW-022, SW-040–SW-047, SW-053).
+- **Evidence:** [phase 7 audit](docs/audit/phase-7.md). Runtime checks still needed: Fan Control curve persistence in solo Free Build, BSOD with `Force` on a guest sim.
+
+#### 7b. Host-ordered failures
+
+- **Status:** Implemented in 0.20; owned runs sim-1 (host and guest failures) and sim-4 (a real `GPU_HEAT` from an overclock) passed.
+- **Outcome:** a shared PC blue-screens once, on both games, for the host's reason (owner decision 1).
+- **Scope:** command 14 `Simulation` step `Failure` (host only). Host: a postfix on `ComputerSim.EmergencyShutdown` that turned `m_bsodActive` on queues the failure; `Update` submits it. Guest: a prefix holds back the game's own non-forced failures on shared PCs; the accepted failure runs `EmergencyShutdown(reason, Force: true)` inside `NativeProjection` once that PC's sim is running (waits up to 10 s). Nothing saved (the sim isn't saved).
+- **Validation:** model tests (host only, PC benched, reason range); acceptance cases 1–3 and 7.
+
+#### 7c. GPU Tuner through the BIOS command
+
+- **Status:** Implemented in 0.20; owned runs sim-1 (host) and sim-2 (guest) applied once, live, on both. Reset and a real mirrored Apply click not yet run.
+- **Outcome:** GPU Tuner Apply/Reset change the PC's BIOS config once, host-ordered, without a restart (owner decision 6).
+- **Scope:** `BiosChange` gains a `Live` flag. `GPUTuner.OnApply` (one native function with its button lambda) and `OnReset`: a replayed click does nothing; the clicker's game builds the target config from the tuner and requests it; the accepted change writes the config and calls `AirflowSim.RefreshSimData` instead of restarting.
+- **Validation:** model test for the live flag round trip; acceptance case 4.
+
+#### 7d. Fan curves
+
+- **Status:** Implemented in 0.20; owned runs sim-1, sim-2 (real clicks) and sim-4 (late join, radiator fans) passed.
+- **Outcome:** the fans' live curves match after Apply, presets or Defaults on either game (owner decision 2).
+- **Scope:** command 14 step `Fans` (any actor at that PC's monitor): every controllable fan's `FanControlDataSaveContainer` keyed by native part path + index on the part. Sent by the clicker's game after `FanControlApp.ApplySetting` (not a replay). Applied with `FanControlData.RestoreSaveData` and `AirflowSim.RefreshSimData`; an open Fan Control app is refreshed. The host re-sends every PC's curves when a guest presence arrives (late join). Curves stay unsaved, like solo (owner decision 5).
+- **Validation:** model tests (codec limits, validation); acceptance cases 5–6.
+
+#### 7e. Two-game checks and phase close
+
+- **Status:** Deferred: owned basic runs done (sim-1 to sim-4) and owner decisions recorded; the owner's full test is deferred to a later day.
+- **Scope:** run the [acceptance cases](docs/audit/phase-7.md#acceptance-cases-two-games) with two owned instances and disposable saves; record results (owner decisions are recorded).
 
 ### 8. Durable Free Build saves and complete core rejoin
 

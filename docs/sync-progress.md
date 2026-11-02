@@ -1,5 +1,15 @@
 # PCBS2 Co-op synchronization progress
 
+**November 1, 2026 — phase 7 simulation results, version 0.20 (implemented, not tested in game: code, model tests and short owned two-game runs; the owner's full test is deferred).** [Phase 7 audit](audit/phase-7.md). Both games already run the same apps from the same clicks (phase 6), so each simulates the same load; what could still split them is now shared once:
+
+- A PC failure (blue screen) follows the host's game: the guest holds back its own and shows the host's, with the same reason (command 14).
+- GPU Tuner Apply and Reset go through the host like BIOS Apply, but apply live without a restart.
+- Fan Control curves are shared when Apply, a preset or Defaults is pressed (the curve dragging itself isn't mirrored); a guest who joins later gets them.
+- A quick click pressed and released within one frame is now sent too (phase 6 fix).
+- Owned runs sim-1 to sim-4: host and guest failures, a real overclock `GPU_HEAT` failure on both, GPU Tuner from either player, Fan Control by real clicks, late-join curves, radiator fans; identical temperatures under the same OCCT load. Owner saves unchanged every run.
+
+The owner's answers to the seven phase 7 questions all match this build (host decides failures, curves shared on Apply, reading noise accepted, late join leaves a running test idle on the guest, curves unsaved like solo, GPU Tuner waits for the host, career tuning later). **595/595** model/network checks; Release **0 warnings/errors**; 0.20 deployed (reads 0.16–0.19 co-op saves).
+
 **November 1, 2026 — phase 6 complete (owner's two-game test).** The owner tested 0.19 in two games and everything passed except one case: the host inserted a USB drive while the guest sat at a monitor, and the guest went out of sync. Fixed: the other game's replay of a part edit now finds a camera while that player is at a monitor. Owner decision: when a game can't show a change, it reloads that PC from the host's record and says "PC reloaded to avoid a desync. Please report if this keeps happening." instead of going out of sync (command 13). **583/583** checks; Release 0/0; deployed. Next: phase 7 (simulation, tests, tuning and app results).
 
 **November 1, 2026 — phase 6 mirrored desktop input, version 0.19 (code, model tests and short owned two-game runs).** Owner decisions: both games run the same apps from the same clicks (mirror input); your own clicks act instantly; the BIOS mirrors live; the host's software record and results win; tablets stay personal.
@@ -227,16 +237,16 @@ Detailed evidence: [SW-001–053](audit/screens-software-and-simulation.md).
 
 | Feature | Not synced | Partially synced | Synced | Comments |
 | --- | :---: | :---: | :---: | --- |
-| Power/boot/BIOS/no-signal/install/OS/restart/BSOD phases | ✅ | | | Stage/result and screen output; duplicate callbacks matter. |
-| BIOS pending/applied values, boot drive, CPU/GPU/RAM tuning | ✅ | | | Effective state can differ from editor selections. |
+| Power/boot/BIOS/no-signal/install/OS/restart/BSOD phases | | ✅ | | Phase 6: power, BIOS entry and boot screens mirrored. Phase 7 (0.20): a blue screen happens once, on both games, for the host's reason. |
+| BIOS pending/applied values, boot drive, CPU/GPU/RAM tuning | | ✅ | | BIOS Apply/Reset host-ordered (phase 6); GPU Tuner Apply/Reset host-ordered and live (0.20). |
 | Programs/files/folders/storage/junk/virus/OS clone/USB | ✅ | | | Canonical image and operation outcome, not only text. |
 | Flat/curved monitor routing/aspect/resolution/display | ✅ | | | Local render/camera binding to the correct PC. |
 | Case/component LCD text/graphs/sensors/time/power | ✅ | | | Data source, update clock/history and assignment. |
-| Windows/z-order/taskbar/minimize/maximize/cursor/focus/typing | ✅ | | | Target: same visible desktop/apps; both players may provide input simultaneously. |
+| Windows/z-order/taskbar/minimize/maximize/cursor/focus/typing | | ✅ | | Phase 6 mirrors input; open apps reconcile, window positions don't. |
 | Wallpaper/images/GIF capture/trim/frame/encode/save | ✅ | | | Static pipeline evidenced; assets/runtime formats unverified. |
-| Cinebench/3DMark/OCCT progress/results/video/telemetry | ✅ | | | Run identity/clock, load accounting and graphs. |
-| Fan/lighting/airflow/thermal/power/noise apps and overlays | ✅ | | | Configuration/simulation versus local editor/render view. |
-| Temperature/load/voltage/wattage/throttle/failure schedules | ✅ | | | Random/frame-rate/load-request divergence. |
+| Cinebench/3DMark/OCCT progress/results/video/telemetry | | ✅ | | Runs start on both games from mirrored clicks (same load, same temperatures in run sim-1); the host's software record keeps results. A guest joining mid-test doesn't run it. |
+| Fan/lighting/airflow/thermal/power/noise apps and overlays | | ✅ | | Fan Control curves shared on Apply/presets (0.20, also on late join); lighting colours not yet (phase 11); airflow app is on the personal tablet. |
+| Temperature/load/voltage/wattage/throttle/failure schedules | | ✅ | | Each game simulates from the same inputs; readings differ only by the game's sensor noise. Failures follow the host (0.20). |
 | RGB effect/flow direction/speed/phase/music/thermal inputs | ✅ | | | Settings and source signals versus derived frames. |
 | Tablet camera feeds and app lifecycle | ✅ | | | Target: personal tablet per player with remotely visible physical screen/activity; camera/input isolation remains necessary. |
 | Notes/music/minigames/tuning/catalogue/shop/decoration apps | ✅ | | | Per-app model/result side effects versus personal UI. |

@@ -136,6 +136,8 @@ public static class CommandTypes
     public const ushort Software = 12;
     /// <summary>The host's record of one PC, sent to a guest that could not show a change on it (<see cref="PcRepairWorld"/>).</summary>
     public const ushort PcRepair = 13;
+    /// <summary>Simulation outcomes: the host's PC failures and applied fan curves (<see cref="SimulationWorld"/>).</summary>
+    public const ushort Simulation = 14;
 }
 
 /// <summary>One actor's pointer on a shared PC monitor. Coordinates are fractions of that PC's desktop

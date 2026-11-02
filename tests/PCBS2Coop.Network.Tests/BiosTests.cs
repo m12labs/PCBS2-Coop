@@ -3,7 +3,7 @@ using PCBS2Coop.Network;
 internal sealed class FakeBiosNative : IBiosNative
 {
     public BiosSettings? Current;
-    public readonly List<(OperationId Op, bool Local, bool Reset)> Applied = new();
+    public readonly List<(OperationId Op, bool Local, bool Reset, bool Live)> Applied = new();
     public FakeBiosNative(BiosSettings initial) => Current = initial;
     public string? CheckHost(in CommandContext ctx, PcFact pc, BiosChange change) =>
         BiosWorld.Baseline(Current) == change.ExpectedDigest ? null : "The BIOS configuration changed before this request arrived.";
@@ -11,7 +11,7 @@ internal sealed class FakeBiosNative : IBiosNative
     {
         if (BiosWorld.Baseline(Current) != change.ExpectedDigest) throw new InvalidDataException("BIOS baseline diverged.");
         Current = change.Settings;
-        Applied.Add((ctx.Op, ctx.FromLocalPlayer, change.Reset));
+        Applied.Add((ctx.Op, ctx.FromLocalPlayer, change.Reset, change.Live));
     }
 }
 
@@ -73,6 +73,16 @@ internal static class BiosTests
         t.Check(l.Host.Revision == before + 1 && hn.Current?.Digest() == Default.Digest() &&
             gn.Current?.Digest() == Default.Digest() && l.InStep,
             "a BIOS edit after factory reset applies on both peers");
+
+        var tuned = Default with { GpuClock = 1950, GpuMemClock = 1300, GpuVoltagePercent = 110 };
+        before = l.Host.Revision;
+        Send(l.Guest, CommandTypes.Bios, BiosWorld.Request(ga.Get(ActorSlot.Guest)!.Epoch, pc.Id, Default, tuned, live: true));
+        t.Check(l.Host.Revision == before + 1 && hn.Current?.Digest() == tuned.Digest() && gn.Current?.Digest() == tuned.Digest() &&
+            hn.Applied.Last().Live && gn.Applied.Last().Live && !hn.Applied.Last().Reset && l.InStep,
+            "a GPU Tuner apply is one live host-ordered BIOS change on both peers");
+        var threw = false;
+        try { BiosWorld.Request(1, pc.Id, Default, null, live: true); } catch (ArgumentException) { threw = true; }
+        t.Check(threw, "a live BIOS change can't be a factory reset");
 
         var malformed = Default with { CpuMultiplier = float.NaN };
         t.Check(!malformed.IsValid && !new BiosSettings(100, 40, 1.2f, 2400, 1.5f, Array.Empty<int>(), false,

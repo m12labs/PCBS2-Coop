@@ -450,8 +450,91 @@ internal sealed class Phase6Probe
             else if (command.StartsWith("screen-dump:", StringComparison.Ordinal)) Event("screen-dump", ScreenDump(command[12..]));
             else if (command.StartsWith("repair:", StringComparison.Ordinal) && uint.TryParse(command[7..], out var repairPc))
                 CoopRunner.Instance?.Coop.Repair?.Failed(new NetObjectId(repairPc), "probe: pretend this game couldn't show a change", new InvalidDataException("probe"));
+            else if (command == "sim-report") Event("sim-report", SimReport());
+            else if (command.StartsWith("sim-", StringComparison.Ordinal) || command.StartsWith("tuner", StringComparison.Ordinal) ||
+                     command.StartsWith("fans", StringComparison.Ordinal) || command.StartsWith("programs:", StringComparison.Ordinal) ||
+                     command.StartsWith("launch:", StringComparison.Ordinal))
+            {
+                try { Event("sim-command", SimCommand(command)); }
+                catch (Exception e) { Event("sim-command", "failed: " + e.Message); }
+            }
             else Event("command-unknown", command);
         }
+    }
+
+    // ---------------- phase 7: simulation, GPU Tuner and Fan Control ----------------
+
+    private static VirtualComputer ProbeComputer(string arg)
+    {
+        var coop = CoopRunner.Instance?.Coop;
+        if (!uint.TryParse(arg, out var id) || coop?.Objects.Initialized != true) throw new ArgumentException("bad pc");
+        return coop.Objects.FindBench(new NetObjectId(id))?.m_workStation?.m_virtualComputer ?? throw new ArgumentException("no vc");
+    }
+
+    private static object SimReport()
+    {
+        var coop = CoopRunner.Instance?.Coop;
+        if (coop?.Objects.Initialized != true) return "not ready";
+        return coop.Objects.Model.Pcs.Where(p => p.Location.Place == PcPlace.Bench).Select(pc =>
+        {
+            var vc = coop.Objects.FindBench(pc.Id)?.m_workStation?.m_virtualComputer;
+            var sim = vc?.GetComputerSim();
+            var bios = SafeName(() => { var b = vc?.ComputerSave?.m_biosConfig; return b == null ? "none" : $"{b.m_gpuClock}/{b.m_gpuMemClock}/{b.m_gpuVoltagePercent}% x{b.m_cpuMultiplier}"; });
+            var unmatched = new List<string>();
+            var fans = SafeName(() => string.Join(" ", NativeSimulation.FansOf(vc?.ComputerSave, sim?.GetCase(), sim, unmatched).Select(f =>
+            {
+                var d = f.Fan.CustomControlData; var saved = d?.BuildSaveData(0);
+                return $"{f.Path}#{f.Index}:{(saved == null ? "-" : $"{(saved.CustomEnabled ? "C" : "S")}{(int)saved.Preset}/{saved.CustomGraphPoints?.Count ?? -1}")}";
+            })));
+            return new
+            {
+                pc = pc.Id.Value, powered = SafeBool(() => vc.IsPoweredOn()), surface = vc == null ? null : NativeDesktopInput.SurfaceOf(vc)?.ToString(),
+                running = SafeBool(() => sim.IsRunning()), bsod = SafeBool(() => sim.BSODActive),
+                cpu = SafeName(() => sim == null ? null : sim.GetCpuTemp().ToString("0.0")), throttled = SafeBool(() => sim.IsCpuThrottled()),
+                bios, fans, unmatched = string.Join(" ", unmatched),
+            };
+        }).ToArray();
+    }
+
+    private static object SimCommand(string command)
+    {
+        var bits = command.Split(':');
+        var vc = ProbeComputer(bits.ElementAtOrDefault(1));
+        var os = vc.m_os;
+        switch (bits[0])
+        {
+            case "sim-fail": // as the game's own simulation would: not forced, not a projection
+                vc.GetComputerSim().EmergencyShutdown((EmergencyShutdownReason)int.Parse(bits[2]), false);
+                return new { bsod = vc.GetComputerSim().BSODActive };
+            case "programs":
+                var installed = os?.m_programsInstalled;
+                return new { installed = installed == null ? null : installed.ToArray(), open = DesktopWindows(os) };
+            case "launch":
+                var desc = PartsDatabase.s_instance?.GetProgram(bits[2]) ?? throw new ArgumentException("no such program");
+                os.Launch(desc, true);
+                return "launched";
+            case "tuner":
+            case "tuner-reset":
+                var tuner = vc.GetComponentsInChildren<GPUTuner>(false).FirstOrDefault() ?? throw new InvalidOperationException("GPU Tuner isn't open");
+                if (bits[0] == "tuner-reset") tuner.OnReset();
+                else
+                {
+                    tuner.m_gpuClock = int.Parse(bits[2]); tuner.m_gpuMemClock = int.Parse(bits[3]); tuner.m_gpuVoltagePercent = int.Parse(bits[4]);
+                    tuner.OnApply();
+                }
+                return "done";
+            case "fans":
+            case "fans-custom":
+                var app = vc.GetComponentsInChildren<FanControlApp>(false).FirstOrDefault() ?? throw new InvalidOperationException("Fan Control isn't open");
+                var row = app.FanList?.Count > 0 ? app.FanList[0] : throw new InvalidOperationException("no fan rows");
+                app.ButtonPress_SelectFan(row, false);
+                var data = row.MyFan?.CustomControlData ?? throw new InvalidOperationException("fan has no control data");
+                if (bits[0] == "fans-custom") data.EnableCustomMode(true);
+                else data.Preset = (FanControlData.GraphPreset)int.Parse(bits[2]);
+                app.ApplySetting(-1);
+                return new { fan = row.MyFan.name, preset = (int)data.Preset, custom = data.IsCustom() };
+        }
+        throw new ArgumentException("unknown");
     }
 
     private static object DesktopReport()

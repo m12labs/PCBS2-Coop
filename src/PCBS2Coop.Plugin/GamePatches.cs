@@ -67,6 +67,11 @@ internal static class GamePatches
             var bios = new Harmony(Plugin.Guid + ".bios");
             bios.PatchAll(typeof(NativeBios.ApplyIntercept));
             bios.PatchAll(typeof(NativeBios.ResetIntercept));
+            bios.PatchAll(typeof(NativeBios.TunerApplyIntercept));
+            bios.PatchAll(typeof(NativeBios.TunerResetIntercept));
+            var sim = new Harmony(Plugin.Guid + ".simulation");
+            sim.PatchAll(typeof(NativeSimulation.FailureHook));
+            sim.PatchAll(typeof(NativeSimulation.FanApplyHook));
             var desktop = new Harmony(Plugin.Guid + ".desktop");
             desktop.PatchAll(typeof(NativeDesktopInput.BootFollow));
             desktop.PatchAll(typeof(NativeDesktopInput.MonitorTickScope));
@@ -77,7 +82,7 @@ internal static class GamePatches
                 if (FoldedWith(method) is { } other)
                     Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");
             Ready = true;
-            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input).");
+            Plugin.Logger.LogInfo("Game hooks installed (save, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input, simulation).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
     }

@@ -251,6 +251,15 @@ internal sealed partial class NativeDesktopInput : IDesktopInputNative
         catch { return false; }
     }
 
+    /// <summary>A press that began this frame (latched by the input system even if it was released in the same frame).</summary>
+    private static bool ButtonDown(int index)
+    {
+        try { return Input.GetMouseButtonDown(index); }
+        catch { }
+        try { return Rewired.ReInput.isReady && Rewired.ReInput.controllers.Mouse.GetButtonDown(index); }
+        catch { return false; }
+    }
+
     private static Vector2 ScrollDelta()
     {
         try { return Input.mouseScrollDelta; }
@@ -303,6 +312,14 @@ internal sealed partial class NativeDesktopInput : IDesktopInputNative
             var bit = (byte)(1 << (int)b);
             var held = Button((int)b - 1);
             var was = (_local.Buttons & bit) != 0;
+            if (!held && !was && ButtonDown((int)b - 1) && now - _local.Since >= EnterGrace)
+            {
+                // A quick click pressed and released between two frames (low frame rate): send both.
+                Add(pc, new DesktopEvent(DesktopEventKind.Down, surface.Value, now, x, y, b));
+                Add(pc, new DesktopEvent(DesktopEventKind.Up, surface.Value, now, x, y, b));
+                Plugin.Logger.LogInfo($"[desktop] PC {pc}: {b} click at ({x:0.000}, {y:0.000}) on {surface.Value} within one frame; sending.");
+                continue;
+            }
             if (held == was) continue;
             _local.Buttons = held ? (byte)(_local.Buttons | bit) : (byte)(_local.Buttons & ~bit);
             if (!held && (_local.Quiet & bit) != 0) { _local.Quiet = (byte)(_local.Quiet & ~bit); continue; }
