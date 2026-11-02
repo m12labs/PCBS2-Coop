@@ -282,6 +282,8 @@ internal sealed class NativePcTransfers : IPcTransferNative
             {
                 var bench = __instance.__4__this?.Slot;
                 if (bench == null || bench.GetCaseInSlot() == null) return true;
+                // Phase 9: not while the other player uses that tool table.
+                if (CoopController.Instance?.ToolBenches?.BusyTable(__instance.__4__this) is { } busy) { CoopController.Instance.Notice(busy); return false; }
                 if (Current == null) NotReady("Pickup"); else Current.RequestPickup(bench);
             }
             catch (Exception e) { Plugin.Logger.LogError("[objects] tool bench pickup request failed: " + e); }
@@ -299,6 +301,7 @@ internal sealed class NativePcTransfers : IPcTransferNative
             try
             {
                 if (slot == null || __instance.GetCarriedCase() == null) return true;
+                if (CoopController.Instance?.ToolBenches?.BusyBench(slot) is { } busy) { CoopController.Instance.Notice(busy); return false; }
                 if (Current == null) NotReady("Drop"); else Current.RequestDrop(slot);
             }
             catch (Exception e) { Plugin.Logger.LogError("[objects] drop request failed: " + e); }

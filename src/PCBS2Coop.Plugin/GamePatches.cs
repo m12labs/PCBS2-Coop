@@ -82,11 +82,15 @@ internal static class GamePatches
             desktop.PatchAll(typeof(NativeDesktopInput.MonitorPowerOn));
             desktop.PatchAll(typeof(NativeDesktopInput.MonitorPowerOff));
             desktop.PatchAll(typeof(NativeDesktopInput.StartMenuShutdownScope));
+            var tools = new Harmony(Plugin.Guid + ".tools");
+            tools.PatchAll(typeof(NativeComponentEdits.VacuumRefusal));
+            tools.PatchAll(typeof(NativeToolBenches.DelidDestroyTrace));
+            tools.PatchAll(typeof(NativeToolBenches.WaterDestroyTrace));
             foreach (var method in Harmony.GetAllPatchedMethods())
                 if (FoldedWith(method) is { } other)
                     Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");
             Ready = true;
-            Plugin.Logger.LogInfo("Game hooks installed (save, save menus, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input, simulation).");
+            Plugin.Logger.LogInfo("Game hooks installed (save, save menus, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input, simulation, paste and tool tables).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
     }

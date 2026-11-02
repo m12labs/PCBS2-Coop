@@ -38,11 +38,24 @@ internal sealed class RemotePlayerView
     private float _floorOffset;
     private bool _floorOffsetSet;
 
+    private string _name = "", _activity;
+    private TMP_Text _labelText;
+
+    /// <summary>A line under the name tag for what this player is doing (phase 9: a tool table, thermal paste), or none.</summary>
+    public void SetActivity(string activity)
+    {
+        if (activity == _activity || _labelText == null) return;
+        _activity = activity;
+        _labelText.text = activity == null ? _name : _name + "\n<size=60%>" + activity + "</size>";
+    }
+
     private RemotePlayerView(GameObject root, Transform visual, Transform label, Animator animator, Transform carryAnchor)
     {
         _root = root;
         _visual = visual;
         _label = label;
+        _labelText = label.GetComponentInChildren<TMP_Text>();
+        _name = _labelText?.text ?? "";
         _animator = animator;
         _carryAnchor = carryAnchor;
     }

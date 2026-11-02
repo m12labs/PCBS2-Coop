@@ -22,8 +22,9 @@ public static class CoopSavePair
     private const int MaxMetadataBytes = Protocol.MaxPackedStateBytes + 2 * MaxCarrierBytes + 4096;
     /// <summary>Earlier versions whose co-op saves this build reads: 0.18's BIOS changes live in the native PC record,
     /// and 0.19's software transfer state is optional. 0.17 changed edit progress and host save timing only; 0.20 added
-    /// simulation messages (nothing saved). 0.21 compresses the state (both layouts are read).</summary>
-    private static readonly string[] SameFormat = { "0.20", "0.19", "0.18", "0.17", "0.16" };
+    /// simulation messages (nothing saved). 0.21 compresses the state (both layouts are read); 0.22 adds tool-table and
+    /// thermal paste messages (nothing saved).</summary>
+    private static readonly string[] SameFormat = { "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);

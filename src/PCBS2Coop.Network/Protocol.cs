@@ -141,6 +141,8 @@ public static class CommandTypes
     public const ushort PcRepair = 13;
     /// <summary>Simulation outcomes: the host's PC failures and applied fan curves (<see cref="SimulationWorld"/>).</summary>
     public const ushort Simulation = 14;
+    /// <summary>Phase 9 tool tables: one player per delidding/water-cooling table, and the inventory result (<see cref="ToolBenchWorld"/>).</summary>
+    public const ushort ToolBench = 15;
 }
 
 /// <summary>One actor's pointer on a shared PC monitor. Coordinates are fractions of that PC's desktop

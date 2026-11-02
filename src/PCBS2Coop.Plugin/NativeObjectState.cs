@@ -74,7 +74,7 @@ internal sealed class NativeObjectState : IWorldState
         public Observation(string key, PcLocation location, ComputerSave save, Case mesh)
         { Key = key; Location = location; Save = save; Mesh = mesh; }
     }
-    private static string PathOf(Transform t)
+    internal static string PathOf(Transform t)
     {
         var path = $"{t.name}[{t.GetSiblingIndex()}]";
         for (var p = t.parent; p != null; p = p.parent) path = $"{p.name}[{p.GetSiblingIndex()}]/" + path;
@@ -83,12 +83,21 @@ internal sealed class NativeObjectState : IWorldState
     internal static string BenchKey(BenchSlot b) => b == null ? "" : $"{PathOf(b.transform)}|{b.m_type}|{b.m_spawnStage}|{b.m_deliverySubtype}|{b.m_workStation?.m_benchID}";
     private static SaveLoadSystem Saves => Object.FindObjectOfType<SaveLoadSystem>() ?? throw new InvalidDataException("Save system unavailable.");
     private static WorkshopController Workshop => Object.FindObjectOfType<WorkshopController>() ?? throw new InvalidDataException("Workshop unavailable.");
-    private static List<string> CatalogRows()
+    /// <summary>The inventory as rows. <paramref name="variants"/> false gives the rows as 0.21 wrote them (no variant
+    /// marks), so its saves keep loading.</summary>
+    private static List<string> CatalogRows(bool variants = true)
     {
         // A Free Build template is reusable stock, not a physical part. Identity is minted when a PC is created.
         var parts = CareerStatus.Get()?.GetInventory() ?? throw new InvalidDataException("Inventory unavailable.");
         var rows = new List<string>();
-        foreach (var p in parts) rows.Add(p == null ? "null" : p.GetIl2CppType().FullName + ":" + p.GetPartId());
+        // A delidded CPU or a card fitted at the water-cooling table (phase 9) isn't stock either: marked like a removed
+        // panel, so the stock binding below leaves it out whether or not the game's save keeps it.
+        foreach (var p in parts)
+        {
+            if (p == null) { rows.Add("null"); continue; }
+            var variant = PartVariants.Of(p);
+            rows.Add(p.GetIl2CppType().FullName + ":" + p.GetPartId() + (!variants || variant == "" ? "" : "/" + variant));
+        }
         rows.Sort(StringComparer.Ordinal);
         return rows;
     }
@@ -100,8 +109,8 @@ internal sealed class NativeObjectState : IWorldState
     private static string CatalogHash() => CatalogHash(CatalogRows());
     private static string CatalogHash(List<string> rows) => CatalogV2 + RowsHash(rows.Where(Stock));
     /// <summary>The binding as saved: 0.21 stock-only, or the whole inventory as 0.20 and earlier wrote it.</summary>
-    private static bool CatalogMatches(string saved, List<string> rows) =>
-        saved != null && (saved.StartsWith(CatalogV2, StringComparison.Ordinal) ? saved == CatalogHash(rows) : saved == RowsHash(rows));
+    private static bool CatalogMatches(string saved, List<string> rows, List<string> plain) =>
+        saved != null && (saved.StartsWith(CatalogV2, StringComparison.Ordinal) ? saved == CatalogHash(rows) || saved == CatalogHash(plain) : saved == RowsHash(plain));
     private static string RowsHash(IEnumerable<string> rows) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", rows))));
     /// <summary>The inventory rows at this game's last capture or load, to say what changed (diagnostics only).</summary>
     private static List<string> s_lastCatalogRows;
@@ -808,7 +817,7 @@ internal sealed class NativeObjectState : IWorldState
             }
             _carrierRecords = _loadingCarriers == null ? new() : new(_loadingCarriers);
             var loadedRows = CatalogRows();
-            if (!CatalogMatches(catalog, loadedRows))
+            if (!CatalogMatches(catalog, loadedRows, CatalogRows(variants: false)))
             {
                 Plugin.Logger.LogWarning($"[objects] the loaded Free Build inventory ({loadedRows.Count} entries) differs from the saved one; " +
                     (s_lastCatalogRows != null ? "since this game's last capture: " + Diff(s_lastCatalogRows, loadedRows) : "entries: " + string.Join(", ", loadedRows)) + ".");

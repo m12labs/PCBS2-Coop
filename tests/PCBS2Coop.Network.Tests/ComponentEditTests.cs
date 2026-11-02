@@ -49,6 +49,7 @@ internal static class ComponentEditTests
     /// <summary>The host's game after the edit: an installed stick (one new part, its own screw) or a removed card.</summary>
     private static PcFact Edited(PcFact pc, ComponentEdit edit, NetObjectIdAllocator allocator)
     {
+        if (edit.Pasted) return pc; // a paste changes no parts
         if (edit.Rebuilt)
         {
             // The host's game after reloading the editor's finished PC: a new water block in the free RAM slot.
@@ -132,7 +133,8 @@ internal static class ComponentEditTests
         string Key(ComponentEdit e) => $"{e.Token}|{e.Actor}|{e.Epoch}|{e.Pc}|{e.Slot}|{e.Gesture}|{e.Part}|{e.Component}|{string.Join(",", e.Targets)}|{e.Stage}|" +
             (e.Result is { } r ? $"{r.Outcome}|{r.Degrees}|{r.Flipped}|{r.Mode}|{r.Selected}|{r.FromInventory}|{r.CableType}|{r.CableConnector}|{string.Join(",", r.Pins)}|" +
                 (r.Wiring is { } wr ? Convert.ToHexString(WiringBytes(wr)) : "") +
-                (r.Rebuild is { } rb ? $"|{rb.Length}|{Convert.ToHexString(rb.Hash.ToArray())}|{rb.Powered}" : "") : "") + $"|{e.Start}|{e.PartStep}";
+                (r.Rebuild is { } rb ? $"|{rb.Length}|{Convert.ToHexString(rb.Hash.ToArray())}|{rb.Powered}" : "") +
+                (r.Pastes is { } ps ? "|" + string.Join(",", ps.Select(p => p.Path + "=" + p.Applied)) : "") + $"|{r.Variant}" : "") + $"|{e.Start}|{e.PartStep}";
         bool Same() => ho.ToBytes().SequenceEqual(go.ToBytes()) && Bytes(ha).SequenceEqual(Bytes(ga)) &&
             he.Edits.Select(Key).SequenceEqual(ge.Edits.Select(Key)) && l.InStep && l.Divergences.Count == 0;
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, host), CommandTypes.ActorActivity);
@@ -419,6 +421,51 @@ internal static class ComponentEditTests
         Send(l.Guest, ComponentEditWorld.Chunk(G().Epoch, begin, 0, 1, new byte[Rebuild.MaxChunkBytes + 1]));
         t.Check(l.GuestRejected.Count == malformed + 1 && l.GuestRejected.Last().Reason == RejectReason.Malformed, "an oversized chunk is malformed");
         Send(l.Guest, ComponentEditWorld.Cancel(G().Epoch, begin));
+
+        t.Section("Thermal paste edits (phase 9): the result in place");
+        rev = l.Host.Revision;
+        Send(l.Guest, Wire(G(), EditGesture.Paste, "spread"));
+        t.Check(l.Host.Revision == rev && l.GuestRejected.Last().Text.Contains("Invalid thermal paste"), "a paste edit puts paste on or takes it off");
+        begin = Send(l.Guest, Wire(G(), EditGesture.Paste, "apply"));
+        t.Check(ge.Find(begin) is { Pasted: true, WholePc: true, Targets.Count: 0 } && Same(), "a guest opens the paste tool on a PC: the claim covers the whole PC");
+        Send(l.Host, Remove(H(), 10, ho));
+        Send(l.Host, Wire(H(), EditGesture.Paste, "remove"));
+        t.Check(l.HostRejected.TakeLast(2).All(x => x.Text.Contains("thermal paste of that PC")), "the other player waits on that PC with the paste message");
+        var lid = new PasteFact("Motherboard/Slot_CPU/CPU/PastePos/Paste", true);
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Done()));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Pasted(Array.Empty<PasteFact>())));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Pasted(new[] { lid, lid })));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Pasted(new[] { lid }) with { Variant = "delid" }));
+        t.Check(l.GuestRejected.TakeLast(4).Select(x => x.Text).ToArray() is var pastebad && pastebad[0].Contains("Invalid edit result") &&
+            pastebad[1].Contains("thermal paste result") && pastebad[2].Contains("thermal paste result") && pastebad[3].Contains("variant"),
+            "a paste commit names at least one paste, each once, and carries no part variant");
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Pasted(new[] { lid, new PasteFact("Gpu/Paste", false) })));
+        t.Check(ge.Find(begin)?.Result?.Pastes is { Count: 2 } got2 && got2[0] == lid && !got2[1].Applied &&
+            hn.Calls.Last() == "committed Done NaN local=False" && Same(), "the pastes reach the host's game to set in place");
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(ge.Edits.Count == 0 && G().Pending == null && Same(), "the host settles it and the PC is free again");
+        begin = Send(l.Guest, Wire(G(), EditGesture.Paste, "apply"));
+        Send(l.Guest, ComponentEditWorld.Progress(G().Epoch, begin, EditProgress.Started));
+        t.Check(l.GuestRejected.Last().Text.Contains("don't report progress"), "a paste edit reports no progress");
+        Send(l.Guest, ComponentEditWorld.Cancel(G().Epoch, begin));
+        t.Check(ge.Edits.Count == 0 && Same(), "a paste tool closed without a change is cancelled");
+
+        t.Section("Part variants (phase 9): a delidded CPU or a water-blocked card installs as itself");
+        begin = Send(l.Guest, Install(G(), 9, go, "cpu"));
+        Send(l.Guest, ComponentEditWorld.Progress(G().Epoch, begin, EditProgress.Started, new EditStart(true, false) { Variant = "delid" }));
+        t.Check(ge.Find(begin)?.Start is { Variant: "delid", FromInventory: true } && he.Find(begin)?.Start?.Variant == "delid" && Same(),
+            "the install's start names the item's variant on both peers");
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Done() with { FromInventory = true, Variant = "bad\nvariant" }));
+        t.Check(l.GuestRejected.Last().Text.Contains("variant"), "a variant is plain text");
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Done() with { FromInventory = true, Variant = "delid" }));
+        t.Check(ge.Find(begin)?.Result?.Variant == "delid" && Same(), "the commit carries the variant");
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        begin = Send(l.Host, Remove(H(), 9, ho));
+        Send(l.Host, ComponentEditWorld.Progress(H().Epoch, begin, EditProgress.Started, new EditStart(false, false) { Variant = "delid" }));
+        t.Check(l.HostRejected.Last().Text.Contains("variant"), "a removal names no variant (the part leaves as it is on each game)");
+        Send(l.Host, ComponentEditWorld.Commit(H().Epoch, begin, EditResult.Done()));
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(ge.Edits.Count == 0 && R(go, 9).Occupant.IsNone && Same(), "and the removal settles normally");
 
         var copy = new ObjectWorld(); copy.Read(new NetDataReader(ho.ToBytes()));
         t.Check(copy.ToBytes().SequenceEqual(ho.ToBytes()), "a settled world round-trips exactly");

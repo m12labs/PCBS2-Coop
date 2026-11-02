@@ -8,7 +8,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). Phase 6 is **Complete** (0.19, closed November 1, 2026 after the owner's two-game test). Phase 7 is **Implemented, not tested in game** (0.20, November 1, 2026): all of 7a–7d are coded with model tests and short owned runs; the owner's full two-game test is deferred to a later day. Phase 8 is **Implementing** (started November 1, 2026 at the owner's request; [audit](docs/audit/phase-8.md) and owner decisions done; 8b–8f in 0.21, run in game in owned two-game runs on November 2 with eight fixes; 8g's owner pass is next). Phases 9 and 11–18 are **Not started**.
+- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). Phase 6 is **Complete** (0.19, closed November 1, 2026 after the owner's two-game test). Phase 7 is **Implemented, not tested in game** (0.20, November 1, 2026): all of 7a–7d are coded with model tests and short owned runs; the owner's full two-game test is deferred to a later day. Phase 8 is **Implementing** (started November 1, 2026 at the owner's request; [audit](docs/audit/phase-8.md) and owner decisions done; 8b–8f in 0.21, run in game in owned two-game runs on November 2 with eight fixes; 8g's owner pass is next). Phase 9 is **Implemented, not tested in game** (0.22, November 2, 2026; [audit](docs/audit/phase-9.md)): thermal paste, the delidding and water-cooling tables (result only, one player per table) and refusals for cleaning and case modding. Phases 11–18 are **Not started**.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -591,6 +591,51 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 **Exit:** committed condition/coverage/thermal state and required tool presentation agree; callbacks commit once; cancel/pause/disconnect during each tool family releases ownership and restores a coherent result.
 
 **Audit starting points:** HW paste/dust/delid/pad/tool factors; PW animation callback/particle/audio factors; SW thermal consequences.
+
+**Status: Implemented, not tested in game** (0.22, November 2, 2026; started at the owner's request after phase 8's owned runs). Focused audit and owner decisions: [docs/audit/phase-9.md](docs/audit/phase-9.md). Owner decisions: paste is set in place on the other game; cleaning waits for career co-op; delid and water-cooling tables share their result only, one player per table, with a prompt and a label under the user's name; case modding is refused until phase 11. Phase 8's owner pass (8g) is still to come.
+
+#### 9a. Focused audit and owner decisions
+
+- **Status:** Complete (static decompile and mod source, no game run; owner answered all eight questions).
+- **Outcome and audit IDs:** where each tool opens and what it saves; dispositions for HW-017–021, HW-056–058, HW-071, HW-076, HW-078, PW-008, PW-026, PW-029, PW-034, PW-058–061, PW-064, SW-013/014/043.
+- **Completion evidence:** [phase 9 audit](docs/audit/phase-9.md); runtime checks R1–R7 listed there.
+
+#### 9b. Tool tables: one player per table, case modding refused
+
+- **Status:** Implemented (0.22), not tested in game.
+- **Outcome and audit IDs:** command 15 `ToolBenchWorld` claims a delidding or water-cooling table per actor epoch; the other player gets "Someone is using the … table." and can't move the PC on it; case modding closes with a notice (PW-008, PW-026, PW-029; HW-056, HW-078).
+- **Scope:** `ToolBenches.cs`, `NativeToolBenches.cs`, the `SetCurrentState` postfix, the tool-bench pickup/drop hooks.
+- **Acceptance:** owner test 4–6 in the audit; model checks for claims, prompts, departure and mid-session join.
+
+#### 9c. Thermal paste and Q-tip
+
+- **Status:** Implemented (0.22), not tested in game.
+- **Outcome and audit IDs:** command 9 gesture `Paste` (whole-PC claim); the other game sets each paste in place (HW-018, HW-019, HW-057, HW-071).
+- **Scope:** `ComponentEdits.cs` (`PasteFact`, `EditResult.Pastes`), `NativeComponentEdits.Paste.cs`.
+- **Acceptance:** owner test 1–2.
+
+#### 9d. Cleaning
+
+- **Status:** Implemented as a refusal (owner decision 2); sharing dust moves to career co-op (phases 15–17), where dust builds up (HW-017, PW-034).
+
+#### 9e. Inventory items with their own data
+
+- **Status:** Implemented (0.22), not tested in game.
+- **Outcome:** `PartVariants` (delid flag, water blocks, motherboard/radiator extras); installs carry the item's variant so the replay installs the same kind; the stock inventory binding leaves variant items out (a 0.21 binding still matches).
+
+#### 9f–9g. Delid and water-cooling table results
+
+- **Status:** Implemented (0.22), not tested in game.
+- **Outcome and audit IDs:** at the end of a session, the inventory change (kinds out, whole items in) goes to the other game in chunks (HW-020, HW-021, HW-058, HW-076, HW-078). Pads and GPU paste are part of the finished item.
+- **Acceptance:** owner test 4–5 and 7.
+
+#### 9h. Save guard and tests
+
+- **Status:** Model tests done (654/654, Release 0/0, deployed). The build profile is unchanged (see the audit: changing it would break saved profiles, and the paste flag's save writer is unknown).
+
+#### 9i. Two-game acceptance
+
+- **Status:** Not started: the owner's test (audit "Owner test (0.22)").
 
 ### 10. Custom water cooling and pipe routing
 

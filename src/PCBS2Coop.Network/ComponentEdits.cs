@@ -8,8 +8,9 @@ namespace PCBS2Coop.Network;
 /// that skips the cable step. Phase 5 adds the whole-PC gestures: plugging a cable in from a connector (<c>Connect</c>,
 /// which may also add a splitter), unplugging one (<c>Unplug</c>) and the power button (<c>Power</c>). Phase 10 adds
 /// <c>Water</c>: any custom water-cooling change (a pipe, coolant, a block, pump or reservoir), shown on the other game by
-/// reloading the finished PC (owner decision, October 29, 2026).</summary>
-public enum EditGesture : byte { Install = 1, Remove = 2, RemoveDirect = 3, Connect = 4, Unplug = 5, Power = 6, Water = 7 }
+/// reloading the finished PC (owner decision, October 29, 2026). Phase 9 adds <c>Paste</c>: putting thermal paste on or
+/// taking it off with the Q-tip, shown on the other game by setting the paste in place (owner decision, November 2, 2026).</summary>
+public enum EditGesture : byte { Install = 1, Remove = 2, RemoveDirect = 3, Connect = 4, Unplug = 5, Power = 6, Water = 7, Paste = 8 }
 public enum AccessoryKind : byte { Splitter = 1, Adapter = 2 }
 
 /// <summary>One cable as the game saves it (<c>CableSave</c>): connector IDs at both ends, cable and connector types,
@@ -24,6 +25,12 @@ public sealed record CableFact(string From, string To, string Desc, string Conne
 /// that now holds <see cref="Sku"/> (empty: now empty).</summary>
 public sealed record AccessoryChange(AccessoryKind Kind, int Index, string Sku);
 public sealed record InventoryChange(string Sku, int Count);
+/// <summary>One thermal paste of a PC after a paste edit (phase 9): where it sits in the case (names from the case down)
+/// and whether it is on. The game doesn't save the paste picture; the other game shows its default paste.</summary>
+public sealed record PasteFact(string Path, bool Applied)
+{
+    public const int MaxPastes = 32, MaxPath = 1024;
+}
 
 /// <summary>A water-cooling edit's result: the editor's finished PC record (sent before the commit in chunks, compressed)
 /// by length and SHA-256, and whether that PC is on.</summary>
@@ -107,8 +114,12 @@ public enum EditOutcome : byte { Done = 1, Unplugged = 2 }
 public enum EditProgress : byte { Started = 1, PartStep = 2 }
 
 /// <summary>An install as the editor's game started it: whether the part came out of the editor's inventory (rather than
-/// the Free Build catalog) and its airflow flip.</summary>
-public sealed record EditStart(bool FromInventory, bool Flipped);
+/// the Free Build catalog) and its airflow flip. <see cref="Variant"/> names what makes the item differ from the plain
+/// part (phase 9: a delidded CPU, a water block fitted at the water-cooling table); empty for a plain part.</summary>
+public sealed record EditStart(bool FromInventory, bool Flipped)
+{
+    public string Variant { get; init; } = "";
+}
 public enum EditStage : byte { Running = 1, Committed = 2 }
 
 /// <summary>What the editor's game ended with, so the other game replays the same thing: the orientation-step angle
@@ -127,6 +138,11 @@ public sealed record EditResult(EditOutcome Outcome, float Degrees, bool Flipped
     /// <summary>A water-cooling edit's result (phase 10): the finished record to reload.</summary>
     public static EditResult Rebuilt(Rebuild rebuild) => Done() with { Rebuild = rebuild };
     public Rebuild? Rebuild { get; init; }
+    /// <summary>A paste edit's result (phase 9): every paste of the PC afterwards.</summary>
+    public static EditResult Pasted(IReadOnlyList<PasteFact> pastes) => Done() with { Pastes = pastes };
+    public IReadOnlyList<PasteFact>? Pastes { get; init; }
+    /// <summary>An install: the installed item's variant (see <see cref="EditStart.Variant"/>).</summary>
+    public string Variant { get; init; } = "";
 }
 
 /// <summary>One component edit in progress. <see cref="Part"/> is the installed SKU; <see cref="Component"/> the
@@ -141,6 +157,8 @@ public sealed record ComponentEdit(OperationId Token, ActorSlot Actor, ulong Epo
     public bool Wired => ComponentEditWorld.IsWiring(Gesture);
     /// <summary>A water-cooling edit: the other game reloads the finished PC.</summary>
     public bool Rebuilt => Gesture == EditGesture.Water;
+    /// <summary>A thermal paste edit: the other game sets the paste in place.</summary>
+    public bool Pasted => Gesture == EditGesture.Paste;
     public bool WholePc => ComponentEditWorld.IsWholePc(Gesture);
     public EditStage Stage { get; init; } = EditStage.Running;
     public EditResult? Result { get; init; }
@@ -199,8 +217,8 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     { _objects = objects; _activity = activity; _native = native; }
     public string Name => "component-edit";
     public static bool IsWiring(EditGesture g) => g is EditGesture.Connect or EditGesture.Unplug or EditGesture.Power;
-    /// <summary>Gestures whose claim covers the whole PC: cables, power and water cooling.</summary>
-    public static bool IsWholePc(EditGesture g) => IsWiring(g) || g == EditGesture.Water;
+    /// <summary>Gestures whose claim covers the whole PC: cables, power, water cooling and thermal paste.</summary>
+    public static bool IsWholePc(EditGesture g) => IsWiring(g) || g is EditGesture.Water or EditGesture.Paste;
     public IReadOnlyList<ComponentEdit> Edits => _edits;
     public ComponentEdit? Find(OperationId token) => _edits.SingleOrDefault(e => e.Token == token);
     /// <summary>The edit running on that PC, if any (one per PC: the other player waits).</summary>
@@ -221,6 +239,9 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         w.Put(result.Wiring != null); result.Wiring?.Write(w);
         w.Put(result.Rebuild != null);
         if (result.Rebuild is { } b) { w.Put(b.Length); w.Put(b.Hash.Count); foreach (var x in b.Hash) w.Put(x); w.Put(b.Powered); }
+        w.Put(result.Pastes != null);
+        if (result.Pastes is { } pastes) { w.Put(pastes.Count); foreach (var p in pastes) { w.Put(p.Path); w.Put(p.Applied); } }
+        w.Put(result.Variant ?? "");
     });
     /// <summary>Editor, before a water-cooling commit: chunk <paramref name="index"/> of <paramref name="total"/> of its
     /// finished record.</summary>
@@ -233,7 +254,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     public static byte[] Progress(ulong epoch, OperationId token, EditProgress progress, EditStart? start = null) => Encode(w =>
     {
         w.Put((byte)Step.Progress); w.Put(epoch); Token(w, token); w.Put((byte)progress);
-        w.Put(start?.FromInventory ?? false); w.Put(start?.Flipped ?? false);
+        w.Put(start?.FromInventory ?? false); w.Put(start?.Flipped ?? false); w.Put(start?.Variant ?? "");
     });
     public static byte[] Cancel(ulong epoch, OperationId token) => Encode(w => { w.Put((byte)Step.Cancel); w.Put(epoch); Token(w, token); });
     /// <summary>Host only: publish the PC as the host's game shows it after that edit.</summary>
@@ -281,8 +302,17 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                     var hash = new byte[hashLength]; for (var i = 0; i < hashLength; i++) hash[i] = r.GetByte();
                     rebuild = new(length, hash, r.GetBool());
                 }
+                PasteFact[]? pastes = null;
+                if (r.GetBool())
+                {
+                    var count = r.GetInt();
+                    if (count is < 0 or > PasteFact.MaxPastes) throw new FormatException("Invalid paste count.");
+                    pastes = new PasteFact[count];
+                    for (var i = 0; i < count; i++) pastes[i] = new(r.GetString(PasteFact.MaxPath), r.GetBool());
+                }
+                var variant = r.GetString(1024);
                 c = new(step, epoch, default, default, 0, default, "", default, token,
-                    new(outcome, degrees, flipped, mode, selected, inventory, type, connector, pins) { Wiring = wiring, Rebuild = rebuild });
+                    new(outcome, degrees, flipped, mode, selected, inventory, type, connector, pins) { Wiring = wiring, Rebuild = rebuild, Pastes = pastes, Variant = variant });
                 break;
             }
             case Step.Cancel:
@@ -302,7 +332,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
             case Step.Progress:
             {
                 var epoch = r.GetULong(); var token = Token(r); var progress = (EditProgress)r.GetByte();
-                var start = new EditStart(r.GetBool(), r.GetBool());
+                var start = new EditStart(r.GetBool(), r.GetBool()) { Variant = r.GetString(1024) };
                 c = new(step, epoch, default, default, 0, default, "", default, token, null) { Progress = progress, Start = start };
                 break;
             }
@@ -333,6 +363,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
             // Whole-PC claim: a cable edit can touch connectors on many parts and add a splitter (phase 5 audit).
             if (!c.Slot.IsNone || c.Version != 0 || !c.Component.IsNone || c.Part.Length == 0 || !Text(c.Part)) return "Invalid cable or power change.";
             if (c.Gesture == EditGesture.Power && c.Part is not ("on" or "off")) return "Invalid power change.";
+            if (c.Gesture == EditGesture.Paste && c.Part is not ("apply" or "remove")) return "Invalid thermal paste change.";
             return null;
         }
         slot = pc.Resources.SingleOrDefault(r => r.Id == c.Slot);
@@ -362,7 +393,9 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     public string? Busy(NetObjectId pc, ActorSlot requester)
     {
         if (_edits.FirstOrDefault(e => e.Pc == pc && e.Actor != requester) is { } running)
-            return running.Rebuilt ? "The other player is building water cooling on that PC." : "The other player is changing a part of that PC.";
+            return running.Rebuilt ? "The other player is building water cooling on that PC."
+                : running.Pasted ? "The other player is working on the thermal paste of that PC."
+                : "The other player is changing a part of that PC.";
         foreach (var other in _activity.Actors)
             if (other.Pending is { } p && p.Pc == pc)
             {
@@ -374,7 +407,14 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
 
     private string? CheckResult(ComponentEdit edit, EditResult r)
     {
-        if (edit.Wired != (r.Wiring != null) || edit.Rebuilt != (r.Rebuild != null)) return "Invalid edit result.";
+        if (edit.Wired != (r.Wiring != null) || edit.Rebuilt != (r.Rebuild != null) || edit.Pasted != (r.Pastes != null)) return "Invalid edit result.";
+        if (r.Pastes is { } pastes)
+        {
+            if (r.Outcome != EditOutcome.Done || pastes.Count is < 1 or > PasteFact.MaxPastes) return "Invalid thermal paste result.";
+            if (pastes.Any(p => p.Path.Length is 0 or > PasteFact.MaxPath || p.Path.Any(char.IsControl)) ||
+                pastes.Select(p => p.Path).Distinct(StringComparer.Ordinal).Count() != pastes.Count) return "Invalid thermal paste result.";
+        }
+        if (!Text(r.Variant ?? "") || !edit.Install && (r.Variant ?? "") != "") return "Invalid part variant.";
         if (r.Rebuild is { } rebuild)
         {
             if (r.Outcome != EditOutcome.Done) return "Invalid edit outcome.";
@@ -395,7 +435,8 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
 
     private static string? CheckProgress(ComponentEdit edit, Request c)
     {
-        if (edit.WholePc) return "Cable, power and water edits don't report progress.";
+        if (edit.WholePc) return "Cable, power, water and paste edits don't report progress.";
+        if (!Text(c.Start.Variant) || !edit.Install && c.Start.Variant != "") return "Invalid part variant.";
         switch (c.Progress)
         {
             case EditProgress.Started:

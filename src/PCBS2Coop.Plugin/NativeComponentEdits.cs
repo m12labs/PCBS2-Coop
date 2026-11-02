@@ -29,6 +29,8 @@ internal sealed partial class NativeComponentEdits : IEditNative
         public int InventoryBefore;
         /// <summary>Power edits: whether the press turns the PC on.</summary>
         public bool PowerOn;
+        /// <summary>Paste edits: the PC's pastes when the tool opened.</summary>
+        public List<PasteFact> PastesBefore;
     }
     /// <summary>The edit this player is running natively (one at a time).</summary>
     private sealed class Local
@@ -198,7 +200,12 @@ internal sealed partial class NativeComponentEdits : IEditNative
             if (mine is { } t) _cancel.Add(t);
             return;
         }
-        if (_submitting != null || _pending.Remove(op)) Refuse(text);
+        var refused = _submitting;
+        if (refused != null || _pending.Remove(op, out refused))
+        {
+            Refuse(text);
+            if (refused?.Gesture == EditGesture.Paste) PasteRefused(refused);
+        }
     }
 
     // ---------------- IEditNative ----------------
@@ -260,7 +267,9 @@ internal sealed partial class NativeComponentEdits : IEditNative
                 Plugin.Logger.LogInfo($"[edits] {what}: the other player is editing.");
                 return;
             }
-            if (request?.Replay == null || request.Work == null || CurrentState?.Pointer != request.Work.Pointer || (!edit.WholePc && request.NativeSlot == null))
+            // A paste tool is already open (the player may even have closed it again): follow it from here.
+            if (edit.Pasted ? request?.Mesh == null || !request.Mesh :
+                request?.Replay == null || request.Work == null || CurrentState?.Pointer != request.Work.Pointer || (!edit.WholePc && request.NativeSlot == null))
             {
                 Plugin.Logger.LogWarning($"[edits] {what}: this player's work state changed before the host answered; cancelling.");
                 _cancel.Add(edit.Token);
@@ -269,6 +278,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
             _local = new Local { Token = edit.Token, Request = request, Since = Time.realtimeSinceStartup, Started = Time.realtimeSinceStartup };
             if (edit.Wired) _local.Before = Snapshot(request.Mesh);
             if (edit.Rebuilt) _local.RecordBefore = RecordBytes(pc.Id);
+            if (edit.Pasted) { Plugin.Logger.LogInfo($"[edits] {what}: the paste tool is open here."); return; }
             NativeProjection.Run(request.Replay);
             Plugin.Logger.LogInfo($"[edits] {what}: running here.");
         }
@@ -332,6 +342,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         {
             if (edit.Wired) { StartWireReplay(pc, edit); return; }
             if (edit.Rebuilt) { StartReload(pc, edit); return; }
+            if (edit.Pasted) { ApplyPastes(pc, edit); return; }
             if (_live.TryGetValue(token, out var live))
             {
                 // Already playing since the editor started: finish it the way the editor did.
@@ -455,11 +466,17 @@ internal sealed partial class NativeComponentEdits : IEditNative
             PartInstance part = null;
             var fromInventory = r?.FromInventory ?? edit.Start?.FromInventory ?? false;
             var flipped = r?.Flipped ?? edit.Start?.Flipped ?? false;
-            if (fromInventory)
+            // Phase 9: a delidded CPU or a card with a water block is its own kind of item; install the same kind here.
+            var variant = r?.Variant ?? edit.Start?.Variant ?? "";
+            if (fromInventory || variant != "")
             {
+                PartInstance match = null;
                 var inventory = CareerStatus.Get()?.GetInventory();
-                if (inventory != null) foreach (var p in inventory) if (p != null && p.GetPartId() == edit.Part) { part = p; break; }
-                if (part == null) Plugin.Logger.LogWarning($"[edits] {plan.Label}: the editor used a {edit.Part} from its inventory, but this player's inventory has none; using a new one.");
+                if (inventory != null) foreach (var p in inventory) if (p != null && p.GetPartId() == edit.Part && PartVariants.Of(p) == variant) { match = p; break; }
+                if (match == null)
+                    Plugin.Logger.LogWarning($"[edits] {plan.Label}: the editor used a {edit.Part}{(variant == "" ? "" : $" ({variant})")} from its inventory, but this player's inventory has none; using a new one.");
+                // From the catalog, the game installs a copy and the item stays; from the inventory, the item itself.
+                else part = fromInventory ? match : PartVariants.Copy(match);
             }
             part ??= PartInstance.NewPartInstance(edit.Part, 0, null) ?? throw new InvalidDataException($"part {edit.Part} is unknown");
             if (part.IsFlipped() != flipped) part.SetFlipped(flipped);
@@ -528,6 +545,11 @@ internal sealed partial class NativeComponentEdits : IEditNative
             PollWater();
             if (_local == null) return;
         }
+        if (!_local.Done && _local.Request.Gesture == EditGesture.Paste)
+        {
+            PollPaste();
+            if (_local == null) return;
+        }
         if (!ComponentEditWorld.IsWholePc(_local.Request.Gesture) && !SendProgress()) return;
         if (_local.Done)
         {
@@ -564,6 +586,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
             if (install && _local.State == null) return true; // its install state isn't made yet
             var start = install
                 ? new EditStart(_local.Request.InventoryBefore > InventoryCount(_local.Request.Sku), _local.State.m_part?.IsFlipped() == true)
+                    { Variant = PartVariants.Of(_local.State.m_part) }
                 : null;
             if (!Progress(EditProgress.Started, start)) return false;
             _local.StartSent = true;
@@ -688,6 +711,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         {
             Flipped = install && state.m_part?.IsFlipped() == true,
             FromInventory = install && _local.Request.InventoryBefore > InventoryCount(_local.Request.Sku),
+            Variant = install ? PartVariants.Of(state.m_part) : "",
         };
         _local.Done = true;
     }
@@ -709,8 +733,13 @@ internal sealed partial class NativeComponentEdits : IEditNative
     {
         private static void Postfix(State state)
         {
-            if (!Ours) return;
-            try { Current.Entered(state?.TryCast<InstallingPartState>()); }
+            try
+            {
+                if (Ours) Current.Entered(state?.TryCast<InstallingPartState>());
+                // Phase 9: paste tools on a shared PC and the specialist tool tables are claimed as they open.
+                Current?.PasteEntered(state);
+                CoopController.Instance?.ToolBenches?.Entered(state);
+            }
             catch (Exception e) { Plugin.Logger.LogError("[edits] state trace failed: " + e); }
         }
     }
