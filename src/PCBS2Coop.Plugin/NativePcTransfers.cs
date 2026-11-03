@@ -81,6 +81,8 @@ internal sealed class NativePcTransfers : IPcTransferNative
     {
         if (!Ready("Retrieve")) return;
         var id = Objects.IdOf(ui.m_computer);
+        // One of this player's PC files, listed by the cupboard: picking it up imports it (phase 12).
+        if (id.IsNone && NativePcLifecycle.IsFilePc(ui.m_computer)) { if (_coop.Lifecycle == null) Refuse("Import", "The shared world isn't ready on this game yet."); else _coop.Lifecycle.RequestImport(ui); return; }
         if (id.IsNone) { Refuse("Retrieve", "That stored PC has no co-op identity."); return; }
         Submit(PcTransfers.Retrieve(Epoch, id), new Request { What = "Retrieve", Storage = ui });
     }

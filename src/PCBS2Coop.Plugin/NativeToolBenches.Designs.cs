@@ -28,14 +28,14 @@ internal sealed partial class NativeToolBenches
         return id.IsNone ? (default, null) : (id, LiveRecord(id));
     }
 
-    private static CustomCaseSaveContainer DesignOf(ComputerSave record)
+    internal static CustomCaseSaveContainer DesignOf(ComputerSave record)
     {
         if (record == null || !record.isCustomised) return null;
         foreach (var c in Designs.CustomisationList) if (c != null && c.CustomisationID == record.CustomisationID) return c;
         return null;
     }
 
-    private static byte[] WriteDesign(CustomCaseSaveContainer design)
+    internal static byte[] WriteDesign(CustomCaseSaveContainer design)
     {
         var stream = new Il2CppSystem.IO.MemoryStream();
         try
@@ -47,7 +47,7 @@ internal sealed partial class NativeToolBenches
         finally { stream.Dispose(); }
     }
 
-    private static CustomCaseSaveContainer ReadDesign(byte[] bytes)
+    internal static CustomCaseSaveContainer ReadDesign(byte[] bytes)
     {
         var stream = new Il2CppSystem.IO.MemoryStream(bytes);
         try

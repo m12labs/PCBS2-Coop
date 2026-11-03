@@ -451,6 +451,7 @@ internal sealed partial class Phase6Probe
             else if (command.StartsWith("repair:", StringComparison.Ordinal) && uint.TryParse(command[7..], out var repairPc))
                 CoopRunner.Instance?.Coop.Repair?.Failed(new NetObjectId(repairPc), "probe: pretend this game couldn't show a change", new InvalidDataException("probe"));
             else if (SavesCommand(command)) { }
+            else if (WorkshopCommand(command)) { }
             else if (command == "sim-report") Event("sim-report", SimReport());
             else if (command.StartsWith("sim-", StringComparison.Ordinal) || command.StartsWith("tuner", StringComparison.Ordinal) ||
                      command.StartsWith("fans", StringComparison.Ordinal) || command.StartsWith("programs:", StringComparison.Ordinal) ||

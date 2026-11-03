@@ -13,7 +13,7 @@ namespace PCBS2Coop;
 /// same native steps on the requesting peer only; the other peer keeps a remote carrier record or removes its own
 /// projection. The host also reports where its own native PCs are, until task 3f's atomic transfers replace that.
 /// </summary>
-internal sealed class NativePcLifecycle : IPcNative
+internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
 {
     private static readonly Dictionary<string, string[]> DefaultFanLayouts = new(StringComparer.Ordinal);
     private const float ObserveInterval = .25f;
@@ -202,6 +202,9 @@ internal sealed class NativePcLifecycle : IPcNative
                 return CarriedEmpty(wc, target.Id);
             case PcAction.Create:
                 return target == null ? null : RemoteEmpty(target);
+            case PcAction.Import when host:
+                if (wc.IsCaseLoading || Saves.SpawningPC) return "Objects are still loading.";
+                return wc.CarryingEmpty() ? null : "Your hands are not empty.";
             case PcAction.Delete when command.From == PcRemoval.Carried:
                 return host ? CarriedEmpty(wc, target.Id) : RemoteEmpty(target);
             case PcAction.Delete:

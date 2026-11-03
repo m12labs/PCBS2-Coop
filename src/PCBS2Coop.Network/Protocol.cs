@@ -145,6 +145,9 @@ public static class CommandTypes
     public const ushort ToolBench = 15;
     /// <summary>Phase 11: Lighting app settings, the host's lighting clock and bought custom cable sets (<see cref="CustomizationWorld"/>).</summary>
     public const ushort Customization = 16;
+    /// <summary>Phase 12: decorating, the room lights, seasonal decorations, shared pictures (custom wallpapers) and the
+    /// pictures a guest is missing (<see cref="WorkshopWorld"/>).</summary>
+    public const ushort Workshop = 17;
 }
 
 /// <summary>One actor's pointer on a shared PC monitor. Coordinates are fractions of that PC's desktop

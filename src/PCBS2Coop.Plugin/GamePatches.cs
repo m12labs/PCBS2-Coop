@@ -95,11 +95,23 @@ internal static class GamePatches
             looks.PatchAll(typeof(NativeCustomization.LightingCameraGuard));
             looks.PatchAll(typeof(NativeCustomization.LightingStateGuard));
             looks.PatchAll(typeof(NativeCustomization.BuyHook));
+            var room = new Harmony(Plugin.Guid + ".workshop");
+            room.PatchAll(typeof(NativeWorkshop.AppOpenHook));
+            room.PatchAll(typeof(NativeWorkshop.AppCloseHook));
+            room.PatchAll(typeof(NativeWorkshop.DecorGuard));
+            room.PatchAll(typeof(NativeWorkshop.LightSwitchHook));
+            room.PatchAll(typeof(NativeWorkshop.TableLightsScope));
+            room.PatchAll(typeof(NativeWorkshop.DecorationSwitchHook));
+            room.PatchAll(typeof(NativeWorkshop.SeasonHook));
+            room.PatchAll(typeof(NativeWorkshop.WallpaperSpriteHook));
+            room.PatchAll(typeof(NativeWorkshop.CustomWallpaperHook));
+            room.PatchAll(typeof(NativeWorkshop.UserWallpaperHook));
+            room.PatchAll(typeof(NativeWorkshop.MirroredCustomApply));
             foreach (var method in Harmony.GetAllPatchedMethods())
                 if (FoldedWith(method) is { } other)
                     Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");
             Ready = true;
-            Plugin.Logger.LogInfo("Game hooks installed (save, save menus, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input, simulation, paste, tool tables, lighting and the Cable app).");
+            Plugin.Logger.LogInfo("Game hooks installed (save, save menus, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input, simulation, paste, tool tables, lighting and the Cable app, decorating, room lights, seasonal decorations and wallpapers).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
     }

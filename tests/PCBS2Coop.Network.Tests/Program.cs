@@ -23,6 +23,7 @@ PanelTests.Run(t);
 ComponentEditTests.Run(t);
 ToolBenchTests.Run(t);
 CustomizationTests.Run(t);
+WorkshopTests.Run(t);
 WorldSyncTests.Run(t);
 SnapshotTests.Run(t);
 TransportTests.Run(t);

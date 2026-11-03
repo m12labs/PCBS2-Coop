@@ -2,7 +2,7 @@ using LiteNetLib.Utils;
 
 namespace PCBS2Coop.Network;
 
-public enum PcAction : byte { Create = 1, Delete = 2, Observe = 3, Extend = 4 }
+public enum PcAction : byte { Create = 1, Delete = 2, Observe = 3, Extend = 4, Import = 5 }
 public enum PcRemoval : byte { Carried = 1, Stored = 2 }
 /// <summary>A reusable Free Build catalog entry: SKU, native type and its position among entries with both. Not a physical part.</summary>
 public sealed record CatalogRef(string Sku, string NativeType, int Ordinal);
@@ -19,6 +19,9 @@ public sealed record PcGrowth(IReadOnlyList<TemplatePart> Parts, IReadOnlyList<G
 public sealed record PcCommand(PcAction Action, ulong Epoch, CatalogRef? Template, NetObjectId Pc, PcRemoval From, IReadOnlyList<PcObservation> Moves)
 {
     public PcGrowth? Growth { get; init; }
+    /// <summary>Import: the SHA-256 and length of the imported PC's content (sent with <see cref="WorkshopWorld"/> first).</summary>
+    public byte[]? Content { get; init; }
+    public int ContentLength { get; init; }
 }
 
 /// <summary>Native side of PC creation/removal. Describe must be deterministic on both peers. CheckHost runs on the
@@ -29,6 +32,15 @@ public interface IPcNative
     string? CheckHost(in CommandContext ctx, PcCommand command, PcFact? target);
     void Created(in MutationContext ctx, PcFact pc, CatalogRef template, PcFact? replaced);
     void Deleted(in MutationContext ctx, PcFact pc, PcRemoval from);
+}
+
+/// <summary>Phase 12 (owner decision 6): a PC imported from a file. The importer's game sends the PC's content first
+/// (<see cref="WorkshopWorld"/>); both games describe the PC from that content, so they agree on its parts.</summary>
+public interface IPcImportNative
+{
+    /// <summary>The imported PC's topology, from the content with that hash; null when this game doesn't have it.</summary>
+    PcTemplate? DescribeImport(byte[] hash);
+    void Imported(in MutationContext ctx, PcFact pc, byte[] hash);
 }
 
 /// <summary>Host-ordered PC creation and removal. A catalog case creates a new physical PC in the requester's hands
@@ -53,6 +65,9 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
 
     public static byte[] Create(ulong epoch, CatalogRef template, NetObjectId replace) => Encode(w =>
     { w.Put((byte)PcAction.Create); w.Put(epoch); w.Put(template.Sku); w.Put(template.NativeType); w.Put(template.Ordinal); replace.Write(w); });
+    /// <summary>Import the PC whose content (<see cref="WorkshopWorld.Send"/>) has that hash into the requester's hands.</summary>
+    public static byte[] Import(ulong epoch, byte[] hash, int length) => Encode(w =>
+    { w.Put((byte)PcAction.Import); w.Put(epoch); Protocol.WriteBlob(w, hash); w.Put(length); });
     public static byte[] Delete(ulong epoch, NetObjectId pc, PcRemoval from) => Encode(w =>
     { w.Put((byte)PcAction.Delete); w.Put(epoch); pc.Write(w); w.Put((byte)from); });
     public static byte[] Observe(ulong epoch, IReadOnlyList<PcObservation> moves) => Encode(w =>
@@ -77,6 +92,13 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
             case PcAction.Create:
                 var template = new CatalogRef(r.GetString(1024), r.GetString(1024), r.GetInt());
                 return new(action, epoch, template, NetObjectId.Read(r), default, Array.Empty<PcObservation>());
+            case PcAction.Import:
+            {
+                var hash = Protocol.ReadBlob(r, WorkshopWorld.HashBytes, out var declared);
+                var length = r.GetInt();
+                if (hash == null || declared != WorkshopWorld.HashBytes || length is < 1 or > WorkshopWorld.MaxContentBytes) throw new FormatException("Invalid imported PC.");
+                return new(action, epoch, null, default, default, Array.Empty<PcObservation>()) { Content = hash, ContentLength = length };
+            }
             case PcAction.Delete:
                 var pc = NetObjectId.Read(r); var from = (PcRemoval)r.GetByte();
                 if (!Enum.IsDefined(from)) throw new FormatException("Unknown PC removal source.");
@@ -136,6 +158,17 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
                 if (c.Pc.IsNone && _objects.Pcs.Count >= ObjectWorld.MaxPcs) return "Too many PCs.";
                 return null;
             }
+            case PcAction.Import:
+            {
+                PcTemplate? template;
+                try { template = Topology(c); }
+                catch (Exception e) { return "The imported PC can't be read: " + e.Message; }
+                if (template == null || !Valid(template)) return "The imported PC hasn't arrived on the host.";
+                if (Occupant(actor.Actor) != null) return "Your hands already hold a PC.";
+                if (_objects.NextId + (ulong)template.Parts.Count + 1 > ObjectWorld.MaxObjects + 1UL) return "Object ID space exhausted.";
+                if (_objects.Pcs.Count >= ObjectWorld.MaxPcs) return "Too many PCs.";
+                return null;
+            }
             case PcAction.Delete:
             {
                 target = _objects.Pcs.SingleOrDefault(x => x.Id == c.Pc);
@@ -162,9 +195,9 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
         var bytes = request.RawData.AsSpan(request.Position, request.AvailableBytes).ToArray();
         var c = Parse(request);
         if (c.Action == PcAction.Extend) { var e = new NetDataWriter(); e.Put(bytes); e.Put(_objects.NextId); return e.CopyData(); }
-        if (c.Action != PcAction.Create) return bytes;
+        if (c.Action is not (PcAction.Create or PcAction.Import)) return bytes;
         // Propose IDs only; Apply commits them. Requests can never carry IDs of their own.
-        var template = _native.Describe(c.Template!) ?? throw new InvalidOperationException("Case template disappeared during validation.");
+        var template = Topology(c) ?? throw new InvalidOperationException("Case template disappeared during validation.");
         var w = new NetDataWriter(); w.Put(bytes);
         _activity.Get(ctx.Op.Actor)!.Player.Write(w); w.Put(_objects.NextId);
         w.Put(template.Parts.Count); foreach (var p in template.Parts) { w.Put(p.Sku); w.Put(p.NativeType); }
@@ -179,7 +212,7 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
         if (actor == null || actor.Epoch != c.Epoch) throw new InvalidDataException("Actor epoch changed before the PC change applied.");
         switch (c.Action)
         {
-            case PcAction.Create: ApplyCreate(ctx, c, actor, payload); break;
+            case PcAction.Create: case PcAction.Import: ApplyCreate(ctx, c, actor, payload); break;
             case PcAction.Delete:
             {
                 End(payload);
@@ -217,24 +250,32 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
         End(r);
         var canonical = new PcTemplate(parts, links);
         if (player != actor.Player || !Valid(canonical)) Bad("Invalid canonical PC creation.");
-        var local = _native.Describe(c.Template!) ?? throw new InvalidDataException("This peer cannot reproduce the case template.");
+        var local = Topology(c) ?? throw new InvalidDataException(c.Action == PcAction.Import ? "This peer doesn't have the imported PC." : "This peer cannot reproduce the case template.");
         if (!local.Parts.SequenceEqual(canonical.Parts) || !local.Links.SequenceEqual(canonical.Links))
             Bad("The case template topology differs on this peer.");
         var (next, gap) = Allocation(first, parts.Length + 1);
         var occupant = Occupant(actor.Actor);
         PcFact? replaced = null;
+        if (c.Action == PcAction.Import && occupant != null) Bad("The importing actor's carrier is occupied.");
         if (c.Pc.IsNone) { if (occupant != null) Bad("The creating actor's carrier is occupied."); }
         else if (occupant?.Id == c.Pc) replaced = occupant;
         else Bad("The replaced PC is not carried by the creating actor.");
         var partIds = Enumerable.Range(0, parts.Length).Select(i => new NetObjectId(first + 1 + (ulong)i)).ToArray();
-        var fact = new PcFact(new(first), new(InstanceOrigin.Catalog, player, ctx.Op), PcLocation.Carried(actor.Actor, player),
+        var origin = c.Action == PcAction.Import ? InstanceOrigin.Imported : InstanceOrigin.Catalog;
+        var fact = new PcFact(new(first), new(origin, player, ctx.Op), PcLocation.Carried(actor.Actor, player),
             parts.Select((p, i) => new PartFact(partIds[i], p.Sku, p.NativeType)).ToArray(),
             links.Select(l => new PartLink(l.Path, partIds[l.Part])).ToArray());
         var retired = _objects.Retired.Concat(gap).Concat(replaced == null ? Enumerable.Empty<NetObjectId>() : AllIds(replaced));
         Publish(_objects.Pcs.Where(x => x.Id != c.Pc).Append(fact), retired, next);
         SkippedIds += (ulong)gap.Length;
-        _native.Created(ctx, fact, c.Template!, replaced);
+        if (c.Action == PcAction.Import) ((IPcImportNative)_native).Imported(ctx, fact, c.Content!);
+        else _native.Created(ctx, fact, c.Template!, replaced);
     }
+
+    /// <summary>The topology a creation mints IDs for: the catalog case's, or the imported PC's.</summary>
+    private PcTemplate? Topology(PcCommand c) => c.Action == PcAction.Import
+        ? (_native as IPcImportNative ?? throw new InvalidDataException("This game can't import PCs."))?.DescribeImport(c.Content!)
+        : _native.Describe(c.Template!);
 
     /// <summary>Check host-assigned IDs. The host's must start at its allocator; a guest may be behind the host by
     /// IDs the host issued outside the stream, which become tombstones here.</summary>

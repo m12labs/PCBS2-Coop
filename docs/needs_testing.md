@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.23**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.24**. Tick a line when it passes, and note the date if it fails.
 
 ## Workbench: building a PC ([phase 4](audit/phase-4.md), 4f)
 
@@ -91,10 +91,24 @@ Current build: **0.23**. Tick a line when it passes, and note the date if it fai
 
 ## Cable app ([phase 11](audit/phase-11.md))
 
-- [ ] Is the Cable app in Free Build (PC desktop or tablet)?
+- [x] Is the Cable app in Free Build? Yes: Custom Cables on the tablet (November 2, 2026)
 - [ ] Buy a custom cable set: it is in both inventories
 - [ ] Plug one of its cables in from each side
 - [ ] Save and Continue after buying
+
+## Workshop: decorating and lights ([phase 12](audit/phase-12.md))
+
+- [ ] Decorator (tablet, T): pick a wall, a floor and a desk, then Apply To All, from each side; the other player is refused while you decorate and sees "Decorating"
+- [ ] Light colour and pulse in Decorator: the other game's lights follow
+- [ ] Save, Continue and a guest join after decorating: both rooms show the same decorations
+- [ ] Light switch and the lights key, each side: both rooms and ceiling fans follow; a joining guest gets the same lights
+
+## Wallpapers and PC import ([phase 12](audit/phase-12.md))
+
+- [ ] Custom picture from the wallpaper app's custom tab, each side: both screens show it, after Continue and a join too
+- [ ] Your Windows wallpaper, each side: both screens show the same picture
+- [ ] A picture over 8 MB is refused with a message
+- [ ] Pick up a PC file from the cupboard, each side: it arrives in your hands on both games with its paint job; store it, Continue, join
 
 ## PC screens, BIOS and software ([phase 6](audit/phase-6.md), passed; quick check after updates)
 

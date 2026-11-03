@@ -1,5 +1,12 @@
 # PCBS2 Co-op synchronization progress
 
+**November 2, 2026 — phase 12 workshop, wallpapers and PC import, version 0.24 (checked in owned two-game runs).** [Phase 12 audit](audit/phase-12.md); the owner answered its eight questions the same day.
+- Decorator app (tablet): one player at a time ("Someone is decorating the workshop.", "Decorating" under the name). Picks and the light colour reach the other game. The room shows new decorations after the next load, the same way on both games.
+- The light switch (and the lights key) changes both rooms. Lights, the seasonal decoration and the host's season are kept with the world, so Continue and a joining guest get them.
+- Custom and Windows wallpapers on a PC: the picture is sent to the other game and kept with the world (a guest that lacks it asks the host). Pictures over 8 MB are refused.
+- Picking up a PC file in the cupboard imports it into your hands on both games, with its paint job.
+- **706/706** checks; Release 0/0; deployed. 0.24 loads 0.23 co-op saves.
+
 **November 2, 2026 — phase 11 PC customization and lighting, version 0.23 (code and model tests only, not run in game).** [Phase 11 audit](audit/phase-11.md); the owner answered its seven questions the same day.
 - Case-modding table: one player at a time ("Someone is using the case modding table.", "Case modding" under the name). When the table closes, the other game shows the finished paint, stickers and theme. The host hands out each case's design number, so two cases never share a design.
 - Switching a table between delidding, water cooling and case modding is shared, and refused while the other player uses that table.
