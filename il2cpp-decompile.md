@@ -2,7 +2,7 @@
 
 A practical workflow for turning an installed Unity IL2CPP game into a searchable reverse engineering workspace. PC Building Simulator 2 (PCBS2) is the worked example. The intended next use is multiplayer mod development.
 
-This guide records the work performed on October 24, 2026, including the parts still running. Commands use Windows PowerShell. Adapt the executable name, data directory, architecture, and tool versions for another game.
+This guide records the work performed on October 24, 2026. Commands use Windows PowerShell. Adapt the executable name, data directory, architecture, and tool versions for another game.
 
 ## 1. Understand the recovery target
 
@@ -375,11 +375,11 @@ The following are observations from this run, rather than defaults for other gam
 | Indexed address annotations | 216,901 across 86 assemblies with addressed entries |
 | Distinct indexed addresses | 123,986 |
 | Shipped file inventory | 3,118 files; 18 native executables/libraries hashed |
-| Native Ghidra export | Pending: initial native analysis is still running |
-| Native coverage report | Pending: requires the completed export |
-| BepInEx | Downloaded and staged; game installation and launch test pending |
+| Native Ghidra export | Partial: pseudocode for 42 individually exported functions; no full export |
+| Native coverage report | Not produced; requires a full export |
+| BepInEx | be.791, installed with `scripts/Install-Loader.ps1`; runs the mod |
 
-The initial Ghidra run has emitted overlapping-function repair diagnostics and spent substantial time in address-table analysis. No final native coverage count is claimed in this revision. Update this record from `summary.json`, `coverage.json`, and the successful Ghidra save report when those steps finish.
+The initial Ghidra run emitted overlapping-function repair diagnostics and spent substantial time in address-table analysis. No native coverage count is claimed. Update this record from `summary.json`, `coverage.json`, and the Ghidra save report if a full export is run.
 
 ## 15. Reproduce and transfer the workflow
 

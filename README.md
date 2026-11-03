@@ -98,7 +98,7 @@ Both players install the same version. On the main menu, click **Co-op**. The li
 - **Co-op Options:** choose how you host, **Steam** or **LAN**, and the LAN port.
 - **Steamworks (experimental):** both players open Steam and launch PCBS2. The host picks Steam in Co-op Options, hosts a world, then Esc → **Invite Friends**. The guest accepts the invite with PCBS2 open on its main menu. Use the in-game friends list if the overlay doesn't open.
 
-LAN remains available when Steamworks isn't. See the [Steamworks notes](steamworks.md) for setup and pending two-PC testing.
+LAN remains available when Steamworks isn't. The two-PC Steam tests still to run are in [needs testing](docs/needs_testing.md#steam-connection-version-09-onward); dependency and App ID notes are in [third-party/Steamworks.md](third-party/Steamworks.md).
 
 The guest can join at any time while the host is in the workshop, and can leave and rejoin. For LAN, `127.0.0.1` only reaches the same PC; allow the game through Windows Firewall on your private network if prompted, or forward the UDP port for direct-IP play outside your LAN.
 
@@ -121,7 +121,7 @@ An opt-in two-instance self test plays a full session on one PC (new world, late
 
 Source layout: `src/PCBS2Coop.Network` contains the Unity-free session, handshake, host-ordered world changes and snapshot transfer over LiteNetLib; `src/PCBS2Coop.Plugin` contains the BepInEx/Unity side; `tests/PCBS2Coop.Network.Tests` contains executable network scenarios. Keep Unity calls on Unity's main thread.
 
-Start with the [roadmap](plan.md), the [sync checklist](docs/sync-progress.md), the [player model plan](docs/playermodel.md), the [audit reports](docs/audit/README.md) and the [contributor notes](AGENTS.md). The [decompile workflow](il2cpp-decompile.md) describes how the research workspace is produced from your own installation; its output is never committed.
+Start with the [roadmap](plan.md), the [sync checklist](docs/sync-progress.md), the [two-game tests still to run](docs/needs_testing.md), the [player model plan](docs/playermodel.md), the [audit reports](docs/audit/README.md) and the [contributor notes](AGENTS.md). The [decompile workflow](il2cpp-decompile.md) describes how the research workspace is produced from your own installation; its output is never committed.
 
 ## License and disclaimer
 

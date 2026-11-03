@@ -135,6 +135,21 @@ Current build: **0.24**. Tick a line when it passes, and note the date if it fai
 - [ ] Rejoin over Steam (needs two Steam accounts)
 - [ ] Exit while the world can't be saved shows the message
 
+## Steam connection (version 0.9 onward)
+
+Needs two PCs with two different Steam accounts, preferably on separate networks, both running the same build with its complete `steam/` folder. Use fresh co-op worlds and back up paired saves first. The single-PC check (`scripts/Test-SteamLocal.ps1`, no game running) already passes: it starts Steam under App ID 480, hosts, opens the friends list and closes the lobby without sending invites.
+
+- [ ] Host picks Steam, starts a world, Esc → Invite Friends (friends list if the overlay doesn't open); guest accepts from the main menu, loads the world, both see each other
+- [ ] Move, create/delete a case, pick up/drop/store/retrieve a PC, pause and switch focus while the other player moves
+- [ ] Late join while the host makes changes; host save copy reaches the guest
+- [ ] Guest leaves carrying a PC: host stays, PC goes to the cupboard; guest accepts a fresh invite and rejoins
+- [ ] Host leaves: guest returns to the menu; host Continues and the guest joins again
+- [ ] Accept an invite while already in a world: notice, that world isn't replaced
+- [ ] Cancel create/join, accept twice, a stale/full/unrelated lobby, a different mod build: readable refusal, a new attempt still works
+- [ ] Steam offline or lost mid-session, missing `steam/` folder, Steam turned off: LAN still works afterwards
+- [ ] Friends list with no friends online; a failed invite reports a result
+- [ ] Both logs: `[net] Steam route:` shows a relayed route (a direct or LAN link doesn't count), with snapshot size and time
+
 ## Everyday basics (quick regression after each update)
 
 - [ ] Host and guest join, see each other, chat works
