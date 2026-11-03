@@ -2,37 +2,38 @@
 
 Build PCs together in **PC Building Simulator 2**. PCBS2 Co-op is an unofficial two-player mod that puts you and a friend in the same Free Build workshop over LAN or Steamworks when available.
 
-Built for BepInEx 6 IL2CPP. **Current version: 0.13** (early development). Both players need the same mod version; a different version is refused when joining. Version 0.13 changes co-op save data: older co-op saves are refused pending migration support. Keep their original files; use a fresh co-op world for this build.
+Built for BepInEx 6 IL2CPP. **Current version: 0.24** (in development). Both players need the same mod version; a different version is refused when joining. 0.24 loads co-op saves made by 0.16 or later; older co-op saves are refused, so start a fresh co-op world if yours is older.
 
-> **Early development.** You share one workshop, and whole PCs are shared: creating and deleting PCs and moving them between benches, your hands and the storage cupboard show up for both players. Building inside a PC isn't shared yet; version 0.13 shares latches (RAM clips, CPU levers, M.2 covers) and case panels, and refuses other part installs and removals in co-op until they are shared. Normal co-op saves refuse unconfirmed component/mechanical changes; `/sync` explicitly repairs from the host's current game. Shared building is the next milestone. See [what works](#sync-progress).
+> **In development.** Most of Free Build is shared: building a PC part by part, cables and power, water cooling, the PC's screens, BIOS and benchmarks, thermal paste and the tool tables, case modding and lighting, and the workshop's decorations, lights and wallpapers. Saves, backups and rejoining after a dropped connection work too. Some of these have only been checked in short test runs and still need a full two-player test ([what's left to test](docs/needs_testing.md)). Career mode isn't started. See [what works](#sync-progress).
 
 > **Unofficial fan project.** PCBS2 Co-op is not affiliated with the developers or publishers of PC Building Simulator 2. This repository contains no game code or game assets.
 
 ## Sync progress
 
-A quick look at what's ready and what's next. See the [full sync checklist](docs/sync-progress.md) for individual features and the [roadmap](plan.md) for the order of work.
+A quick look at what's ready and what's next, as of version 0.24. See the [full sync checklist](docs/sync-progress.md) for individual features, the [roadmap](plan.md) for the order of work and [needs testing](docs/needs_testing.md) for the two-player tests still to run.
 
-| Feature | Planned | Partially synced | Synced | Comments |
-| --- | :---: | :---: | :---: | --- |
-| LAN Host / Join | | | ✅ | Direct IP and port from the main menu. |
-| Steam Invite / Join | | ✅ | | Steamworks when available. |
-| Join check | | | ✅ | A different mod version or game build is refused with the reason; DLC or part catalog differences join with a warning. |
-| Shared Free Build world | | | ✅ | Host picks a new or saved co-op world; both players load the same workshop. |
-| Joining an active session | | | ✅ | Join or rejoin any time; you get the host's current world, including changes made while you load. |
-| Co-op saves | | | ✅ | One co-op world, kept apart from your solo saves. The guest keeps a copy of the host's latest save. |
-| Leaving | | | ✅ | Host leaving sends the guest back to the menu with the reason; guest leaving lets the host keep playing. |
-| Pause | | | ✅ | Either player's pause menu is personal; the session keeps running. |
-| Seeing each other | | ✅ | | Position and facing on a placeholder capsule; a PC the other player carries shows as a cardboard box. Character models and animations later. |
-| Creating and deleting PCs | | | ✅ | Choosing a case from the inventory and deleting a PC are approved by the host and appear for both players. |
-| Carrying, benches and storage | | ✅ | | Picking up, dropping, swapping, storing and retrieving PCs on workbenches are shared. If both players grab the same PC or bench, one wins and the other sees a short notice. A guest who leaves while carrying a PC puts it back in the cupboard. Tool benches come later (phase 9), desks and the shop front with career mode; a world with notes or packages can't be hosted yet. |
-| Chat and /sync | | | ✅ | Press Enter to chat. If a game shows "out of sync", `/sync` saves and reloads both games. |
-| Co-op saves of shared PCs | | | ✅ | Every PC keeps its identity and location through saves, Continue and rejoining, including a PC the guest was carrying. |
-| Installing and removing parts | ✅ | | | Phase 4. |
-| Cables, power and peripherals | ✅ | | | Phase 5. |
-| Booting, BIOS, OS and screens | ✅ | | | Phase 6. |
-| Benchmarks, temperatures and tuning | ✅ | | | Phase 7. |
-| Cleaning, water cooling, RGB and customization | ✅ | | | Phases 9–11. |
-| Career mode | ✅ | | | After Free Build is complete. |
+| Feature | Planned | Implemented, not tested | Partially synced | Synced | Comments |
+| --- | :---: | :---: | :---: | :---: | --- |
+| LAN Host / Join | | | | ✅ | Direct IP and port from the main menu. |
+| Steam Invite / Join | | | | ✅ | Private Steam lobby invites (overlay or in-game friends list) and play over Steam relay. LAN stays available. |
+| Join check | | | | ✅ | A different mod version or game build is refused with the reason; DLC or part catalog differences join with a warning. |
+| Shared Free Build world | | | | ✅ | Host picks a new or saved co-op world; both players load the same workshop. |
+| Joining an active session | | | | ✅ | Join any time; you get the host's current world, including changes made while you load. |
+| Co-op saves and rejoin | | | | ✅ | Named co-op worlds kept apart from solo saves, with a host autosave and hidden backups of the last good save. The host's pause-menu Load and Reset reload both games; the guest can't save. A guest who drops gets a Rejoin button and comes back where it stood. Checked in test runs; the owner's full pass is next. |
+| Leaving and pause | | | | ✅ | Host leaving sends the guest back to the menu with the reason; guest leaving lets the host keep playing. Either player's pause menu is personal; the session keeps running. |
+| Seeing each other | | | ✅ | | An animated character (a capsule if the model can't load) with a name tag and what you're doing under it; a carried PC shows as a cardboard box. Detailed animations and sounds come later (phase 13). |
+| Chat and /sync | | | | ✅ | Press Enter to chat. If a game shows "out of sync", `/sync` saves and reloads both games. |
+| PCs, carrying, benches and storage | | | | ✅ | Creating, deleting, picking up, dropping, storing and retrieving PCs, and importing a PC file from the cupboard. If both players grab the same PC or bench, one wins and the other sees a short notice. A world with packages or notes can't be hosted yet. |
+| Installing and removing parts | | | | ✅ | Both players can work on the same PC; each sees the other's installs with the game's animations. Latches, clips and case panels too. |
+| Cables, power and peripherals | | | | ✅ | Plugging and unplugging cables (splitters and custom colours too), power buttons and workbench monitor/keyboard/mouse swaps. |
+| Water cooling | | | | ✅ | Pipes, coolant fill and drain, water blocks, pumps and reservoirs. |
+| Booting, BIOS and screens | | | ✅ | | Both games run the same desktop and apps from both players' clicks; BIOS changes are shared. Window positions, files and installed programs aren't shared yet. |
+| Benchmarks, temperatures and tuning | | ✅ | | | Benchmarks run on both games, blue screens follow the host, GPU Tuner and Fan Control curves are shared. |
+| Thermal paste and tool tables | | ✅ | | | Paste on and off, and the delidding and water-cooling tables (one player at a time; the result is shared). Cleaning is refused in co-op until career mode. |
+| Case modding and lighting | | ✅ | | | The case-modding table shares its finished design; Lighting app settings, presets and effects are shared; Cable app purchases reach both inventories. The LED strip tool can't be opened in this game build. |
+| Workshop and wallpapers | | | ✅ | | Decorating (one player at a time), the light switch, the season and its decorations, and custom and Windows wallpapers. Checked in test runs. |
+| Remaining Free Build details | ✅ | | | | Phases 13–14: detailed player animations, sounds, remaining apps, faults and performance. |
+| Career mode | ✅ | | | | Phases 15–18, after Free Build is complete. |
 
 ## Installation
 
@@ -84,7 +85,7 @@ To remove the loader again, run `.\scripts\Uninstall-Loader.ps1`. It restores or
 Start the game, then open `<GameDir>\BepInEx\LogOutput.log` and look for:
 
 ```text
-[Info   :PCBS2 Coop] PCBS2 Coop 0.13 loaded.
+[Info   :PCBS2 Coop] PCBS2 Coop 0.24 loaded.
 ```
 
 The main menu also gains a **Co-op** entry above Options, and a GitHub icon with the mod version in the bottom row.
@@ -96,17 +97,17 @@ Both players install the same version. On the main menu, click **Co-op**. The li
 - **Host Co-op:** **New Game** names and starts a new co-op world, **Continue** opens the most recently saved one, **Load Game** lists them all (each world has its own autosave, shown as "(auto)").
 - **Join a Friend:** enter the host's IPv4 address (`ipconfig` on the host's PC) and port (default `7777`) → **Connect**.
 - **Co-op Options:** choose how you host, **Steam** or **LAN**, and the LAN port.
-- **Steamworks (experimental):** both players open Steam and launch PCBS2. The host picks Steam in Co-op Options, hosts a world, then Esc → **Invite Friends**. The guest accepts the invite with PCBS2 open on its main menu. Use the in-game friends list if the overlay doesn't open.
+- **Steam:** both players open Steam and launch PCBS2. The host picks Steam in Co-op Options, hosts a world, then Esc → **Invite Friends**. The guest accepts the invite with PCBS2 open on its main menu. Use the in-game friends list if the overlay doesn't open.
 
-LAN remains available when Steamworks isn't. The two-PC Steam tests still to run are in [needs testing](docs/needs_testing.md#steam-connection-version-09-onward); dependency and App ID notes are in [third-party/Steamworks.md](third-party/Steamworks.md).
+LAN remains available when Steam isn't. Dependency and App ID notes are in [third-party/Steamworks.md](third-party/Steamworks.md).
 
 The guest can join at any time while the host is in the workshop, and can leave and rejoin. For LAN, `127.0.0.1` only reaches the same PC; allow the game through Windows Firewall on your private network if prompted, or forward the UDP port for direct-IP play outside your LAN.
 
-**Saves.** The host's co-op world is saved in `<GameDir>\Saves\Coop`, separate from solo Free Build saves. The guest plays from a temporary folder and keeps a copy of the host's latest save in `Saves\Coop\Joined`. Neither player's solo saves are read or written during a session.
+**Saves.** The host's co-op worlds are saved in `<GameDir>\Saves\Coop`, separate from solo Free Build saves. The host saves on an interval (Co-op Options, default 5 minutes), on Exit and from the Save screen; the game's own autosaves are skipped in co-op. If a save is interrupted, the next Continue loads the previous good one with a notice. The guest plays from a temporary folder, keeps a copy of the host's latest save in `Saves\Coop\Joined` and can't save, load or reset the world itself. Neither player's solo saves are read or written during a session.
 
-**Pause and leaving.** The Esc menu is personal for both players; the session keeps running. If the host leaves, the guest returns to the main menu with the reason. If the guest leaves, the host keeps playing, and a PC the guest was carrying goes to the storage cupboard.
+**Pause and leaving.** The Esc menu is personal for both players; the session keeps running. The host's pause-menu Load Game and Reset reload both games. If the host leaves, the guest returns to the main menu with the reason. If the guest leaves, the host keeps playing, and a PC the guest was carrying goes to the storage cupboard. A guest whose connection drops gets a **Rejoin** button.
 
-**Shared PCs.** Choosing a case, deleting a PC and moving PCs between workbenches, your hands and the cupboard are checked by the host and then happen on both screens. If the other player already took that PC or bench, your action is refused with a short notice on the co-op status line. Two players can work on the same PC, but part changes inside it aren't shared yet.
+**Shared PCs.** Changes to PCs (creating, moving, building, cabling, BIOS and the rest) are checked by the host and then happen on both screens. Both players can work on different parts of the same PC at once. If the other player already took that PC, part, bench or table, your action is refused with a short notice on the co-op status line, and the other player's current activity shows under their name.
 
 **Chat and /sync.** Press **Enter** in the workshop to type, **Enter** again to send and **Esc** to cancel; the game ignores your keys while you type. If a game can't show a change, a red **OUT OF SYNC** marker appears in its top-right corner. Type `/sync` to fix it: the host saves the world and both games reload it, which takes a short loading screen. A guest's `/sync` asks the host first; the host answers with `/yes` or `/no`. A PC the guest is carrying goes to the storage cupboard during the reload. `/help` lists the commands.
 
