@@ -83,3 +83,5 @@ In 0.30, `RoutePipeState.OnAccept` distinguishes a confirmed route from a discar
 Cold Continue and fresh guest admission kept the removed pipe absent and the loop empty. After replacing the pipe and refilling, `/sync` kept the replacement and coolant on both games. [Persistence retest](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)
 
 Both copies of PC 26 were at the desktop with the full loop. The guest clicked the reservoir in Remove mode. The game's drain gesture powered down the guest's PC, and the host reloaded the drained record with power off. Both loops were complete and empty at revision 298. [Powered drain](acceptance-2026-11-04.md#powered-coolant-drain-in-030)
+
+In 0.31, native transform reports confirmed the retained red rigid pipe's two bend fittings and identical geometry on both games. [Route geometry](acceptance-2026-11-04.md#long-fan-orientation-and-blocked-cpu-removal-in-031)

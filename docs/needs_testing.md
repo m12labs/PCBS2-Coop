@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.30**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.31**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
@@ -13,10 +13,10 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Two identical parts (RAM sticks, fans): remove one, the other stays (0.30, November 5, 2026: both top fans stayed when the identical rear fan was removed)
 - [x] Both players work on different parts of the same PC at once: the second edit attempt is refused under the phase 4e waiting rule (0.30, November 5, 2026)
 - [x] Both players go for the same slot at once: one wins, one gets a refusal (0.30, November 5, 2026)
-- [ ] Try a part that doesn't fit, or a blocked removal: refused, nothing changes
+- [x] Try a part that doesn't fit, or a blocked removal: refused, nothing changes (0.31, November 5, 2026: the installed cooler blocked CPU removal and both PCs kept the CPU)
 - [ ] Latches, CPU levers, RAM clips, case panels both ways
 - [ ] Esc halfway through an install and a removal (phase 4 native checks found that Esc after install starts normally leaves it running. In 0.30 Esc at fan orientation also left the editor open. Removal retest remains.)
-- [ ] Guest joins while the host is building
+- [x] Guest joins while the host is building (0.31, November 5, 2026: fresh guest waited through the host's fan install, then loaded the completed PC)
 - [ ] Save, Exit, Continue after a build
 
 ## Workbench: cables and power ([phase 5](audit/phase-5.md), 5d)
@@ -33,7 +33,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Workbench: custom water cooling ([phase 10](audit/phase-10.md), 10b)
 
-- [ ] Lay a pipe with corners (0.30, November 5, 2026: accepted flexible and rigid pipes reached both games. A manually added corner still needs verification.)
+- [x] Lay a pipe with corners (November 5, 2026: guest accepted a red rigid pipe in 0.30, and both games reported the same four nodes and two bend fittings in 0.31)
 - [ ] Undo and Esc in the pipe tool: nothing shared (0.30, November 5, 2026: Escape from fitting choice and from the rigid route after using Undo sent no record. Undo's geometry reversal still needs verification.)
 - [x] Remove a pipe (0.29, November 5, 2026, run acceptance-c)
 - [x] Fill the loop with coolant, then drain it (0.29, November 5, 2026, PC powered off)
@@ -156,7 +156,7 @@ Needs two PCs with two different Steam accounts, preferably on separate networks
 
 ## Everyday basics (quick regression after each update)
 
-- [ ] Host and guest join, see each other, chat works
+- [ ] Host and guest join, see each other, chat works (0.31, November 5, 2026: both remote models spawned and plain chat reached both games. Fresh visual check remains.)
 - [ ] Spawn, pick up, drop, store and retrieve PCs
 - [ ] Swap a workbench monitor, keyboard or mouse
 - [ ] `/sync` repairs a world
