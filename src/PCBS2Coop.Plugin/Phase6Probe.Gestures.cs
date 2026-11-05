@@ -121,8 +121,8 @@ internal sealed partial class Phase6Probe
         {
             var native = coop.Objects.Assembly.NativeFor(pc.Id, resource.Id);
             var slot = native?.TryCast<Slot>();
-            var occupant = slot?.GetComponent();
-            var part = occupant?.GetPartInstance();
+            var occupant = slot == null ? null : slot.GetComponent();
+            var part = occupant == null ? null : occupant.GetPartInstance();
             var pin = native?.TryCast<CPin>();
             var screw = native?.TryCast<Screw>();
             return new
