@@ -134,6 +134,8 @@ internal sealed class NativeAssembly : IAssemblyNative
             if (_rebind.Contains(pc.Id) && !CanCaptureNative) continue;
             // A water-cooling reload shows the finished record before the host's settle updates the facts: bind after it.
             if (c.Edits?.Reloading(pc.Id) == true || c.Repair?.Reloading(pc.Id) == true) continue;
+            // The host can settle a wiring edit while the guest is still showing it, including before its animation starts.
+            if (c.Edits?.WireMoving(mesh) == true) continue;
             // A freshly loaded PC can still be running the native load's own latch animation; check again later.
             if (mesh.GetComponentsInChildren<CPin>(true).Any(p => p != null && p.IsAnimating())) continue;
             try

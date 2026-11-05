@@ -140,8 +140,8 @@ internal sealed partial class NativeComponentEdits
         return button != null && button.animationRunning;
     }
 
-    /// <summary>Host stability: a cable edit or power press is still moving there, or being shown.</summary>
-    private bool WireMoving(Case mesh) => CablesBusy(mesh) || _wireRuns.Any(r => r.Mesh != null && r.Mesh.Pointer == mesh.Pointer);
+    /// <summary>A cable edit or power press is still moving on this PC, or its replay is queued or running here.</summary>
+    internal bool WireMoving(Case mesh) => CablesBusy(mesh) || _wireRuns.Any(r => r.Mesh != null && r.Mesh.Pointer == mesh.Pointer);
 
     private static PowerConnector FindConnector(Case mesh, BenchSlot bench, string id)
     {
