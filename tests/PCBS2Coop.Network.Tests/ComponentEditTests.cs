@@ -325,6 +325,25 @@ internal static class ComponentEditTests
         Send(l.Guest, ComponentEditWorld.Cancel(G().Epoch, begin));
         t.Check(ge.Edits.Count == 0 && G().Pending == null && !P(go).Powered && Same(), "a press that changed nothing is cancelled");
 
+        Send(l.Guest, ActivityWorld.Work(G(), default), CommandTypes.ActorActivity);
+        rev = l.Host.Revision;
+        Send(l.Guest, Wire(G(), EditGesture.Connect, "PSU_24"));
+        t.Check(l.Host.Revision == rev && l.GuestRejected.Last().Text.Contains("not working"),
+            "a walking player still cannot start a cable edit");
+        begin = Send(l.Guest, Wire(G(), EditGesture.Power, "on"));
+        t.Check(G().WorkingPc.IsNone && G().Pending?.Token == begin && ha.MovementBlock(Id(2)) != null && Same(),
+            "the walking power shortcut claims the PC without entering work mode and blocks movement");
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Wired(Wiring.None with { Powered = true })));
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(P(ho).Powered && P(go).Powered && G().WorkingPc.IsNone && G().Pending == null && Same(),
+            "the walking player can finish the shared power change and releases its claim");
+        begin = Send(l.Guest, Wire(G(), EditGesture.Power, "off"));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Wired(Wiring.None)));
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(!P(ho).Powered && !P(go).Powered && G().Pending == null && Same(),
+            "the walking shortcut also powers the PC off on both peers");
+        Send(l.Guest, ActivityWorld.Work(G(), Id(2)), CommandTypes.ActorActivity);
+
         var powered = P(ho) with { Powered = true };
         t.Check(!powered.At(PcLocation.Storage).Powered && powered.At(powered.Location).Powered &&
             Throws(() => new ObjectWorld().Replace(ho.WorldId, ho.NextId, ho.Locations, new[] { powered with { Location = PcLocation.Storage } }, ho.Retired)),

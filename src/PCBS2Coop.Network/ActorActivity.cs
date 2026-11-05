@@ -8,7 +8,10 @@ public sealed record ActivityClaim(OperationId Token, ActivityOperation Kind, Ne
     public string BindingStamp { get; init; } = "";
     public IReadOnlyList<NetObjectId> Writes { get; init; } = Array.Empty<NetObjectId>();
 }
-public sealed record ActorActivity(ActorSlot Actor, PlayerId Player, ulong Epoch, ulong Version, NetObjectId WorkingPc, ActivityClaim? Pending);
+public sealed record ActorActivity(ActorSlot Actor, PlayerId Player, ulong Epoch, ulong Version, NetObjectId WorkingPc, ActivityClaim? Pending)
+{
+    internal bool CanEdit(NetObjectId pc, bool allowWalking) => WorkingPc == pc || (allowWalking && WorkingPc.IsNone);
+}
 
 /// <summary>Session activity, separate from committed object locations. Work is shared; resource claims are
 /// exclusive. A movement claim conflicts with every worker/claim on its PC, including its requester.
@@ -43,12 +46,15 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
     }
     /// <summary>Revalidate immediately before a future commit. The acquisition token and epoch must still own
     /// exactly the requested resources; a cancellation/reconnect cannot authorize a delayed completion.</summary>
-    public bool Owns(ActorSlot actor, ulong epoch, OperationId token, NetObjectId pc, ActivityOperation kind, params NetObjectId[] targets)
+    public bool Owns(ActorSlot actor, ulong epoch, OperationId token, NetObjectId pc, ActivityOperation kind, params NetObjectId[] targets) =>
+        Owns(actor, epoch, token, pc, kind, false, targets);
+
+    internal bool Owns(ActorSlot actor, ulong epoch, OperationId token, NetObjectId pc, ActivityOperation kind, bool allowWalking, NetObjectId[] targets)
     {
         if (Get(actor) is not { } a || a.Epoch != epoch || a.Pending is not { } p || p.Token != token || p.Pc != pc ||
             p.Kind != kind || _objects.Pcs.SingleOrDefault(x => x.Id == pc) is not { } current) return false;
         if (kind == ActivityOperation.Move) return targets.Length == 0 && p.Targets.Count == 0;
-        if (kind != ActivityOperation.Edit || a.WorkingPc != pc || current.Location.Place != PcPlace.Bench ||
+        if (kind != ActivityOperation.Edit || !a.CanEdit(pc, allowWalking) || current.Location.Place != PcPlace.Bench ||
             targets.Distinct().Count() != targets.Length) return false;
         // A whole-PC claim (cable and power edits, command 9) has no part targets.
         if (targets.Length == 0) return p.Targets.Count == 0 && p.Writes.Count == 0 && p.BindingStamp == Stamp(current, p.Writes);
@@ -66,9 +72,9 @@ public sealed class ActivityWorld : IWorldState, ICanonicalCommandHandler
     /// <summary>Component edits (command 9) take their edit claim inside their own host-validated command, so the
     /// claim and the edit record change in one revision. The caller has checked the actor, PC and conflicts. No targets
     /// claims the whole PC (cable and power edits, phase 5).</summary>
-    internal void SetEditClaim(OperationId token, ActorSlot actor, PcFact pc, IReadOnlyList<NetObjectId> targets)
+    internal void SetEditClaim(OperationId token, ActorSlot actor, PcFact pc, IReadOnlyList<NetObjectId> targets, bool allowWalking)
     {
-        if (Get(actor) is not { Pending: null } a || a.WorkingPc != pc.Id || a.Version == ulong.MaxValue)
+        if (Get(actor) is not { Pending: null } a || !a.CanEdit(pc.Id, allowWalking) || a.Version == ulong.MaxValue)
             throw new InvalidDataException("The edit claim's actor changed.");
         var plan = AssemblyResources.Plan(pc, targets);
         _actors[actor] = a with { Version = a.Version + 1, Pending = new(token, ActivityOperation.Edit, pc.Id, plan.All)

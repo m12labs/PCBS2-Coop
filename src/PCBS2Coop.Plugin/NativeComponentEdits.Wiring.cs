@@ -491,6 +491,41 @@ internal sealed partial class NativeComponentEdits
         }
     }
 
+    // The bench's walking shortcut calls the motherboard directly. Capture the interaction, so native power calls
+    // during boot, part edits and other game activity keep their original behavior.
+    private static bool BenchPower(BenchSlot bench, System.Action replay)
+    {
+        if (WireBypass) return true;
+        try
+        {
+            if (Current == null) return NotReady();
+            return Current.RequestPower(bench?.GetCaseInSlot(), replay);
+        }
+        catch (Exception e) { Plugin.Logger.LogError("[cables] bench power request failed: " + e); return false; }
+    }
+
+    [HarmonyPatch(typeof(BenchSlot.__c__DisplayClass63_0), nameof(BenchSlot.__c__DisplayClass63_0._GetInteractions_b__8))]
+    internal static class BenchPowerOnIntercept
+    {
+        private static bool Prefix(BenchSlot.__c__DisplayClass63_0 __instance) =>
+            BenchPower(__instance.__4__this, () => __instance._GetInteractions_b__8());
+    }
+
+    [HarmonyPatch]
+    internal static class BenchPowerToggleIntercept
+    {
+        private static IEnumerable<System.Reflection.MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(BenchSlot.__c__DisplayClass63_1), nameof(BenchSlot.__c__DisplayClass63_1._GetInteractions_b__9));
+            yield return AccessTools.Method(typeof(BenchSlot.__c__DisplayClass63_1), nameof(BenchSlot.__c__DisplayClass63_1._GetInteractions_b__10));
+        }
+
+        private static bool Prefix(BenchSlot.__c__DisplayClass63_1 __instance, System.Reflection.MethodBase __originalMethod) =>
+            BenchPower(__instance.__4__this, __originalMethod.Name == nameof(BenchSlot.__c__DisplayClass63_1._GetInteractions_b__9)
+                ? () => __instance._GetInteractions_b__9()
+                : () => __instance._GetInteractions_b__10());
+    }
+
     /// <summary>The work HUD's power button.</summary>
     [HarmonyPatch(typeof(WorkingOnComputerStateBase), nameof(WorkingOnComputerStateBase.PowerClicked))]
     internal static class PowerClickIntercept
