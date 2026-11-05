@@ -153,7 +153,7 @@ internal static class CoopSaves
             {
                 if (!CoopSaveBackups.Restore(file.FullName, BackupDir, out var problem)) continue;
                 restored.Add(DisplayName(file.Name));
-                Plugin.Logger.LogWarning($"[saves] '{file.Name}' didn't load ({problem}); its backup was put back (the unreadable copy is in '{BackupDir}').");
+                Plugin.Logger.LogWarning($"[saves] '{file.Name}' didn't load ({problem}); its previous pair is available (the unreadable copy is in '{BackupDir}').");
             }
             catch (Exception e) { Plugin.Logger.LogWarning($"[saves] could not restore the backup of '{file.Name}': {e.Message}"); }
         }

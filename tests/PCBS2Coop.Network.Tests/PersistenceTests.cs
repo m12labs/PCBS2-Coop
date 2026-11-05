@@ -108,6 +108,18 @@ internal static class PersistenceTests
             t.Check(CoopSaveBackups.Restore(path, backups, out _) && CoopSaveBackups.Readable(path, out _), "a save that lost its .coop is restored too");
             var lone = Path.Combine(dir, "Other.binary.zip"); File.WriteAllBytes(lone, new byte[] { 9 });
             t.Check(!CoopSaveBackups.Restore(lone, backups, out _) && File.Exists(lone), "without a backup, an unreadable save stays as it is");
+            var raw = path[..^4];
+            var partial = new byte[] { 4, 5, 6 };
+            File.WriteAllBytes(raw, partial);
+            var aside = Path.Combine(backups, Path.GetFileName(raw) + CoopSaveBackups.UnreadableSuffix);
+            t.Check(CoopSaveBackups.Restore(raw, backups, out _) && !File.Exists(raw) && File.Exists(aside) &&
+                    File.ReadAllBytes(aside).SequenceEqual(partial) && Revision(path) == 2,
+                "a raw write interrupted before zipping is set aside and the previous pair stays intact");
+            t.Check(!CoopSaveBackups.Restore(raw, backups, out _), "an interrupted raw save is reported only once");
+            var rawOnly = Path.Combine(dir, "Unpaired.binary");
+            File.WriteAllBytes(rawOnly, partial);
+            t.Check(!CoopSaveBackups.Restore(rawOnly, backups, out _) && File.Exists(rawOnly),
+                "a raw save without a readable previous pair is left alone");
             CoopSaveBackups.Delete("World--auto.binary.zip", backups);
             t.Check(Directory.GetFiles(backups).Length == 0, "deleting a world's save deletes its backup");
             t.Check(!Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Any(f => f.Contains(".tmp-")), "no temporary files are left behind");

@@ -36,16 +36,25 @@ public static class CoopSaveBackups
     }
 
     /// <summary>
-    /// <paramref name="nativePath"/> exists but doesn't load with its pair: put the backup in its place when the backup
-    /// reads. Returns whether it did; <paramref name="problem"/> says why the save didn't read (null when it does).
+    /// Recover a save that doesn't load with its pair. A raw write left beside a readable zip is moved aside.
+    /// Otherwise a readable backup is put back. Returns whether recovery happened and why the save didn't read.
     /// </summary>
     public static bool Restore(string nativePath, string backupDir, out string? problem)
     {
         problem = null;
         if (!File.Exists(nativePath) || Readable(nativePath, out problem)) return false;
         var backup = Path.Combine(backupDir, Path.GetFileName(nativePath));
-        if (!Readable(backup, out _)) return false;
-        var aside = Path.Combine(backupDir, Path.GetFileName(nativePath) + UnreadableSuffix);
+        var aside = backup + UnreadableSuffix;
+        if (!Readable(backup, out _))
+        {
+            if (!nativePath.EndsWith(".binary", StringComparison.OrdinalIgnoreCase) ||
+                File.Exists(nativePath + CoopSavePair.Extension) || !Readable(nativePath + ".zip", out _)) return false;
+            // The game writes the raw file before zipping it. Keep the last paired zip and move the unfinished write
+            // before the game's load list quarantines it without telling co-op.
+            Directory.CreateDirectory(backupDir);
+            File.Move(nativePath, aside, true);
+            return true;
+        }
         File.Copy(nativePath, aside, true);
         if (File.Exists(nativePath + CoopSavePair.Extension)) File.Copy(nativePath + CoopSavePair.Extension, aside + CoopSavePair.Extension, true);
         else if (File.Exists(aside + CoopSavePair.Extension)) File.Delete(aside + CoopSavePair.Extension);
@@ -59,6 +68,11 @@ public static class CoopSaveBackups
         foreach (var name in new[] { fileName, fileName + UnreadableSuffix })
             foreach (var path in new[] { Path.Combine(backupDir, name), Path.Combine(backupDir, name) + CoopSavePair.Extension })
                 if (File.Exists(path)) File.Delete(path);
+        if (fileName.EndsWith(".binary.zip", StringComparison.OrdinalIgnoreCase))
+        {
+            var rawAside = Path.Combine(backupDir, fileName[..^4] + UnreadableSuffix);
+            if (File.Exists(rawAside)) File.Delete(rawAside);
+        }
     }
 
     /// <summary>Copy a native file and its sidecar: both land in temporary files first, then replace the targets.</summary>
