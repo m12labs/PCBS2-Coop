@@ -80,6 +80,8 @@ internal static class GamePatches
             sim.PatchAll(typeof(NativeSimulation.FanApplyHook));
             var desktop = new Harmony(Plugin.Guid + ".desktop");
             desktop.PatchAll(typeof(NativeDesktopInput.BootFollow));
+            desktop.PatchAll(typeof(NativeDesktopInput.BootPromptAtlas));
+            desktop.PatchAll(typeof(NativeDesktopInput.BootPromptText));
             desktop.PatchAll(typeof(NativeDesktopInput.MonitorTickScope));
             desktop.PatchAll(typeof(NativeDesktopInput.MonitorPowerOn));
             desktop.PatchAll(typeof(NativeDesktopInput.MonitorPowerOff));

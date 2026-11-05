@@ -25,8 +25,9 @@ public static class CoopSavePair
     /// simulation messages (nothing saved). 0.21 compresses the state (both layouts are read); 0.22 adds tool-table and
     /// thermal paste messages (nothing saved); 0.23 adds case-modding, lighting and purchase messages (nothing new saved). 0.24
     /// adds the optional workshop state (lights, seasonal decoration, shared pictures): older saves load without it.
-    /// 0.25 fixes admission snapshot timing. 0.26 shares the walking power shortcut. Neither changes the save layout.</summary>
-    private static readonly string[] SameFormat = { "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
+    /// 0.25 fixes admission snapshot timing, 0.26 shares the walking power shortcut and 0.27 fixes cold co-op boot.
+    /// The save layout is the same across those builds.</summary>
+    private static readonly string[] SameFormat = { "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);
