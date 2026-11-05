@@ -26,10 +26,10 @@ public static class CoopSavePair
     /// thermal paste messages (nothing saved); 0.23 adds case-modding, lighting and purchase messages (nothing new saved). 0.24
     /// adds the optional workshop state (lights, seasonal decoration, shared pictures): older saves load without it.
     /// 0.25 fixes admission snapshot timing, 0.26 shares the walking power shortcut, 0.27 fixes cold co-op boot and
-    /// 0.28 restores the Windows wallpaper preview when its registry path is stale, 0.29 waits for local cable replays
-    /// and 0.30 resolves external cable endpoints on their own workstations.
+    /// 0.28 restores the Windows wallpaper preview when its registry path is stale, 0.29 waits for local cable replays,
+    /// and 0.30 resolves external cable endpoints and discards unaccepted pipe routes.
     /// The save layout is the same across those builds.</summary>
-    private static readonly string[] SameFormat = { "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
+    private static readonly string[] SameFormat = { "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);

@@ -683,6 +683,13 @@ internal sealed partial class NativeComponentEdits : IEditNative
 
     // ---------------- following this player's own edit ----------------
 
+    internal static void ChoosingOrientation(InstallingPartState state)
+    {
+        var local = Current?._local;
+        if (local?.State?.Pointer == state.Pointer && CurrentState?.Pointer == state.Pointer)
+            local.Since = Time.realtimeSinceStartup;
+    }
+
     private void Entered(InstallingPartState state)
     {
         if (_local == null || _local.Entered || state == null || ComponentEditWorld.IsWholePc(_local.Request.Gesture)) return;
