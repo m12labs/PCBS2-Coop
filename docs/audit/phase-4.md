@@ -533,3 +533,5 @@ Owner: simultaneous replay and autosave work. Issues from the run's logs:
 - **Replay "the slot is not empty on this game"**: the other game's own previews are put away when an edit begins but are removed a frame later; `Construct` now waits for them.
 
 After these fixes the owner built a PC from start to finish in a two-player session (October 30, 2026) and reported it working. Committed as 0.17.
+
+On November 5, 2026, owned 0.30 run `acceptance-c` removed one of three identical case fans on both games and confirmed that the other two stayed. The guest reinstalled the rear fan while both a same-slot request and a different-slot request from the host were refused. A host save waited for the install. These checks exercised native animation, replay and save guards through the isolated gesture probe. [Run record](acceptance-2026-11-04.md#identical-fans-powered-part-removal-and-contention-in-030)

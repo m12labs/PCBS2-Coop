@@ -10,12 +10,12 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 - [ ] Build a full PC from an empty case (board, CPU, cooler, RAM, GPU, drives, PSU, fans), host and guest each
 - [ ] Take a full PC apart again, host and guest each
-- [ ] Two identical parts (RAM sticks, fans): remove one, the other stays
-- [ ] Both players work on different parts of the same PC at once
-- [ ] Both players go for the same slot at once: one wins, one gets a refusal
+- [x] Two identical parts (RAM sticks, fans): remove one, the other stays (0.30, November 5, 2026: both top fans stayed when the identical rear fan was removed)
+- [x] Both players work on different parts of the same PC at once: the second edit attempt is refused under the phase 4e waiting rule (0.30, November 5, 2026)
+- [x] Both players go for the same slot at once: one wins, one gets a refusal (0.30, November 5, 2026)
 - [ ] Try a part that doesn't fit, or a blocked removal: refused, nothing changes
 - [ ] Latches, CPU levers, RAM clips, case panels both ways
-- [ ] Esc halfway through an install and a removal
+- [ ] Esc halfway through an install and a removal (phase 4 native checks found that Esc after install starts normally leaves it running. In 0.30 Esc at fan orientation also left the editor open. Removal retest remains.)
 - [ ] Guest joins while the host is building
 - [ ] Save, Exit, Continue after a build
 
@@ -29,7 +29,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Power on/off with the case button and the HUD button (0.26, November 5, 2026: native case-button callback and real HUD clicks, run acceptance-c)
 - [x] Pick up a powered PC: off on both games (0.26, November 5, 2026: actual guest pickup, run acceptance-c)
 - [x] Late join and Continue with a powered PC: on again on both games (0.27, November 5, 2026: cold host and guest both reached the desktop, run acceptance-c)
-- [ ] Part edit on a powered PC: same power state afterwards
+- [x] Part edit on a powered PC: same power state afterwards (0.30, November 5, 2026: rear fan removal shut down both PCs)
 
 ## Workbench: custom water cooling ([phase 10](audit/phase-10.md), 10b)
 
@@ -132,7 +132,7 @@ Substantial actual two-game evidence already exists in [phase 8's p8a–p8m runs
 
 - [ ] New world: build, cable, power, BIOS, GPU Tuner, software; then Exit, Continue, guest joins: everything matches
 - [x] Guest drops (pull the network) and uses Rejoin: comes back where it stood, no duplicates (0.21, November 2, 2026: owned LAN runs, 12-second process suspension; exact position/facing and matching worlds)
-- [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits (November 5, 2026, run acceptance-c: cable guard and Exit wait in 0.27, coolant drain guard in 0.29)
+- [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits (November 5, 2026, run acceptance-c: cable guard and Exit wait in 0.27, coolant drain guard in 0.29, fan install guard in 0.30)
 - [ ] Close the host's game during a save: next Continue loads the previous good save with a notice (0.21, November 2, 2026: actual interruption preserved the previous pair; the separate mismatched-pair run showed the notice)
 - [x] A world with more than 35 built PCs: save, join, `/sync`, Continue (0.25, November 4, 2026: 39 built PCs, matching native checks and object hashes after every step; fixed the 0.24 duplicate-snapshot failure, run acceptance-b)
 - [x] Host pause-menu Load and Reset reload both games; guest Save/Load/Reset are refused (0.21, November 2, 2026: owned two-game runs p8a–p8m)
