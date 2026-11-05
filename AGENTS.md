@@ -29,7 +29,7 @@ Set `PCBS2COOP_AUTOTEST=host` for one launch of `PCBS2.exe` and `=join` for a se
 
 ## Versioning
 
-The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.27). It is the plugin version, the network assembly version and the join check; there is no separate protocol version. Two players can join only with exactly the same version, so bump it whenever a build changes what goes over the network or into co-op saves, and before handing a build to someone. A co-op save loads only under the version that wrote it, unless that version is listed in `CoopSavePair.SameFormat` (a bump that changed only network messages, not what a save holds: 0.17 reads 0.16).
+The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.28). It is the plugin version, the network assembly version and the join check; there is no separate protocol version. Two players can join only with exactly the same version, so bump it whenever a build changes what goes over the network or into co-op saves, and before handing a build to someone. A co-op save loads only under the version that wrote it, unless that version is listed in `CoopSavePair.SameFormat` (a bump that changed only network messages, not what a save holds: 0.17 reads 0.16).
 
 - Each bump adds one to the number after the dot: 0.1, 0.2, 0.3, 0.4, … (0.9 is followed by 0.10).
 - BepInEx shows it with a third part (0.3 → `0.3.0`). Only an exact match matters for joining.

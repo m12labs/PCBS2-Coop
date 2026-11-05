@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.27**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.28**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
@@ -107,9 +107,9 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Wallpapers and PC import ([phase 12](audit/phase-12.md))
 
-- [ ] Custom picture from the wallpaper app's custom tab, each side: both screens show it, after Continue and a join too (0.27, November 5, 2026: both native custom-apply paths and late join verified in acceptance-c. Continue still open.)
-- [ ] Your Windows wallpaper, each side: both screens show the same picture
-- [x] A picture over 8 MB is refused with a message (0.24, November 2, 2026: owned phase 12 check also verified restoration of the previous wallpaper)
+- [x] Custom picture from the wallpaper app's custom tab, each side: both screens show it, after Continue and a join too (0.28, November 5, 2026: real picks from both sides and cold reload of the guest's picture with its source file absent)
+- [x] Your Windows wallpaper, each side: both screens show the same picture (0.28, November 5, 2026: restored gallery tile and matching native textures, run acceptance-c)
+- [x] A picture over 8 MB is refused with a message (0.28, November 5, 2026: real browser applied a 9.45 MB image, refused and previous wallpaper restored)
 - [ ] Pick up a PC file from the cupboard, each side: it arrives in your hands on both games with its paint job; store it, Continue, join
 
 ## PC screens, BIOS and software ([phase 6](audit/phase-6.md), passed; quick check after updates)

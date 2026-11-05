@@ -247,6 +247,8 @@ Fixed during the runs:
 
 ## Runtime checks answered
 
+November 5, 2026 follow-up in 0.28. The Windows picture tile had disappeared on a machine with a stale registry path and an existing Windows cached copy. The fix uses the cached picture for the missing gallery preview. Actual host and guest tile selections showed the same picture. Both real custom pickers shared distinct images. A cold Continue and join restored the guest's custom picture with its source file absent. The 9.45 MB fixture was refused while the previous wallpaper stayed. [Run record](acceptance-2026-11-04.md#real-wallpaper-picker-028)
+
 - **R1:** the Decorator app changes its own preview and the saved decoration list at once. The decompile shows the room itself is updated only by a workshop load (`UpdateToMainRoom` from the loading screen and the restore), so a pick shows in the room after Continue, on both games alike. Not confirmed by eye: in p12d the bench-5 desk looked unchanged after Continue, and which desk object 0 is wasn't identified.
 - **R2:** the Free Build tablet has Music Player, Photo Mode, Select Wallpaper, Part Ranking, Custom Cables (phase 11's Cable app), Decorator, RamWizz, Thermal and Airflow.
 - **R6:** the season is Christmas when the SeasonalContent setting is on and the month is December, otherwise standard (no Halloween season). The Free Build workshop has no seasonal switches.

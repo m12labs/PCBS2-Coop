@@ -1,5 +1,7 @@
 # PCBS2 Co-op synchronization progress
 
+**November 5, 2026 — wallpaper gallery, version 0.28.** A stale Windows wallpaper path hid the Windows picture tile despite a readable cached copy. `f69429f` restores the preview. Actual host and guest wallpaper selections matched on both games. The native browser refused a 9.45 MB picture and restored the previous one. **719/719** automated checks passed. [Run record](audit/acceptance-2026-11-04.md#real-wallpaper-picker-028)
+
 **November 5, 2026 — powered Continue and late join, version 0.27.** A native BIOS prompt formatting error left a powered PC at Boot in cold co-op processes. The fix confines recovery to the prompt's atlas and text calls during a co-op boot step. Both games reached the desktop on the first boot in the repeat, with matching world hashes and the host's OCCT window. [Run record](audit/acceptance-2026-11-04.md#cold-continue-and-late-join-027)
 
 **November 5, 2026 — acceptance follow-up, version 0.26.** Two guest presses reproduced a walking bench power shortcut that booted only the guest. `db13358` routes that shortcut through the shared Power edit. The guest's real bench shortcut, native case button and real work HUD button powered PC 213 on and off on both games. The guest's powered pickup turned it off on both. **719/719** automated checks passed. A fresh guest hit a native boot prompt exception while loading the powered PC. [Run record](audit/acceptance-2026-11-04.md#run-acceptance-c-walking-power-and-powered-pickup)
