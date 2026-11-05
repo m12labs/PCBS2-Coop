@@ -54,7 +54,10 @@ internal sealed class NativeAssembly : IAssemblyNative
     public void Reset() { MainThread(); _bindings.Clear(); _prepared.Clear(); _preparedProfiles.Clear(); _faults.Clear(); _rebind.Clear(); }
     /// <summary>An accepted change replaced native instances on this PC (a panel removed or refitted): bind it again
     /// once its native work has finished (no edit state, no moving latch).</summary>
-    internal void RequestRebind(NetObjectId pc) => _rebind.Add(pc);
+    internal void RequestRebind(NetObjectId pc)
+    {
+        if (!_faults.Contains(pc)) _rebind.Add(pc);
+    }
     internal bool RebindPending => _rebind.Count > 0;
     public void Forget(NetObjectId id) { _bindings.Remove(id); _prepared.Remove(id); _preparedProfiles.Remove(id); }
 
@@ -145,6 +148,8 @@ internal sealed class NativeAssembly : IAssemblyNative
             }
             catch (Exception e)
             {
+                // A failed binding can only be retried after repair. It must stop blocking the repair save.
+                _rebind.Remove(pc.Id);
                 _faults.Add(pc.Id);
                 // A guest whose copy no longer matches the host's reloads that PC (NativePcRepair); the host is the reference.
                 if (c.Repair != null && !c.Session.World!.IsAuthority) c.Repair.Failed(pc.Id, $"PC {pc.Id}'s assembly could not be rebound after its load", e);
