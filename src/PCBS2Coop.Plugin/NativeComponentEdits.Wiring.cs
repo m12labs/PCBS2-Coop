@@ -147,6 +147,16 @@ internal sealed partial class NativeComponentEdits
     {
         if (mesh != null)
             foreach (var c in mesh.GetComponentsInChildren<PowerConnector>(true)) if (c != null && c.id == id) return c;
+        // The native chooser offers desk plugs such as KEYBOARD. Cable saves name their remote end (KEYBOARD_SRC),
+        // which can sit outside the bench slot's transform hierarchy and share its ID with other workstations.
+        if (bench?.m_workStation?.m_connectors is { } connectors)
+            foreach (var c in connectors)
+            {
+                if (c == null) continue;
+                if (c.id == id) return c;
+                var remote = c.Remote();
+                if (remote != null && remote.id == id) return remote;
+            }
         if (bench != null)
             foreach (var c in bench.GetComponentsInChildren<PowerConnector>(true)) if (c != null && c.id == id) return c;
         // An external end (a monitor or the mains at the workstation): only when that ID is unique in the scene.
