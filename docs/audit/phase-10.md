@@ -77,3 +77,7 @@ Release build: 0 warnings, 0 errors. Deployed and checked identical. Nothing ran
 ## Owned two-game run, November 5, 2026
 
 In 0.29 the guest filled the powered-off loop with `WC_COOLANT_PURPLE_CLEAR`, drained it and removed the pipe between the pump and CPU block. Both native games showed the filled loop, then the empty loop, then the two remaining pipes. The host's save request during the initial drain waited, and a later save succeeded. While the guest held the pipe chooser open, the host received the water-cooling refusal on that PC and completed a cable removal on a different PC. The callbacks bypassed pointer reach and hold input. [Run acceptance-c](acceptance-2026-11-04.md#custom-water-cooling-in-029)
+
+In 0.30, `RoutePipeState.OnAccept` distinguishes a confirmed route from a discarded preview. Opening the pipe tool can change the native PC record even when Escape leaves the pipes alone. An unaccepted route now cancels without sending a record. Both games showed the guest's accepted flexible and rigid routes. [Escape and Accept retest](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)
+
+Cold Continue and fresh guest admission kept the removed pipe absent and the loop empty. After replacing the pipe and refilling, `/sync` kept the replacement and coolant on both games. [Persistence retest](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)

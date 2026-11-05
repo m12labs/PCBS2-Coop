@@ -103,6 +103,8 @@ Every run was stopped by `Stop-Phase6Probe.ps1`; all 21 owner save files were un
 
 Run `acceptance-c` passed GPU Tuner Apply and Reset from either player through the actual app. Both games showed the changed and default values, with no restart. The same run passed real Fan Control presets, changes to a custom Max RPM curve, and Defaults from both sides. A fresh guest joined the running host and displayed the 11-point curve. [Run record](acceptance-2026-11-04.md#fan-control-and-custom-picture-follow-up-027)
 
+In 0.30, a native `GPU_HEAT` failure from the host reached both games. A shared case-button power cycle cleared the blue screen and both games reached the desktop. [Recovery run](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)
+
 ## Owner decisions (November 1, 2026)
 
 The owner answered the seven audit questions; every answer matches what 0.20 implements.

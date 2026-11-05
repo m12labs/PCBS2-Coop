@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.29**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.30**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
@@ -21,7 +21,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Workbench: cables and power ([phase 5](audit/phase-5.md), 5d)
 
-- [ ] Plug in and unplug each cable type (24-pin, CPU 8-pin, GPU, SATA, fans, front panel/USB). Run acceptance-c checked 24-pin, GPU and fan in 0.27 and CPU 8-pin, SATA data and power, and front panel in 0.29. USB still open.
+- [x] Plug in and unplug each cable type (24-pin, CPU 8-pin, GPU, SATA, fans, front panel/USB). Run acceptance-c checked 24-pin, GPU and fan in 0.27, CPU 8-pin, SATA data and power, and front panel in 0.29, and USB replay in 0.30 on November 5, 2026.
 - [ ] Fan header with no free connector: automatic splitter shows on both games. Native auto-splitter branches are for GPU power and SATA power in this build. A fixture that exhausts eligible PSU connections is still needed.
 - [ ] Custom-colour cable: same colours on both games
 - [x] Esc in the cable tool with nothing connected: no change (0.27, November 5, 2026: real Escape in the guest's HDMI connector choice)
@@ -33,14 +33,14 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Workbench: custom water cooling ([phase 10](audit/phase-10.md), 10b)
 
-- [ ] Lay a pipe with corners
-- [ ] Undo and Esc in the pipe tool: nothing shared
+- [ ] Lay a pipe with corners (0.30, November 5, 2026: accepted flexible and rigid pipes reached both games. A manually added corner still needs verification.)
+- [ ] Undo and Esc in the pipe tool: nothing shared (0.30, November 5, 2026: Escape from fitting choice and from the rigid route after using Undo sent no record. Undo's geometry reversal still needs verification.)
 - [x] Remove a pipe (0.29, November 5, 2026, run acceptance-c)
 - [x] Fill the loop with coolant, then drain it (0.29, November 5, 2026, PC powered off)
 - [ ] Install and remove a CPU block, GPU block, pump/reservoir, VRM or RAM heatsink
 - [x] The other player gets the water-cooling refusal on that PC; another PC still works (0.29, November 5, 2026)
 - [ ] Water edits on a powered PC
-- [ ] Late join and Continue after water edits
+- [x] Late join and Continue after water edits (0.30, November 5, 2026: cold Continue and fresh guest retained a removed pipe, then `/sync` retained the replacement and coolant)
 
 ## Workbench: thermal paste ([phase 9](audit/phase-9.md))
 
@@ -123,7 +123,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] GPU Tuner Apply and Reset from either player: same values, no restart (0.27, November 5, 2026: real slider and button interactions on both games)
 - [x] Fan Control custom curve, presets and Defaults from either player (0.27, November 5, 2026: real controls on PC 26, run acceptance-c)
 - [x] Late join with a custom fan curve applied (0.27, November 5, 2026: fresh guest restored the 11-point Max RPM curve and displayed 2000 RPM on all three GPU fans)
-- [ ] Power off and on after a blue screen: both reach the desktop
+- [x] Power off and on after a blue screen: both reach the desktop (0.30, November 5, 2026: native GPU heat failure entry point and shared case-button power cycle)
 - [ ] Cinebench and 3DMark results match
 
 ## Saves and rejoin ([phase 8](audit/phase-8.md), 8g)
