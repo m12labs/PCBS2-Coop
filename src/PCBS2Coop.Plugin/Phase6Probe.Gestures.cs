@@ -172,6 +172,8 @@ internal sealed partial class Phase6Probe
         }).OrderBy(x => x.path).ToArray();
         var record = bench.m_workStation?.m_virtualComputer?.ComputerSave ?? bench.GetComputer(false) ?? coop.Objects.RecordFor(pc.Id);
         var nativeRecord = record == null ? null : NativePcCodec.Write(record);
+        var work = GameController.Get()?.GetCurrentState()?.TryCast<WorkingOnComputerState>();
+        var internalConnectors = pc.BuildProfile?.InternalConnectors.ToHashSet(StringComparer.Ordinal);
         string projectionError = null;
         try { coop.Objects.CheckProjection(coop.Session.World.Local, coop.Session.LocalIdentity.Player); }
         catch (Exception e) { projectionError = e.GetBaseException().Message; }
@@ -183,9 +185,17 @@ internal sealed partial class Phase6Probe
             revision = coop.Session.World.Revision,
             bench = bench.name,
             caseSku = record?.caseID?.GetPartId(),
+            workMode = work?.m_mode.ToString(),
             projectionError,
             profile = pc.BuildProfile,
-            parts = record == null ? null : NativeObjectState.Parts(record).Select(x => new { path = x.Key, sku = x.Value?.GetPartId() }).ToArray(),
+            parts = record == null ? null : NativeObjectState.Parts(record).Select(x => new
+            {
+                path = x.Key, sku = x.Value.GetPartId(), orientation = x.Value.GetSlotOrientation(), flipped = x.Value.m_flipped
+            }).ToArray(),
+            pciCovers = record?.casePciCovers?.ToArray(),
+            bespokeSlots = record?.m_bespokeCaseSlots?.ToArray(),
+            internalWires = record?.cablesInstalled?.Where(c => internalConnectors?.Contains(c.m_from) == true && internalConnectors.Contains(c.m_to))
+                .Select(c => new { from = c.m_from, to = c.m_to, c.m_desc, c.m_connectorType, c.m_isNonModularConnector, c.m_playerChoice, pins = c.m_pinMaterialIndices?.ToArray() }).ToArray(),
             recordHash = nativeRecord == null ? null : Convert.ToHexString(SHA256.HashData(nativeRecord)),
             editsBusy = coop.Edits.Busy,
             localWorkingPc = coop.Activity.Get(coop.Session.World.Local)?.WorkingPc.Value ?? 0,
