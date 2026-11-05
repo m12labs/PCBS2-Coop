@@ -29,7 +29,7 @@ Set `PCBS2COOP_AUTOTEST=host` for one launch of `PCBS2.exe` and `=join` for a se
 
 ## Versioning
 
-The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.26). It is the plugin version, the network assembly version and the join check; there is no separate protocol version. Two players can join only with exactly the same version, so bump it whenever a build changes what goes over the network or into co-op saves, and before handing a build to someone. A co-op save loads only under the version that wrote it, unless that version is listed in `CoopSavePair.SameFormat` (a bump that changed only network messages, not what a save holds: 0.17 reads 0.16).
+The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.27). It is the plugin version, the network assembly version and the join check; there is no separate protocol version. Two players can join only with exactly the same version, so bump it whenever a build changes what goes over the network or into co-op saves, and before handing a build to someone. A co-op save loads only under the version that wrote it, unless that version is listed in `CoopSavePair.SameFormat` (a bump that changed only network messages, not what a save holds: 0.17 reads 0.16).
 
 - Each bump adds one to the number after the dot: 0.1, 0.2, 0.3, 0.4, … (0.9 is followed by 0.10).
 - BepInEx shows it with a third part (0.3 → `0.3.0`). Only an exact match matters for joining.
@@ -118,7 +118,7 @@ For BIOS, desktop and software (phase 6), read `docs/audit/phase-6.md` "Mirrored
 - `IsPoweredOn()` is false while the BIOS is open: check `IsInBios()` first. Desktop icons open on a double click.
 - Replayed native code runs with `NativeDesktopInput.Injecting` inside `NativeProjection`; hooks that turn a click into a request must ignore replayed clicks.
 - BIOS entry on the other game: `_StartupSequence_d__69.MoveNext` with the BIOS key forced held (`NativeEditReplay.InputGuard`) and a stand-in `LookingAtMonitorState` as `GameController.m_currentState`.
-- A PC that was on when a guest loads the world can stay on its boot screen (game exception in `JobTutorialHintUi.SetSpriteAssetForText`); the guest restarts it once when the host reports its desktop.
+- A cold co-op load can start boot before Rewired has a last active controller. From 0.27, the BIOS prompt's atlas and text formatting calls can recover from a native null reference within a co-op boot step. Boot and BIOS input continue and the prompt can be blank for that boot. The guest still has the one-restart fallback when the host reports its desktop.
 - Phase 6 probe: `scripts/Start-Phase6Probe.ps1`/`Stop-Phase6Probe.ps1`; `commands.txt` beside `events.jsonl` takes `aim:<bench|peripheral>:<n>`, `desktop-report`, `screen-dump:<pc>`. Wait for this run's own `pc-bindings` event, not log text (the log still holds the previous run). No in-game screenshots (GPU watchdog incidents); use Windows-level screenshots.
 
 For saves, backups and rejoin (phase 8), read `docs/audit/phase-8.md`:
