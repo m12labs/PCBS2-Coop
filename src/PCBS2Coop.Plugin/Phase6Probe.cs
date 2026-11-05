@@ -465,6 +465,7 @@ internal sealed partial class Phase6Probe
             else if (WorkshopCommand(command)) { }
             else if (StressCommand(command)) { }
             else if (ToolsCommand(command)) { }
+            else if (GesturesCommand(command)) { }
             else if (command == "sim-report") Event("sim-report", SimReport());
             else if (command.StartsWith("sim-", StringComparison.Ordinal) || command.StartsWith("tuner", StringComparison.Ordinal) ||
                      command.StartsWith("fans", StringComparison.Ordinal) || command.StartsWith("programs:", StringComparison.Ordinal) ||
