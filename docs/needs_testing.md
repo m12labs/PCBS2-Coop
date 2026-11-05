@@ -39,7 +39,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Fill the loop with coolant, then drain it (0.29, November 5, 2026, PC powered off)
 - [ ] Install and remove a CPU block, GPU block, pump/reservoir, VRM or RAM heatsink
 - [x] The other player gets the water-cooling refusal on that PC; another PC still works (0.29, November 5, 2026)
-- [ ] Water edits on a powered PC
+- [x] Water edits on a powered PC (0.30, November 5, 2026: real reservoir click shut down both PCs and drained both loops)
 - [x] Late join and Continue after water edits (0.30, November 5, 2026: cold Continue and fresh guest retained a removed pipe, then `/sync` retained the replacement and coolant)
 
 ## Workbench: thermal paste ([phase 9](audit/phase-9.md))

@@ -81,3 +81,5 @@ In 0.29 the guest filled the powered-off loop with `WC_COOLANT_PURPLE_CLEAR`, dr
 In 0.30, `RoutePipeState.OnAccept` distinguishes a confirmed route from a discarded preview. Opening the pipe tool can change the native PC record even when Escape leaves the pipes alone. An unaccepted route now cancels without sending a record. Both games showed the guest's accepted flexible and rigid routes. [Escape and Accept retest](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)
 
 Cold Continue and fresh guest admission kept the removed pipe absent and the loop empty. After replacing the pipe and refilling, `/sync` kept the replacement and coolant on both games. [Persistence retest](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)
+
+Both copies of PC 26 were at the desktop with the full loop. The guest clicked the reservoir in Remove mode. The game's drain gesture powered down the guest's PC, and the host reloaded the drained record with power off. Both loops were complete and empty at revision 298. [Powered drain](acceptance-2026-11-04.md#powered-coolant-drain-in-030)

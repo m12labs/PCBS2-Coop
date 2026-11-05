@@ -149,3 +149,7 @@ Release built with zero warnings or errors and **719/719** checks passed. Raw lo
 - A cold 0.30 host Continue and a fresh guest loaded the 0.29 save. Each reported two pipes and the same incomplete, empty loop. After the rigid replacement and refill, the guest requested `/sync` and the host accepted it. At generation 2, revision 23, both games showed the replacement's four nodes, the complete full loop and `WC_COOLANT_PURPLE_CLEAR`. Projection checks passed and the object hash matched (`F60CA11C7811ADBB5C72EE49B6AB5EB2AC223691FAA2126621813F48F1944D36`).
 
 Release built with zero warnings or errors, and **719/719** automated checks passed. Red USB logs are in `.local/acceptance-20261104/usb-source-red-{host,guest}.log`. The 0.30 runtime logs are in `.local/acceptance-20261104/usb-water-bsod-green-{host,guest}.log`.
+
+### Powered coolant drain in 0.30
+
+After `/sync`, the guest powered PC 26 through its case-button entry point (`G#320`). Both PCs reached the desktop with a complete, full loop. The guest clicked the visible reservoir in Remove mode and the native game displayed “Empty Pump Reservoir.” The guest shut down and committed the drain (`G#322`), then the host reloaded the PC with power off. Both native reports showed a complete, empty loop with no animation and both sims stopped. At generation 2, revision 298, native and projection checks passed and the object hash matched (`7E9A6EED6D98730F38267BD254B40DEA0FF165D80E7B1A6E29A74808A4A634D9`).
