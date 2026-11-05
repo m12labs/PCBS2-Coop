@@ -30,6 +30,10 @@ public sealed class CoopSession : IDisposable
     private SnapshotSender _sender;
     private readonly SnapshotReceiver _receiver = new();
     private uint _loadingTransfer;
+    // Sending all bytes only means the transport accepted them; admission is pending until the guest acknowledges
+    // receipt of the complete load snapshot (or the transfer is aborted/the peer leaves).
+    private uint _awaitingLoadAck;
+    private uint _awaitingLoadGeneration;
     private readonly Func<long> _now;
     private long _joinStarted;
     private bool _handshakeExpired;
@@ -56,7 +60,8 @@ public sealed class CoopSession : IDisposable
     /// <summary>The guest's admission state (the host's view of its guest, or the guest's own).</summary>
     public GuestState GuestState { get; private set; }
     /// <summary>Host: the guest is connected but has no world, and no load snapshot is on its way.</summary>
-    public bool GuestNeedsWorld => Role == Role.Host && IsJoined && World is { Admitted: true } && GuestState == GuestState.Connected && !_sender.LoadInProgress;
+    public bool GuestNeedsWorld => Role == Role.Host && IsJoined && World is { Admitted: true } && GuestState == GuestState.Connected &&
+                                  !_sender.LoadInProgress && _awaitingLoadAck == 0;
     /// <summary>Host: a snapshot transfer is queued or being sent.</summary>
     public bool SendingSnapshot => _sender.Queued > 0;
     /// <summary>Guest: progress of the snapshot being received (0..1), or -1.</summary>
@@ -144,8 +149,15 @@ public sealed class CoopSession : IDisposable
     {
         if (Role != Role.Host || World == null) throw new InvalidOperationException("Only a running host sends snapshots.");
         if (!IsJoined) throw new InvalidOperationException("No guest to send a snapshot to.");
+        if (purpose == SnapshotPurpose.Load && _awaitingLoadAck != 0)
+            throw new InvalidOperationException("The guest has not acknowledged the previous world snapshot.");
         var position = purpose == SnapshotPurpose.Load ? World.CapturePosition() : null;
         var id = _sender.Mark(purpose, position);
+        if (purpose == SnapshotPurpose.Load)
+        {
+            _awaitingLoadAck = id;
+            _awaitingLoadGeneration = position!.Generation;
+        }
         Log?.Invoke(position != null
             ? $"Snapshot {id} marked at generation {position.Generation}, revision {position.Revision}."
             : $"Snapshot {id} (copy) marked.");
@@ -161,6 +173,7 @@ public sealed class CoopSession : IDisposable
     public void AbortSnapshot(uint id, string reason)
     {
         _sender.Abort(id, reason);
+        if (_awaitingLoadAck == id) ClearLoadAck();
         Log?.Invoke($"Snapshot {id} aborted: {reason}");
     }
 
@@ -295,12 +308,12 @@ public sealed class CoopSession : IDisposable
         }
     }
 
-    private void SendGuestStatus(GuestState state)
+    private void SendGuestStatus(GuestState state, uint? generation = null)
     {
         _writer.Reset();
         _writer.Put((byte)MessageType.GuestStatus);
         _writer.Put((byte)state);
-        _writer.Put(World?.Generation ?? 0);
+        _writer.Put(generation ?? World?.Generation ?? 0);
         SendReliable(_writer);
     }
 
@@ -341,7 +354,7 @@ public sealed class CoopSession : IDisposable
                     if (done.Purpose == SnapshotPurpose.Load)
                     {
                         SetGuestState(GuestState.Loading);
-                        SendGuestStatus(GuestState.Loading);
+                        SendGuestStatus(GuestState.Loading, done.Position?.Generation ?? 0);
                     }
                     SnapshotReceived?.Invoke(done);
                 }
@@ -375,6 +388,22 @@ public sealed class CoopSession : IDisposable
             return;
         }
         if (state is not (GuestState.Loading or GuestState.InWorld)) { Stats.MalformedMessages++; return; }
+        if (state == GuestState.Loading &&
+            (gen != World?.Generation || (_awaitingLoadAck != 0 && gen != _awaitingLoadGeneration)))
+        {
+            Stats.MalformedMessages++;
+            Log?.Invoke($"Ignored a loading acknowledgement for generation {gen}; the world is at {World?.Generation} (pending {_awaitingLoadGeneration}).");
+            return;
+        }
+        if (state == GuestState.InWorld && gen != World?.Generation && _awaitingLoadAck != 0 && gen != _awaitingLoadGeneration)
+        {
+            Log?.Invoke($"Ignored a stale InWorld acknowledgement for generation {gen}; snapshot {_awaitingLoadAck} is at generation {_awaitingLoadGeneration}.");
+            return;
+        }
+        // Loading acknowledges receipt of the full file; InWorld also covers guests that completed admission
+        // before a delayed Loading status reached us. An invalid InWorld generation still releases the old gate
+        // so the current generation can be offered again.
+        ClearLoadAck();
         if (state == GuestState.InWorld && gen != World?.Generation)
         {
             Log?.Invoke($"Guest entered generation {gen}, but the world is at {World?.Generation}; it needs a new snapshot.");
@@ -412,6 +441,7 @@ public sealed class CoopSession : IDisposable
         }
         _joined = false;
         _sender.Clear();
+        ClearLoadAck();
         _receiver.Reset();
         SetGuestState(GuestState.Connected);
         World?.OnLinkLost();
@@ -436,9 +466,11 @@ public sealed class CoopSession : IDisposable
         _refusal = null;
         _joinStarted = _now(); _handshakeExpired = false;
         _sender.Clear();
+        ClearLoadAck();
         _receiver.Reset();
         GuestState = GuestState.Connected;
         World = new WorldSync(role == Role.Host ? ActorSlot.Host : ActorSlot.Guest, SendReliable, m => Log?.Invoke("[world] " + m));
+        World.GenerationStarted += (uint generation, string why) => ClearLoadAck();
         WorldCreated?.Invoke(World);
     }
 
@@ -448,6 +480,13 @@ public sealed class CoopSession : IDisposable
     }
 
     private bool SendBulk(NetDataWriter w) => HasPeer && _transport!.Send(w.CopyData(), SessionDelivery.ReliableOrdered, bulk: true);
+
+    private void ClearLoadAck()
+    {
+        _awaitingLoadAck = 0;
+        _awaitingLoadGeneration = 0;
+    }
+
     private void EnsureIdle()
     {
         if (Role != Role.None) throw new InvalidOperationException($"Session already running as {Role}.");
@@ -529,6 +568,7 @@ public sealed class CoopSession : IDisposable
     {
         _joined = false;
         _sender.Clear();
+        ClearLoadAck();
         _receiver.Reset();
         SetGuestState(GuestState.Connected);
         World?.OnLinkLost();

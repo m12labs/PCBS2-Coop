@@ -86,6 +86,7 @@ internal static class TransportTests
         }
         t.Check(sender.Queued == 0 && got?.File.Length == Protocol.SnapshotChunkBytes + 1, "retry emits one header and contiguous chunks, producing a verified snapshot");
         FramedAdmission(t);
+        AdmissionAcknowledgementGate(t);
         var native = new byte[] { 1, 2, 3 };
         var metadata = CoopSavePair.Create(native, new SnapshotPosition(1, 2, 3, new byte[] { 4 }), new[] { new CarrierPayload(new NetObjectId(8), new byte[] { 5, 6 }) });
         var current = CoopSavePair.Encode(metadata);
@@ -143,6 +144,52 @@ internal static class TransportTests
             "admission restores state then replays held changes exactly once");
         guest.Stop("bye");
         t.Check(Checker.PumpUntil(() => !host.IsJoined, 1000, host) && host.IsRunning && host.World.Admitted, "guest departure preserves host world through adapter");
+    }
+
+    private static void AdmissionAcknowledgementGate(Checker t)
+    {
+        t.Section("Framed transport: load admission waits for guest receipt acknowledgement");
+        using var host = new CoopSession(); using var guest = new CoopSession();
+        var hostAdapter = new FramedLink(); var guestAdapter = new FramedLink(); hostAdapter.Peer = guestAdapter; guestAdapter.Peer = hostAdapter;
+        host.Host(hostAdapter, Ids.Make(), out _); host.World!.BeginGeneration("delayed large snapshot acknowledgement");
+        guest.Join(guestAdapter, Ids.Make(), out _);
+        t.Check(Checker.PumpUntil(() => host.IsJoined && guest.IsJoined, 1000, host, guest), "delayed-ack peers complete handshake");
+
+        // An aborted marker must release the gate and let the host retry the same admission.
+        var aborted = host.BeginSnapshot(SnapshotPurpose.Load);
+        host.AbortSnapshot(aborted, "test save did not finish");
+        t.Check(host.GuestNeedsWorld, "aborting a pending load lets the host retry");
+
+        Snapshot? received = null;
+        var receivedCount = 0;
+        guest.SnapshotReceived += snapshot =>
+        {
+            if (snapshot.Purpose == SnapshotPurpose.Load) { received = snapshot; receivedCount++; }
+        };
+        host.SnapshotBytesPerPoll = 4 * 1024 * 1024;
+        var load = host.BeginSnapshot(SnapshotPurpose.Load);
+        host.SetSnapshotFile(load, "coopworld.binary.zip", new byte[3 * 1024 * 1024]);
+
+        // Hold the guest completely idle while the host drains its own sender and framed transport queue.
+        // This reproduces a large snapshot whose receiver has not yet sent GuestStatus.Loading.
+        for (var i = 0; i < 64 && host.SendingSnapshot; i++) host.Poll();
+        t.Check(!host.SendingSnapshot && host.GuestState == GuestState.Connected, "host transport queue drains before the guest is polled");
+        t.Check(!host.GuestNeedsWorld, "host does not offer a duplicate load while waiting for guest receipt acknowledgement");
+        var rejectedSecondLoad = false;
+        try { host.BeginSnapshot(SnapshotPurpose.Load); }
+        catch (InvalidOperationException) { rejectedSecondLoad = true; }
+        t.Check(rejectedSecondLoad, "host rejects a second load snapshot before the first is acknowledged");
+
+        var loadingSeen = Checker.PumpUntil(() => received != null && host.GuestState == GuestState.Loading, 5000, host, guest);
+        t.Check(loadingSeen && host.Stats.MalformedMessages == 0 && receivedCount == 1,
+            "guest receipt acknowledges the snapshot generation while native world loading is still pending");
+        for (var i = 0; i < 8; i++) host.Poll();
+        t.Check(!host.GuestNeedsWorld && receivedCount == 1,
+            "host waits for admission while the guest remains in its native load barrier");
+        var admitted = received != null && guest.CompleteAdmission(out _);
+        t.Check(Checker.PumpUntil(() => host.GuestState == GuestState.InWorld, 5000, host, guest) && admitted && receivedCount == 1,
+            "guest completes admission once and host observes InWorld");
+        t.Check(!host.GuestNeedsWorld, "successful admission leaves no stale load gate");
     }
 
     private sealed class LargeState : IWorldState
