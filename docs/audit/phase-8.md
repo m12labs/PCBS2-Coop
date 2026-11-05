@@ -1,6 +1,6 @@
 # Phase 8 audit: durable Free Build saves and complete core rejoin
 
-**Status (November 2, 2026): owner decisions recorded; 8b–8f implemented in 0.21 and run in game in owned two-game runs p8a–p8l (results and fixes below, 624/624 model checks). Open: a world over 35 PCs, Steam rejoin, and the owner's own pass of 4f/5d/10b/7e.** The audit itself was done without starting the game (owner request). Evidence comes from the 0.20/0.21 source, the same game dump as phases 6–7 (Unity `6000.2.6f2`, build GUID `92d05e5a20c14d41aacbb9c6a804d5a3`), the network/model suite and owned runs' disposable saves under `<GameDir>\BepInEx\PCBS2Coop-diag`. Lines marked **(decompile)** were read from the dump and have not been checked in a running game.
+**Status (reviewed November 4, 2026): 8b–8f have substantial owned two-game coverage in 0.21 (p8a–p8m). The >35-PC case passed with 39 built PCs in 0.25 after fixing duplicate admission snapshots; 715/715 automated checks pass. Steam is owner-confirmed complete. Remaining combined 4f/5d/10b/7e acceptance, in-flight save cases and the unsavable-Exit notice remain open.** The audit itself was done without starting the game (owner request). Historical evidence comes from the 0.20/0.21 source, the same game dump as phases 6–7 (Unity `6000.2.6f2`, build GUID `92d05e5a20c14d41aacbb9c6a804d5a3`), the network/model suite and owned runs' disposable saves under `<GameDir>\BepInEx\PCBS2Coop-diag`. Lines marked **(decompile)** were read from the dump and have not been checked in a running game. Current follow-up: [November 4 acceptance record](acceptance-2026-11-04.md).
 
 ## Scope (plan.md section 8)
 
@@ -226,8 +226,8 @@ Found and left for the owner:
 
 ### Not checked in game yet
 
-- The Rejoin button over Steam (needs two Steam accounts).
-- A world with more than 35 built PCs (acceptance case 5); covered by model tests only.
+- Steam testing, including Rejoin, was subsequently confirmed complete by the owner on November 4, 2026; it is no longer an outstanding case.
+- Acceptance case 5 subsequently passed on November 4, 2026 in 0.25: 39 built PCs through save, late join, `/sync`, fresh-process Continue and another join, with matching hashes and native checks. The initial 0.24 run exposed duplicate admission snapshots; `de2bee3` fixes it. See [the follow-up](acceptance-2026-11-04.md).
 - The Exit message when the world couldn't be saved (needs an out-of-sync or busy host at Exit).
 - A dropped connection during an install's animation (the faster-install power-up finished the GPU removal before the drop); during a BIOS session or a running OCCT test.
 - The owner's own pass of the deferred tests 4f, 5d, 10b and 7e (cables, water cooling, full builds in both directions).

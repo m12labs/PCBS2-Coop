@@ -29,7 +29,7 @@ Set `PCBS2COOP_AUTOTEST=host` for one launch of `PCBS2.exe` and `=join` for a se
 
 ## Versioning
 
-The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.24). It is the plugin version, the network assembly version and the join check; there is no separate protocol version. Two players can join only with exactly the same version, so bump it whenever a build changes what goes over the network or into co-op saves, and before handing a build to someone. A co-op save loads only under the version that wrote it, unless that version is listed in `CoopSavePair.SameFormat` (a bump that changed only network messages, not what a save holds: 0.17 reads 0.16).
+The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.25). It is the plugin version, the network assembly version and the join check; there is no separate protocol version. Two players can join only with exactly the same version, so bump it whenever a build changes what goes over the network or into co-op saves, and before handing a build to someone. A co-op save loads only under the version that wrote it, unless that version is listed in `CoopSavePair.SameFormat` (a bump that changed only network messages, not what a save holds: 0.17 reads 0.16).
 
 - Each bump adds one to the number after the dot: 0.1, 0.2, 0.3, 0.4, … (0.9 is followed by 0.10).
 - BepInEx shows it with a third part (0.3 → `0.3.0`). Only an exact match matters for joining.
@@ -71,6 +71,8 @@ The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.24)
 - While a co-op world is loaded, `s_saveDir` points into `<saves>/Coop` (host: `Coop`; guest: `Coop/GuestSession`, copies in `Coop/Joined`); it is restored only on the main menu (`CoopSaves`).
 - No shared pause: nothing in the session may depend on the game's pause flag.
 - Details and evidence: `docs/audit/phase-2.md`.
+
+For acceptance follow-up and the 0.25 admission fix, read `docs/audit/acceptance-2026-11-04.md`. A load stays pending after its bytes enter the transport until the guest acknowledges receipt; Loading names the snapshot's generation. The owned 39-built-PC save/join/`/sync`/Continue case passed; other unchecked cases in `docs/needs_testing.md` remain open. Steam is owner-confirmed complete. Phase 6 `-Resume` skips old command history; append new commands only after this process's readiness evidence, using `Send-Phase6ProbeCommand.ps1`.
 
 For object binding, canonical command payloads or co-op save changes, read `docs/audit/phase-3.md` task 3c. Co-op saves require their hash-matched `.coop` sidecar; native-only co-op saves fail explicitly. Logical part IDs are scoped to their PC and native field/slot graph, with aliases preserved inside that graph. Use `BenchSlot.GetComputer`; the installed interop loses `GetComputerRef`'s native reference return.
 

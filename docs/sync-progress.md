@@ -1,5 +1,7 @@
 # PCBS2 Co-op synchronization progress
 
+**November 4, 2026 — acceptance follow-up, version 0.25, ongoing.** [Run record](audit/acceptance-2026-11-04.md). The >35-PC case passed with 39 built PCs through save, late join, `/sync`, fresh-process Continue and another join, with matching native checks and object hashes. It exposed duplicate admission snapshots after the sender queue drained; `de2bee3` fixes that race and the received-generation acknowledgement. 0.25 reads 0.24 saves. **715/715** automated checks; Release 0/0. Steam is owner-confirmed complete; prior building and save/rejoin evidence is preserved. Run acceptance-a passed the guest's busy-table switch refusal. All 21 owner-save files stayed byte-identical. Other combined feature cases in [needs_testing.md](needs_testing.md) remain open. Probe ownership and resume-history defects were fixed separately.
+
 **November 2, 2026 — phase 12 workshop, wallpapers and PC import, version 0.24 (checked in owned two-game runs).** [Phase 12 audit](audit/phase-12.md); the owner answered its eight questions the same day.
 - Decorator app (tablet): one player at a time ("Someone is decorating the workshop.", "Decorating" under the name). Picks and the light colour reach the other game. The room shows new decorations after the next load, the same way on both games.
 - The light switch (and the lights key) changes both rooms. Lights, the seasonal decoration and the host's season are kept with the world, so Continue and a joining guest get them.
@@ -29,7 +31,7 @@
 - When the guest itself installed a part or removed a panel, its game could reload that PC ("PC reloaded to avoid a desync") and drop out of work mode. Fixed on the owner's go-ahead: blocker links on slots are no longer compared on the other game.
 - Clearer messages: a restored save is announced in the world too, and a lost connection says so instead of "PeerNotFound".
 
-**624/624** checks; Release 0/0; deployed. Still open: Steam rejoin, a world over 35 PCs, and the owner's own pass of the deferred cable, water-cooling and simulation checklists.
+**624/624** checks; Release 0/0; deployed. The >35-PC case subsequently passed in 0.25 (November 4, 2026); the remaining deferred cable, water-cooling and simulation checklists remain open. Steam rejoin was subsequently owner-confirmed complete (November 4, 2026).
 
 **November 1, 2026 — phase 8 durable saves and rejoin, version 0.21 (code and model tests only, not run in game).** [Phase 8 audit](audit/phase-8.md) of saves, rejoin and resume across phases 2–7, done without starting the game; the owner answered its nine questions the same day.
 

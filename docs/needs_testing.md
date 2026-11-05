@@ -2,7 +2,9 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.24**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.25**. Tick a line when it passes, and note the date if it fails.
+
+Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
 ## Workbench: building a PC ([phase 4](audit/phase-4.md), 4f)
 
@@ -68,7 +70,7 @@ Current build: **0.24**. Tick a line when it passes, and note the date if it fai
 ## Tool tables: switching ([phase 11](audit/phase-11.md))
 
 - [ ] Switch a table to delidding, water cooling, case modding and back to the PC from each side: the other game's table switches too
-- [ ] Switching a table the other player is using is refused with the prompt
+- [x] Switching a table the other player is using is refused with the prompt (0.24, November 4, 2026: guest's real selector refused while host used delidding; run acceptance-a)
 
 ## Case modding table ([phase 11](audit/phase-11.md))
 
@@ -126,12 +128,14 @@ Current build: **0.24**. Tick a line when it passes, and note the date if it fai
 
 ## Saves and rejoin ([phase 8](audit/phase-8.md), 8g)
 
+Substantial actual two-game evidence already exists in [phase 8's p8a–p8m runs](audit/phase-8.md#game-runs-november-2-2026). The >35-PC stress case passed in 0.25; the complete build/cable/water acceptance remains open.
+
 - [ ] New world: build, cable, power, BIOS, GPU Tuner, software; then Exit, Continue, guest joins: everything matches
-- [ ] Guest drops (pull the network) and uses Rejoin: comes back where it stood, no duplicates
+- [x] Guest drops (pull the network) and uses Rejoin: comes back where it stood, no duplicates (0.21, November 2, 2026: owned LAN runs, 12-second process suspension; exact position/facing and matching worlds)
 - [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits
 - [ ] Close the host's game during a save: next Continue loads the previous good save with a notice
-- [ ] A world with more than 35 built PCs: save, join, `/sync`, Continue
-- [ ] Host pause-menu Load and Reset reload both games; guest Save/Load/Reset are refused
+- [x] A world with more than 35 built PCs: save, join, `/sync`, Continue (0.25, November 4, 2026: 39 built PCs, matching native checks and object hashes after every step; fixed the 0.24 duplicate-snapshot failure, run acceptance-b)
+- [x] Host pause-menu Load and Reset reload both games; guest Save/Load/Reset are refused (0.21, November 2, 2026: owned two-game runs p8a–p8m)
 - [ ] Rejoin over Steam (needs two Steam accounts)
 - [ ] Exit while the world can't be saved shows the message
 
@@ -156,4 +160,4 @@ Needs two PCs with two different Steam accounts, preferably on separate networks
 - [ ] Spawn, pick up, drop, store and retrieve PCs
 - [ ] Swap a workbench monitor, keyboard or mouse
 - [ ] `/sync` repairs a world
-- [ ] Solo saves are unchanged after playing co-op
+- [x] Solo saves are unchanged after playing co-op (0.24/0.25, November 4, 2026: 21 files byte-identical after owned runs acceptance-a and acceptance-b, including every stress-run restart)
