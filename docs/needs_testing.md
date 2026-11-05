@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.28**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.29**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
@@ -21,8 +21,8 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Workbench: cables and power ([phase 5](audit/phase-5.md), 5d)
 
-- [ ] Plug in and unplug each cable type (24-pin, CPU 8-pin, GPU, SATA, fans, front panel/USB). Run acceptance-c passed the 24-pin, GPU and case-fan native callbacks from the guest in 0.27.
-- [ ] Fan header with no free connector: automatic splitter shows on both games
+- [ ] Plug in and unplug each cable type (24-pin, CPU 8-pin, GPU, SATA, fans, front panel/USB). Run acceptance-c checked 24-pin, GPU and fan in 0.27 and CPU 8-pin, SATA data and power, and front panel in 0.29. USB still open.
+- [ ] Fan header with no free connector: automatic splitter shows on both games. Native auto-splitter branches are for GPU power and SATA power in this build. A fixture that exhausts eligible PSU connections is still needed.
 - [ ] Custom-colour cable: same colours on both games
 - [x] Esc in the cable tool with nothing connected: no change (0.27, November 5, 2026: real Escape in the guest's HDMI connector choice)
 - [x] The other player is refused on that PC while a cable is being placed (0.27, November 5, 2026: host refused on PC 213 and could power PC 26)

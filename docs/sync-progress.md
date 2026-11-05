@@ -1,5 +1,7 @@
 # PCBS2 Co-op synchronization progress
 
+**November 5, 2026 — overlapping cable edits, version 0.29.** `6f05b8c` waits for the local cable replay before checking the host's new assembly profile. The two-game repeat overlapped CPU 8-pin and SATA data unplug and reconnect with clean native checks and no repair. Front-panel and SATA power also matched. **719/719** automated checks passed. [Run record](audit/acceptance-2026-11-04.md#overlapping-cable-edits-on-separate-pcs-028--029)
+
 **November 5, 2026 — wallpaper gallery, version 0.28.** A stale Windows wallpaper path hid the Windows picture tile despite a readable cached copy. `f69429f` restores the preview. Actual host and guest wallpaper selections matched on both games. The native browser refused a 9.45 MB picture and restored the previous one. **719/719** automated checks passed. [Run record](audit/acceptance-2026-11-04.md#real-wallpaper-picker-028)
 
 **November 5, 2026 — powered Continue and late join, version 0.27.** A native BIOS prompt formatting error left a powered PC at Boot in cold co-op processes. The fix confines recovery to the prompt's atlas and text calls during a co-op boot step. Both games reached the desktop on the first boot in the repeat, with matching world hashes and the host's OCCT window. [Run record](audit/acceptance-2026-11-04.md#cold-continue-and-late-join-027)
