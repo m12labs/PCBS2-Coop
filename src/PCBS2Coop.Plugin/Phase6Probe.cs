@@ -217,6 +217,7 @@ internal sealed partial class Phase6Probe
         try { Commands(); } catch (Exception e) { Event("command-error", e.ToString()); }
         if (!Safe || Time.realtimeSinceStartup < _nextSample) return;
         _nextSample = Time.realtimeSinceStartup + 0.25f;
+        try { UpdateStressFixture(); } catch (Exception e) { Event("stress-fixture-failed", new { stage = "update", error = e.ToString() }); _stress = null; }
         try
         {
             var ready = CoopRunner.Instance?.Coop.WorldReady == true;
@@ -452,6 +453,8 @@ internal sealed partial class Phase6Probe
                 CoopRunner.Instance?.Coop.Repair?.Failed(new NetObjectId(repairPc), "probe: pretend this game couldn't show a change", new InvalidDataException("probe"));
             else if (SavesCommand(command)) { }
             else if (WorkshopCommand(command)) { }
+            else if (StressCommand(command)) { }
+            else if (ToolsCommand(command)) { }
             else if (command == "sim-report") Event("sim-report", SimReport());
             else if (command.StartsWith("sim-", StringComparison.Ordinal) || command.StartsWith("tuner", StringComparison.Ordinal) ||
                      command.StartsWith("fans", StringComparison.Ordinal) || command.StartsWith("programs:", StringComparison.Ordinal) ||
