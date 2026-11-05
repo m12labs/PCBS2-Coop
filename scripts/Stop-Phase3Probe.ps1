@@ -6,14 +6,17 @@ $probeWorkspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $probeRecordDir = Join-Path $probeWorkspace ".local/phase$Phase-$RunId"
 $probeRecords = @(Get-ChildItem -LiteralPath $probeRecordDir -Filter '*-process.json' -File | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json })
 if ($probeRecords.Count -eq 0) { throw 'No owned probe processes recorded.' }
+$probeStopped = 0
 foreach ($probeRecord in $probeRecords) {
     $probeProcess = Get-Process -Id $probeRecord.id -ErrorAction SilentlyContinue
     if ($probeProcess) {
         if (-not (Test-ProbeProcessIdentity -Process $probeProcess -Record $probeRecord -ExpectedName 'PCBS2' -ExpectedPath (Join-Path $probeRecord.game 'PCBS2.exe'))) {
-            throw "Process identity no longer matches the owned probe record (PID $($probeRecord.id)); left alone."
+            Write-Warning "PID $($probeRecord.id) no longer matches the owned probe record and was left alone."
+            continue
         }
         Stop-Process -Id $probeProcess.Id
         if (-not $probeProcess.WaitForExit(10000)) { throw "Owned probe PID $($probeProcess.Id) did not exit; do not deploy over its DLLs." }
+        $probeStopped++
     }
 }
 $probeGame = $probeRecords[0].game
@@ -33,5 +36,5 @@ $probeBefore = Get-Content -LiteralPath (Join-Path $probeRecordDir 'owner-saves-
 $probeBeforeKeys = @($probeBefore | ForEach-Object { $_.name + ':' + $_.hash } | Sort-Object)
 $probeAfterKeys = @($probeAfter | ForEach-Object { $_.name + ':' + $_.hash } | Sort-Object)
 $probeSame = ($probeBeforeKeys.Count -eq $probeAfterKeys.Count) -and (($probeBeforeKeys -join "`n") -ceq ($probeAfterKeys -join "`n"))
-[pscustomobject]@{ run = $RunId; stoppedOwnedProcesses = $probeRecords.Count; ownerSaveFiles = $probeAfterKeys.Count; ownerSavesUnchanged = $probeSame } | ConvertTo-Json
+[pscustomobject]@{ run = $RunId; stoppedOwnedProcesses = $probeStopped; ownerSaveFiles = $probeAfterKeys.Count; ownerSavesUnchanged = $probeSame } | ConvertTo-Json
 if (-not $probeSame) { throw 'Owner save hashes differ; inspect the saved before/after manifests.' }
