@@ -134,3 +134,9 @@ Release build: 0 warnings, 0 errors. Deployed to the game folder and checked ide
 8. Late join and host save/Continue with a powered PC: it is on again on both games.
 9. A 4e component edit on a powered PC: both games end in the same power state.
 10. `/sync` after any of these.
+
+## November 5, 2026 follow-up (0.26)
+
+The walking bench `P` shortcut bypassed the existing case and HUD hooks. Two actual guest presses in 0.25 booted only the guest. Version 0.26 hooks the three native `BenchSlot.GetInteractions` power callbacks and sends them through command 9. The Power claim can start while walking and blocks movement and competing edits until settled. Other edit gestures still require work mode. Existing 0.25 saves load in 0.26.
+
+Run `acceptance-c` verified the fix with the observer aimed at an empty bench. The guest's real `P` off (`G#2`) and on (`G#4`) both settled on the host, and both native PCs reached the desktop. Picking up that powered PC with the guest's real bench interaction took both virtual computers offline. Both peers placed PC 213 in the guest's hands with matching object state and clean native checks. [Run record](acceptance-2026-11-04.md#run-acceptance-c-walking-power-and-powered-pickup)

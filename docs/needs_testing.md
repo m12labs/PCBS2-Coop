@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.25**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.26**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
@@ -26,9 +26,9 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [ ] Custom-colour cable: same colours on both games
 - [ ] Esc in the cable tool with nothing connected: no change
 - [ ] The other player is refused on that PC while a cable is being placed
-- [ ] Power on/off with the case button and the HUD button
-- [ ] Pick up a powered PC: off on both games
-- [ ] Late join and Continue with a powered PC: on again on both games
+- [x] Power on/off with the case button and the HUD button (0.26, November 5, 2026: native case-button callback and real HUD clicks, run acceptance-c)
+- [x] Pick up a powered PC: off on both games (0.26, November 5, 2026: actual guest pickup, run acceptance-c)
+- [ ] Late join and Continue with a powered PC: on again on both games (0.26, November 5, 2026: fresh guest stuck at Boot in run acceptance-c)
 - [ ] Part edit on a powered PC: same power state afterwards
 
 ## Workbench: custom water cooling ([phase 10](audit/phase-10.md), 10b)
@@ -133,7 +133,7 @@ Substantial actual two-game evidence already exists in [phase 8's p8a–p8m runs
 - [ ] New world: build, cable, power, BIOS, GPU Tuner, software; then Exit, Continue, guest joins: everything matches
 - [x] Guest drops (pull the network) and uses Rejoin: comes back where it stood, no duplicates (0.21, November 2, 2026: owned LAN runs, 12-second process suspension; exact position/facing and matching worlds)
 - [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits
-- [ ] Close the host's game during a save: next Continue loads the previous good save with a notice
+- [ ] Close the host's game during a save: next Continue loads the previous good save with a notice (0.21, November 2, 2026: actual interruption preserved the previous pair; the separate mismatched-pair run showed the notice)
 - [x] A world with more than 35 built PCs: save, join, `/sync`, Continue (0.25, November 4, 2026: 39 built PCs, matching native checks and object hashes after every step; fixed the 0.24 duplicate-snapshot failure, run acceptance-b)
 - [x] Host pause-menu Load and Reset reload both games; guest Save/Load/Reset are refused (0.21, November 2, 2026: owned two-game runs p8a–p8m)
 - [ ] Rejoin over Steam (needs two Steam accounts)

@@ -77,3 +77,18 @@ Fresh processes originally replayed the run's old `commands.txt`, including Exit
 ### Component probe coverage boundary
 
 `gesture-*` commands run real game entry points, production requests and native editor/replay/settle paths. Reports observe native slots, parts, cables and paste. They explicitly bypass pointer reach/raycast/hold input; `gesture-install` also bypasses inventory selection/placeholder commit. These are actual-game checks at the recorded seam, distinct from manual UI coverage. A returned entry-point call alone is not a pass: acceptance requires host confirmation, the native result on both peers and clean projection checks.
+
+## Run acceptance-c, walking power and powered pickup
+
+On November 5, 2026, two guest bench `P` presses in version 0.25 reproduced a guest-only boot on default PC 213. The guest reached its desktop while the host PC remained off and no Power request was ordered. The three native walking bench callbacks called the motherboard directly, bypassing the case and HUD hooks. Red logs are retained as `.local/acceptance-20261104/walking-power-red-{host,guest}.log` and `walking-power-red-repeat-{host,guest}.log`.
+
+Commit `db13358` adds the bench hooks in 0.26. Power can claim a bench PC while its actor is walking, and the claim still blocks movement and edits. Other edit gestures still require work mode. The new regression exposed two failures on 0.25. Release built with zero warnings or errors and all **719/719** automated checks passed in 0.26. All three deployed DLL hashes matched before launch. The 0.25 paired save loaded in 0.26.
+
+| Actual two-game check | Result |
+| --- | --- |
+| Walking bench `P` | The guest's off (`G#2`) and on (`G#4`) requests settled. The native PCs were off after the first and reached their desktops after the second. The host aimed at an empty bench so the same keyboard input could not trigger a competing interaction. |
+| Pick up a powered PC | At 09:48:43 UTC the guest used the real right-click pickup. The two virtual computers powered down and both peers recorded PC 213 in the guest's hands. Native checks were clean at revision 206 with common object hash `5C66F09D08FDB201C589B2C05A9BDE1845736D26E79B71EE8A0596ACA552A5E6`. The guest then dropped it back on bench 3 while it was off. |
+| Case button | The guest called the native `PowerButton.Press` entry point in work mode (pointer selection bypassed). `G#9` booted both peers and `G#11` powered both off. |
+| Work HUD button | Real clicks on the guest's Power button (`G#13`, `G#15`) booted both PCs to the desktop and powered them both off. The power commits matched the automatic monitor, keyboard, mouse and mains cable changes. |
+
+The powered world was then saved as a readable pair. A fresh guest joined at generation 1, revision 275. The host stayed on the desktop, while the guest's native startup failed in `JobTutorialHintUi.SetSpriteAssetForText` and the automatic restart hit the same exception. At revision 296 both worlds still had a clean object check and the same object hash, while the guest's actual screen remained at Boot. This fails the 0.26 powered-join case. Logs: `.local/acceptance-20261104/cold-boot-red-{host,guest}.log`.

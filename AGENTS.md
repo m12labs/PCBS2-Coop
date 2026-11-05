@@ -29,7 +29,7 @@ Set `PCBS2COOP_AUTOTEST=host` for one launch of `PCBS2.exe` and `=join` for a se
 
 ## Versioning
 
-The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.25). It is the plugin version, the network assembly version and the join check; there is no separate protocol version. Two players can join only with exactly the same version, so bump it whenever a build changes what goes over the network or into co-op saves, and before handing a build to someone. A co-op save loads only under the version that wrote it, unless that version is listed in `CoopSavePair.SameFormat` (a bump that changed only network messages, not what a save holds: 0.17 reads 0.16).
+The mod has one version: `<Version>` in `Directory.Build.props` (currently 0.26). It is the plugin version, the network assembly version and the join check; there is no separate protocol version. Two players can join only with exactly the same version, so bump it whenever a build changes what goes over the network or into co-op saves, and before handing a build to someone. A co-op save loads only under the version that wrote it, unless that version is listed in `CoopSavePair.SameFormat` (a bump that changed only network messages, not what a save holds: 0.17 reads 0.16).
 
 - Each bump adds one to the number after the dot: 0.1, 0.2, 0.3, 0.4, … (0.9 is followed by 0.10).
 - BepInEx shows it with a third part (0.3 → `0.3.0`). Only an exact match matters for joining.
@@ -104,7 +104,7 @@ For component installs and removals, read task 4e in `docs/audit/phase-4.md`. Co
 While another actor's edit claim is pending on a PC, latches, panels and edits on that PC are refused (owner decision). `DisassemblyTick` b__0 is a placeholder install, b__1 the direct removal, b__2 the `Uninstall` coroutine. Never hook `SetCurrentState`, `OnStateDestroy` or the replay targets through a second method that shares their native code.
 
 For cables and power, read `docs/audit/phase-5.md`. They are command 9 gestures `Connect`, `Unplug` and `Power`, each with a whole-PC edit claim (no targets):
-- The editor's gesture is the cabling long press `<CablingTick>b__0` (its `ConnectCableState` may install a splitter on entry), the unplug long press `<RemoveCableTick>b__0`, `PowerButton.Press` or `WorkingOnComputerStateBase.PowerClicked`.
+- The editor's gesture is the cabling long press `<CablingTick>b__0` (its `ConnectCableState` may install a splitter on entry), the unplug long press `<RemoveCableTick>b__0`, `PowerButton.Press`, `WorkingOnComputerStateBase.PowerClicked`, or a walking bench power callback (`BenchSlot.<GetInteractions>b__8/9/10`, 0.26). Only Power can claim a PC while walking.
 - The editor is followed until nothing moves on that PC. The commit carries a `Wiring` change: cables off/on, splitter/adapter slots, inventory and power.
 - The other game applies that change with the game's own calls (`NativeComponentEdits.Wiring.cs`).
 - `PcFact.Powered` is bench-only (`PcFact.At` clears it on a move). The game doesn't save power, so each game turns powered PCs on again shortly after a load.
