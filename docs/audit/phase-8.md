@@ -221,13 +221,13 @@ Bugs found and fixed in these runs (eight):
 
 Found and left for the owner:
 
-- A game that loads a world before any real keyboard or mouse input (the test harness's relaunched host) keeps a PC that was on stuck on its boot screen: `JobTutorialHintUi` looks up Rewired's last active controller and throws. Players always click first, so only test setups need one real click before Continue.
+- A game that loads a powered world before any real keyboard or mouse input can get stuck at Boot when `JobTutorialHintUi` looks up Rewired's last active controller. Version 0.27 fixed this and passed fresh-process Continue and a fresh guest join in the same powered world. [Cold boot follow-up](acceptance-2026-11-04.md#cold-continue-and-late-join-027)
 - The pause menu's save card shows "coopworld" (the snapshot file name) until the host's next save.
 
 ### Not checked in game yet
 
 - Steam testing, including Rejoin, was subsequently confirmed complete by the owner on November 4, 2026; it is no longer an outstanding case.
 - Acceptance case 5 subsequently passed on November 4, 2026 in 0.25: 39 built PCs through save, late join, `/sync`, fresh-process Continue and another join, with matching hashes and native checks. The initial 0.24 run exposed duplicate admission snapshots; `de2bee3` fixes it. See [the follow-up](acceptance-2026-11-04.md).
-- The Exit message when the world couldn't be saved (needs an out-of-sync or busy host at Exit).
+- The Exit message subsequently passed on November 5, 2026 in 0.27. The guest held a live HDMI edit, the host waited and showed the warning, and the previous paired save's hashes were unchanged. [Cable and Exit follow-up](acceptance-2026-11-04.md#cable-edits-claim-refusal-and-unsavable-exit-027)
 - A dropped connection during an install's animation (the faster-install power-up finished the GPU removal before the drop); during a BIOS session or a running OCCT test.
 - The owner's own pass of the deferred tests 4f, 5d, 10b and 7e (cables, water cooling, full builds in both directions).

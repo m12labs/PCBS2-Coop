@@ -21,11 +21,11 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Workbench: cables and power ([phase 5](audit/phase-5.md), 5d)
 
-- [ ] Plug in and unplug each cable type (24-pin, CPU 8-pin, GPU, SATA, fans, front panel/USB)
+- [ ] Plug in and unplug each cable type (24-pin, CPU 8-pin, GPU, SATA, fans, front panel/USB). Run acceptance-c passed the 24-pin, GPU and case-fan native callbacks from the guest in 0.27.
 - [ ] Fan header with no free connector: automatic splitter shows on both games
 - [ ] Custom-colour cable: same colours on both games
-- [ ] Esc in the cable tool with nothing connected: no change
-- [ ] The other player is refused on that PC while a cable is being placed
+- [x] Esc in the cable tool with nothing connected: no change (0.27, November 5, 2026: real Escape in the guest's HDMI connector choice)
+- [x] The other player is refused on that PC while a cable is being placed (0.27, November 5, 2026: host refused on PC 213 and could power PC 26)
 - [x] Power on/off with the case button and the HUD button (0.26, November 5, 2026: native case-button callback and real HUD clicks, run acceptance-c)
 - [x] Pick up a powered PC: off on both games (0.26, November 5, 2026: actual guest pickup, run acceptance-c)
 - [x] Late join and Continue with a powered PC: on again on both games (0.27, November 5, 2026: cold host and guest both reached the desktop, run acceptance-c)
@@ -120,7 +120,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 - [ ] OCCT on an overclocked PC that fails: both games blue-screen once, same reason (host starts it, then the guest)
 - [ ] A PC overheating from a missing cooler or paste fails the same way on both
-- [ ] GPU Tuner Apply and Reset from either player: same values, no restart
+- [x] GPU Tuner Apply and Reset from either player: same values, no restart (0.27, November 5, 2026: real slider and button interactions on both games)
 - [ ] Fan Control custom curve, presets and Defaults from either player
 - [ ] Late join with a custom fan curve applied
 - [ ] Power off and on after a blue screen: both reach the desktop
@@ -132,12 +132,12 @@ Substantial actual two-game evidence already exists in [phase 8's p8a–p8m runs
 
 - [ ] New world: build, cable, power, BIOS, GPU Tuner, software; then Exit, Continue, guest joins: everything matches
 - [x] Guest drops (pull the network) and uses Rejoin: comes back where it stood, no duplicates (0.21, November 2, 2026: owned LAN runs, 12-second process suspension; exact position/facing and matching worlds)
-- [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits
+- [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits (0.27, November 5, 2026: cable-only guard and Exit wait verified in run acceptance-c)
 - [ ] Close the host's game during a save: next Continue loads the previous good save with a notice (0.21, November 2, 2026: actual interruption preserved the previous pair; the separate mismatched-pair run showed the notice)
 - [x] A world with more than 35 built PCs: save, join, `/sync`, Continue (0.25, November 4, 2026: 39 built PCs, matching native checks and object hashes after every step; fixed the 0.24 duplicate-snapshot failure, run acceptance-b)
 - [x] Host pause-menu Load and Reset reload both games; guest Save/Load/Reset are refused (0.21, November 2, 2026: owned two-game runs p8a–p8m)
 - [ ] Rejoin over Steam (needs two Steam accounts)
-- [ ] Exit while the world can't be saved shows the message
+- [x] Exit while the world can't be saved shows the message (0.27, November 5, 2026: guest held an HDMI edit open, host got the menu warning and the previous pair stayed byte-identical)
 
 ## Steam connection (version 0.9 onward)
 

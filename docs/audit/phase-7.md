@@ -99,6 +99,10 @@ Every run was stopped by `Stop-Phase6Probe.ps1`; all 21 owner save files were un
 - Whether the game saves Fan Control curves in solo Free Build (decision 5 keeps solo behaviour either way).
 - Cinebench and 3DMark result agreement (phase 6 already keeps the host's record).
 
+## November 5, 2026 follow-up (0.27)
+
+Run `acceptance-c` passed GPU Tuner Apply and Reset from either player through the actual app. Both games showed the changed and default values, with no restart. [Run record](acceptance-2026-11-04.md#gpu-tuner-027)
+
 ## Owner decisions (November 1, 2026)
 
 The owner answered the seven audit questions; every answer matches what 0.20 implements.
