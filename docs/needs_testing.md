@@ -35,10 +35,10 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 - [ ] Lay a pipe with corners
 - [ ] Undo and Esc in the pipe tool: nothing shared
-- [ ] Remove a pipe
-- [ ] Fill the loop with coolant, then drain it
+- [x] Remove a pipe (0.29, November 5, 2026, run acceptance-c)
+- [x] Fill the loop with coolant, then drain it (0.29, November 5, 2026, PC powered off)
 - [ ] Install and remove a CPU block, GPU block, pump/reservoir, VRM or RAM heatsink
-- [ ] The other player gets the water-cooling refusal on that PC; another PC still works
+- [x] The other player gets the water-cooling refusal on that PC; another PC still works (0.29, November 5, 2026)
 - [ ] Water edits on a powered PC
 - [ ] Late join and Continue after water edits
 
@@ -132,7 +132,7 @@ Substantial actual two-game evidence already exists in [phase 8's p8a–p8m runs
 
 - [ ] New world: build, cable, power, BIOS, GPU Tuner, software; then Exit, Continue, guest joins: everything matches
 - [x] Guest drops (pull the network) and uses Rejoin: comes back where it stood, no duplicates (0.21, November 2, 2026: owned LAN runs, 12-second process suspension; exact position/facing and matching worlds)
-- [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits (0.27, November 5, 2026: cable-only guard and Exit wait verified in run acceptance-c)
+- [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits (November 5, 2026, run acceptance-c: cable guard and Exit wait in 0.27, coolant drain guard in 0.29)
 - [ ] Close the host's game during a save: next Continue loads the previous good save with a notice (0.21, November 2, 2026: actual interruption preserved the previous pair; the separate mismatched-pair run showed the notice)
 - [x] A world with more than 35 built PCs: save, join, `/sync`, Continue (0.25, November 4, 2026: 39 built PCs, matching native checks and object hashes after every step; fixed the 0.24 duplicate-snapshot failure, run acceptance-b)
 - [x] Host pause-menu Load and Reset reload both games; guest Save/Load/Reset are refused (0.21, November 2, 2026: owned two-game runs p8a–p8m)

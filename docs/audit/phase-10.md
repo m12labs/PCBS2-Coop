@@ -73,3 +73,7 @@ Release build: 0 warnings, 0 errors. Deployed and checked identical. Nothing ran
 6. While someone builds water cooling, the other player is refused on that PC with the water message, and a different PC still works.
 7. Water edits on a powered PC.
 8. Late join and save/Continue after water edits; `/sync`.
+
+## Owned two-game run, November 5, 2026
+
+In 0.29 the guest filled the powered-off loop with `WC_COOLANT_PURPLE_CLEAR`, drained it and removed the pipe between the pump and CPU block. Both native games showed the filled loop, then the empty loop, then the two remaining pipes. The host's save request during the initial drain waited, and a later save succeeded. While the guest held the pipe chooser open, the host received the water-cooling refusal on that PC and completed a cable removal on a different PC. The callbacks bypassed pointer reach and hold input. [Run acceptance-c](acceptance-2026-11-04.md#custom-water-cooling-in-029)
