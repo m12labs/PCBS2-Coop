@@ -211,6 +211,7 @@ internal sealed partial class Phase6Probe
     }
 
     private int _commandsRead;
+    private bool _skipCommandHistory = Environment.GetEnvironmentVariable("PCBS2COOP_PROBE_RESUME") == "1";
 
     public void Update()
     {
@@ -441,6 +442,15 @@ internal sealed partial class Phase6Probe
         var file = Path.Combine(Path.GetDirectoryName(_file)!, "commands.txt");
         if (!File.Exists(file)) { Directory.CreateDirectory(Path.GetDirectoryName(file)!); File.WriteAllText(file, ""); return; }
         var lines = File.ReadAllLines(file);
+        if (_skipCommandHistory)
+        {
+            // This file is an append-only operator journal. A fresh process must not run the earlier process's
+            // save, exit or edit commands again while the menu is being initialized.
+            _commandsRead = lines.Length;
+            _skipCommandHistory = false;
+            Event("commands-resumed", new { skipped = _commandsRead });
+            return;
+        }
         while (_commandsRead < lines.Length)
         {
             var command = lines[_commandsRead++].Trim();

@@ -4,7 +4,7 @@ param(
     [string]$GameDir,
     [switch]$Deploy,
     [ValidateSet('3', '4', '6')][string]$Phase = '3',
-    # Relaunch a host on this run's own disposable saves (fresh-process Continue); the earlier process must have exited.
+    # Relaunch on this run's disposable saves. Hosts Continue; phase 6 guests request a fresh host snapshot.
     [switch]$Resume
 )
 $ErrorActionPreference = 'Stop'
@@ -16,9 +16,13 @@ $probeRecordDir = Join-Path $probeWorkspace ".local/phase$Phase-$RunId"
 $probeEvidenceDir = Join-Path $probeGame "BepInEx/PCBS2Coop-diag/phase$Phase/$RunId"
 $probeRecordFile = Join-Path $probeRecordDir "$Role-process.json"
 if ($Resume) {
-    if ($Role -ne 'host') { throw 'Only a host can resume a probe run.' }
     $probeCoopSaves = Join-Path $probeEvidenceDir "saves-$Role/Coop"
-    if (-not ((Test-Path -LiteralPath $probeCoopSaves) -and @(Get-ChildItem -LiteralPath $probeCoopSaves -Filter '*.binary*' -File).Count -gt 0)) { throw 'Nothing to resume: this run has no disposable co-op save.' }
+    if ($Role -eq 'host') {
+        if (-not ((Test-Path -LiteralPath $probeCoopSaves) -and @(Get-ChildItem -LiteralPath $probeCoopSaves -Filter '*.binary*' -File).Count -gt 0)) { throw 'Nothing to resume: this run has no disposable co-op save.' }
+    }
+    elseif ($Phase -ne '6' -or -not (Test-Path -LiteralPath (Join-Path $probeEvidenceDir 'saves-join') -PathType Container)) {
+        throw 'A guest can relaunch only an existing isolated phase 6 run.'
+    }
     if (Test-Path -LiteralPath $probeRecordFile) {
         $probePrevious = Get-Content -LiteralPath $probeRecordFile -Raw | ConvertFrom-Json
         $probePreviousProcess = Get-Process -Id $probePrevious.id -ErrorAction SilentlyContinue

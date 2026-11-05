@@ -47,7 +47,7 @@ internal sealed class AutoTest
     public static bool IsEnabled => Role is "host" or "join";
     private static string Role => Environment.GetEnvironmentVariable("PCBS2COOP_AUTOTEST")?.Trim().ToLowerInvariant();
 
-    /// <summary>Probe host relaunch: reuse this run's disposable saves and press Continue instead of New Game.</summary>
+    /// <summary>Probe relaunch: reuse this run's disposable folder; hosts Continue and phase 6 guests rejoin.</summary>
     private static bool ProbeResume => (Phase3Probe.Enabled || Phase6Probe.Enabled) && Environment.GetEnvironmentVariable("PCBS2COOP_PROBE_RESUME") == "1";
 
     /// <summary>The disposable save folder, set once the redirect is confirmed. Null means saves are not isolated.</summary>
@@ -440,8 +440,11 @@ internal sealed class AutoTest
             // Audit runs use fresh, named folders and retain earlier evidence. A resume reopens only its own run's folder.
             if (ProbeResume)
             {
-                if (_role != "host") throw new IOException("Only a probe host can resume a run.");
-                if (!Directory.Exists(Path.Combine(dir, "Coop")) || Directory.GetFiles(Path.Combine(dir, "Coop"), "*.binary*").Length == 0) throw new IOException("Resume needs this run's existing co-op save.");
+                if (_role == "host")
+                {
+                    if (!Directory.Exists(Path.Combine(dir, "Coop")) || Directory.GetFiles(Path.Combine(dir, "Coop"), "*.binary*").Length == 0) throw new IOException("Resume needs this run's existing co-op save.");
+                }
+                else if (!Phase6Probe.Enabled || !Directory.Exists(dir)) throw new IOException("A guest can relaunch only its existing isolated phase 6 folder.");
             }
             else if ((Phase3Probe.Enabled || Phase6Probe.Enabled) && Directory.Exists(dir)) throw new IOException("Use a fresh probe run ID; its saves already exist.");
             if (!Phase3Probe.Enabled && !Phase6Probe.Enabled && Directory.Exists(dir)) Directory.Delete(dir, true);
