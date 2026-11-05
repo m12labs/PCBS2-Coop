@@ -107,7 +107,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Wallpapers and PC import ([phase 12](audit/phase-12.md))
 
-- [ ] Custom picture from the wallpaper app's custom tab, each side: both screens show it, after Continue and a join too
+- [ ] Custom picture from the wallpaper app's custom tab, each side: both screens show it, after Continue and a join too (0.27, November 5, 2026: both native custom-apply paths and late join verified in acceptance-c. Continue still open.)
 - [ ] Your Windows wallpaper, each side: both screens show the same picture
 - [x] A picture over 8 MB is refused with a message (0.24, November 2, 2026: owned phase 12 check also verified restoration of the previous wallpaper)
 - [ ] Pick up a PC file from the cupboard, each side: it arrives in your hands on both games with its paint job; store it, Continue, join
@@ -121,8 +121,8 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [ ] OCCT on an overclocked PC that fails: both games blue-screen once, same reason (host starts it, then the guest)
 - [ ] A PC overheating from a missing cooler or paste fails the same way on both
 - [x] GPU Tuner Apply and Reset from either player: same values, no restart (0.27, November 5, 2026: real slider and button interactions on both games)
-- [ ] Fan Control custom curve, presets and Defaults from either player
-- [ ] Late join with a custom fan curve applied
+- [x] Fan Control custom curve, presets and Defaults from either player (0.27, November 5, 2026: real controls on PC 26, run acceptance-c)
+- [x] Late join with a custom fan curve applied (0.27, November 5, 2026: fresh guest restored the 11-point Max RPM curve and displayed 2000 RPM on all three GPU fans)
 - [ ] Power off and on after a blue screen: both reach the desktop
 - [ ] Cinebench and 3DMark results match
 

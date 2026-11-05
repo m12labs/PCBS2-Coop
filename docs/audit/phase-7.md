@@ -101,7 +101,7 @@ Every run was stopped by `Stop-Phase6Probe.ps1`; all 21 owner save files were un
 
 ## November 5, 2026 follow-up (0.27)
 
-Run `acceptance-c` passed GPU Tuner Apply and Reset from either player through the actual app. Both games showed the changed and default values, with no restart. [Run record](acceptance-2026-11-04.md#gpu-tuner-027)
+Run `acceptance-c` passed GPU Tuner Apply and Reset from either player through the actual app. Both games showed the changed and default values, with no restart. The same run passed real Fan Control presets, changes to a custom Max RPM curve, and Defaults from both sides. A fresh guest joined the running host and displayed the 11-point curve. [Run record](acceptance-2026-11-04.md#fan-control-and-custom-picture-follow-up-027)
 
 ## Owner decisions (November 1, 2026)
 
