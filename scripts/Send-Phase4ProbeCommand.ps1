@@ -4,13 +4,13 @@ param(
     [Parameter(Mandatory)][string[]]$Command
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'ProbeProcessIdentity.ps1')
 $probeWorkspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $probeRecordFile = Join-Path $probeWorkspace ".local/phase4-$RunId/$Role-process.json"
 $probeRecord = Get-Content -LiteralPath $probeRecordFile -Raw | ConvertFrom-Json
 $probeProcess = Get-Process -Id $probeRecord.id -ErrorAction Stop
-if ($probeRecord.run -ne $RunId -or $probeRecord.role -ne $Role -or $probeProcess.ProcessName -ne 'PCBS2' -or
-    $probeProcess.StartTime.ToUniversalTime().ToString('O') -ne $probeRecord.startedUtc -or
-    $probeProcess.Path -ne (Join-Path $probeRecord.game 'PCBS2.exe')) { throw 'Owned phase 4 process identity does not match.' }
+if ($probeRecord.run -ne $RunId -or $probeRecord.role -ne $Role -or
+    -not (Test-ProbeProcessIdentity -Process $probeProcess -Record $probeRecord -ExpectedName 'PCBS2' -ExpectedPath (Join-Path $probeRecord.game 'PCBS2.exe'))) { throw 'Owned phase 4 process identity does not match.' }
 $probeRoot = Join-Path $probeRecord.game "BepInEx/PCBS2Coop-diag/phase4/$RunId"
 $probeCommands = Join-Path $probeRoot "$Role/commands.txt"
 if (-not (Test-Path -LiteralPath (Join-Path $probeRoot "saves-$Role") -PathType Container) -or
