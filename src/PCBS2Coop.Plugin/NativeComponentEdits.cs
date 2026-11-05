@@ -47,6 +47,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         public WireState Before;
         /// <summary>Water-cooling edits: the PC record before the edit, then the finished one (both compressed).</summary>
         public byte[] RecordBefore, Record;
+        public bool PipeAccepted;
         public float Started, QuietSince;
     }
 

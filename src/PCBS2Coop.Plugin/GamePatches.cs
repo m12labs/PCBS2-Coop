@@ -68,6 +68,7 @@ internal static class GamePatches
             cables.PatchAll(typeof(NativeComponentEdits.PowerClickIntercept));
             var water = new Harmony(Plugin.Guid + ".water");
             water.PatchAll(typeof(NativeComponentEdits.PipeIntercept));
+            water.PatchAll(typeof(NativeComponentEdits.PipeAcceptTrace));
             water.PatchAll(typeof(NativeComponentEdits.FillIntercept));
             water.PatchAll(typeof(NativeComponentEdits.DrainIntercept));
             var bios = new Harmony(Plugin.Guid + ".bios");
