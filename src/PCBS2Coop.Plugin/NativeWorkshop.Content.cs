@@ -310,6 +310,22 @@ internal sealed partial class NativeWorkshop
             }
             catch (Exception e) { Plugin.Logger.LogError("[content] wallpaper hook failed: " + e); return true; }
         }
+
+        private static void Postfix(OS __instance, string wallpaper, bool ForApp, ref bool Created, ref Sprite __result)
+        {
+            if (Bypass || !ForApp || wallpaper != UserWallpaper || __result != null) return;
+            try
+            {
+                var me = Current;
+                if (me?.Active != true || me.PcOf(__instance).IsNone) return;
+                // The gallery omits any picture without a preview. Use the same Windows copy as LocalWallpaper.
+                var file = UserWallpaperFile();
+                if (string.IsNullOrEmpty(file) || !File.Exists(file) || new FileInfo(file).Length > WorkshopWorld.MaxContentBytes) return;
+                __result = PCBS.FileExplorer.Tools.LoadSpriteFromFilePath(file);
+                Created = __result != null;
+            }
+            catch (Exception e) { Plugin.Logger.LogWarning("[content] Windows wallpaper preview failed: " + e.Message); }
+        }
     }
 
     [HarmonyPatch(typeof(OS), nameof(OS.SetCustomWallpaper))]
