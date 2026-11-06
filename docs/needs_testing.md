@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.33**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.35**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
@@ -14,7 +14,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Both players work on different parts of the same PC at once: the second edit attempt is refused under the phase 4e waiting rule (0.30, November 5, 2026)
 - [x] Both players go for the same slot at once: one wins, one gets a refusal (0.30, November 5, 2026)
 - [x] Try a part that doesn't fit, or a blocked removal: refused, nothing changes (0.31, November 5, 2026: the installed cooler blocked CPU removal and both PCs kept the CPU)
-- [ ] Latches, CPU levers, RAM clips, case panels both ways (November 5, 2026. Removing a connected front panel in 0.33 still faults on the host. `/sync` now recovers both games.)
+- [ ] Latches, CPU levers, RAM clips, case panels both ways (0.35, November 5, 2026. Both players removed and refitted the front panel after unplugging it, then the guest reconnected the lead. Latch and clip checks remain.)
 - [ ] Esc halfway through an install and a removal (phase 4 native checks found that Esc after install starts normally leaves it running. In 0.30 Esc at fan orientation also left the editor open. Removal retest remains.)
 - [x] Guest joins while the host is building (0.31, November 5, 2026: fresh guest waited through the host's fan install, then loaded the completed PC)
 - [ ] Save, Exit, Continue after a build
