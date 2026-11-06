@@ -32,6 +32,8 @@ internal sealed partial class Phase6Probe
     private string _lastDesktopWindows = "";
     private float _nextSample;
     private bool _wasReady;
+    private NetObjectId _biosKeyPc;
+    private float _biosKeyUntil;
     private static Phase6Probe _current;
 
     public Phase6Probe()
@@ -461,6 +463,7 @@ internal sealed partial class Phase6Probe
             else if (command == "look-up" && LocalPlayer.Root is { } root && Camera.main is { } camera)
                 LookAt(root, camera.transform.position + Vector3.up);
             else if (command == "desktop-report") Event("desktop-report", DesktopReport());
+            else if (command.StartsWith("hold-bios-key:", StringComparison.Ordinal)) HoldBiosKey(command[14..]);
             else if (command.StartsWith("screen-dump:", StringComparison.Ordinal)) Event("screen-dump", ScreenDump(command[12..]));
             else if (command.StartsWith("repair:", StringComparison.Ordinal) && uint.TryParse(command[7..], out var repairPc))
                 CoopRunner.Instance?.Coop.Repair?.Failed(new NetObjectId(repairPc), "probe: pretend this game couldn't show a change", new InvalidDataException("probe"));
@@ -482,6 +485,29 @@ internal sealed partial class Phase6Probe
     }
 
     // ---------------- phase 7: simulation, GPU Tuner and Fan Control ----------------
+
+    private void HoldBiosKey(string arg)
+    {
+        var coop = CoopRunner.Instance?.Coop;
+        var monitor = coop == null ? default : NativeDesktopInput.LocalMonitor(coop);
+        if (!ulong.TryParse(arg, out var pc) || pc == 0 || monitor.Pc.Value != pc)
+        {
+            Event("hold-bios-key", "Look at the specified PC's monitor first.");
+            return;
+        }
+        _biosKeyPc = monitor.Pc;
+        _biosKeyUntil = Time.unscaledTime + 8f;
+        Event("hold-bios-key", new { pc, seconds = 8, bypasses = "physical key hold only" });
+    }
+
+    internal static bool BiosKeyHeld(InputButton button)
+    {
+        var probe = _current;
+        if (probe == null || probe._biosKeyUntil <= 0 || Time.unscaledTime >= probe._biosKeyUntil || button == null ||
+            (button.Pointer != PCBSInput.m_enterBios?.Pointer && button.Pointer != PCBSInput.m_enterBiosAlt?.Pointer)) return false;
+        var coop = CoopRunner.Instance?.Coop;
+        return probe.Safe && coop != null && NativeDesktopInput.LocalMonitor(coop).Pc == probe._biosKeyPc;
+    }
 
     private static VirtualComputer ProbeComputer(string arg)
     {

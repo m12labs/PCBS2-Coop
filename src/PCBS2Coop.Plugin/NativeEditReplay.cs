@@ -449,7 +449,8 @@ internal sealed class NativeEditReplay
         private static bool Prefix(InputButton __instance, System.Reflection.MethodBase __originalMethod, ref bool __result)
         {
             // Phase 6: a boot this game follows into BIOS sees the BIOS key held (NativeDesktopInput.BootFollow).
-            if (NativeDesktopInput.ForceHeld(__instance) && __originalMethod.Name == nameof(InputButton.IsHeld))
+            if (__originalMethod.Name == nameof(InputButton.IsHeld) &&
+                (NativeDesktopInput.ForceHeld(__instance) || Phase6Probe.BiosKeyHeld(__instance)))
             { __result = true; return false; }
             if (_step == null) return true;
             __result = false;
