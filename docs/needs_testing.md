@@ -44,11 +44,11 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Workbench: thermal paste ([phase 9](audit/phase-9.md))
 
-- [ ] Put paste on a CPU (paste tool), host and guest each
-- [ ] Take paste off with the Q-tip, host and guest each (check whether the other game's paste goes away too)
+- [ ] Put paste on a CPU (paste tool), host and guest each (0.33, November 5, 2026. The host applied paste with the syringe and both games reported it on.)
+- [ ] Take paste off with the Q-tip, host and guest each (check whether the other game's paste goes away too). The host completed a native wipe in 0.33 on November 5, 2026, and both games reported it off.
 - [ ] The other player is refused on that PC and sees "Applying thermal paste" under the name
 - [ ] Run the PC after pasting: no overheat on either game
-- [ ] Cleaning mode shows "Cleaning isn't shared in co-op yet"
+- [x] Cleaning mode shows "Cleaning isn't shared in co-op yet" (0.33, November 5, 2026. The host selected Compressed Air from the real Tools inventory.)
 
 ## Delid table ([phase 9](audit/phase-9.md))
 

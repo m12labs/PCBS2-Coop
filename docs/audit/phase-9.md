@@ -179,7 +179,7 @@ Version **0.22** (network messages only; 0.22 reads 0.21 saves, `CoopSavePair.Sa
 
 **Model evidence:** **654/654** checks (paste begin/refusal/commit/settle, variants, tool tables: claim, prompt, one table per player, chunks/hash, departure, mid-session join). Release build 0 warnings, 0 errors; deployed and hash-checked. **Nothing ran in game.**
 
-### Not checked in game yet
+### Runtime gaps at 0.22
 
 - Everything above. In particular:
   - whether `SetDefaultPaste` shows a normal paste on the other game;
@@ -198,3 +198,7 @@ Version **0.22** (network messages only; 0.22 reads 0.21 saves, `CoopSavePair.Sa
 5. Water-cool a GPU at the water-cooling table (pads, paste, block). The other player gets the prompt. The finished card is in both inventories and installs on both games.
 6. Case modding shows the refusal notice.
 7. Esc halfway through each tool, then join, save/Continue and `/sync`: both games agree afterwards.
+
+### Owned paste and cleaning checks in 0.33
+
+On November 5, 2026, the host completed the Q-tip wipe and syringe application on a workbench CPU using the real tools. Both native games showed the same off and on flags after the respective edits. The guest was refused on the same PC while the host held the paste claim. Selecting Compressed Air displayed the cleaning refusal. Guest paste gestures, the visible label and cooling under load still needed checks at the end of the run. [Run record](acceptance-2026-11-04.md#host-thermal-paste-and-cleaning-in-033)
