@@ -61,15 +61,15 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Water-cooling table ([phase 9](audit/phase-9.md))
 
-- [ ] Water-cool a GPU (pads, paste, block): the finished card is in both inventories
+- [x] Water-cool a GPU (pads, paste, block): the finished card is in both inventories (0.35, November 5, 2026. The guest completed the real GTX 1070 procedure with the EKWB RGB block.)
 - [ ] Install that card from each side
 - [ ] Same with RAM, a motherboard and a radiator
-- [ ] The other player gets "Someone is using the water-cooling table."
+- [x] The other player gets "Someone is using the water-cooling table." (0.35, November 5, 2026. The host saw the refusal while the guest worked on the GPU.)
 - [ ] Esc halfway through: nothing shared
 
 ## Tool tables: switching ([phase 11](audit/phase-11.md))
 
-- [ ] Switch a table to delidding, water cooling, case modding and back to the PC from each side: the other game's table switches too
+- [ ] Switch a table to delidding, water cooling, case modding and back to the PC from each side: the other game's table switches too (guest's real Case Modding to Water Cooling switch passed in 0.35 on November 5, 2026)
 - [x] Switching a table the other player is using is refused with the prompt (0.24, November 4, 2026: guest's real selector refused while host used delidding; run acceptance-a)
 
 ## Case modding table ([phase 11](audit/phase-11.md))
