@@ -237,3 +237,7 @@ Version **0.23** (network messages only; 0.23 reads 0.22 saves, `CoopSavePair.Sa
 6. Lighting opened by one player doesn't change the other player's view.
 7. Breathe or rainbow after a guest joins: in step on both games.
 8. If the Cable app is there: buy a custom cable set; it is in both inventories; plug one of its cables in from each side; Save and Continue.
+
+### Owned tool switch and host design checks in 0.35
+
+On November 5, 2026, both players switched table 1 through every tool and Build Mode with the game's menu. The guest saw the Case Modding label and was refused both entry and pickup while the host used the table. The host's Cityscape theme, stickers and 96-layer painted design rendered on both games after closing the tool. The native records agreed on the design number and hash. [Run record](acceptance-2026-11-04.md#both-table-selectors-and-the-hosts-deepcool-design-in-035)

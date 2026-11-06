@@ -69,17 +69,17 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Tool tables: switching ([phase 11](audit/phase-11.md))
 
-- [ ] Switch a table to delidding, water cooling, case modding and back to the PC from each side: the other game's table switches too (guest's real Case Modding to Water Cooling switch passed in 0.35 on November 5, 2026)
+- [x] Switch a table to delidding, water cooling, case modding and back to the PC from each side: the other game's table switches too (0.35, November 5, 2026. Each player selected all four modes from the actual `B` menu.)
 - [x] Switching a table the other player is using is refused with the prompt (0.24, November 4, 2026: guest's real selector refused while host used delidding; run acceptance-a)
 
 ## Case modding table ([phase 11](audit/phase-11.md))
 
-- [ ] Paint a case, add stickers and a theme, close the table, host and guest each: the other game shows the same design
-- [ ] Undo, redo and clear, then close: the other game shows what was left
+- [ ] Paint a case, add stickers and a theme, close the table, host and guest each: the other game shows the same design (0.35, November 5, 2026. The host's Cityscape theme, two stickers and paint appeared on both games. Guest design remains.)
+- [ ] Undo, redo and clear, then close: the other game shows what was left (0.35, November 5, 2026. The host used all three controls and both games showed the final design. Undo and Redo still need individual visual checks.)
 - [ ] Customize two different new cases, one from each side: each keeps its own design on both games
-- [ ] The other player gets "Someone is using the case modding table." and sees "Case modding"
-- [ ] The PC on a table in use can't be picked up by the other player
-- [ ] A heavily painted case still shares
+- [x] The other player gets "Someone is using the case modding table." and sees "Case modding" (0.35, November 5, 2026. The guest saw the prompt and the label under the host's name.)
+- [x] The PC on a table in use can't be picked up by the other player (case modding, 0.35, November 5, 2026. The guest's right-click pickup was refused.)
+- [x] A heavily painted case still shares (0.35, November 5, 2026. Both games rendered the same 96-layer Deepcool design.)
 - [ ] Save, Continue and a guest join after case modding: designs still there
 
 ## Lighting ([phase 11](audit/phase-11.md))
