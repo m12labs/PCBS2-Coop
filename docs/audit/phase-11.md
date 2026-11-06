@@ -213,9 +213,9 @@ Version **0.23** (network messages only; 0.23 reads 0.22 saves, `CoopSavePair.Sa
 
 **Model evidence:** **677/677** checks (case modding: prompt, tool check, host design number, empty and unusable answers; switching: shared, refused while busy, unknown types; lights: all values, presets, peripherals, refusals, malformed values, a full batch within the payload limit; clock: host only; purchases: chunks, hash, once, a guest that missed part). Release build 0 warnings, 0 errors; deployed and hash-checked. **Nothing ran in game.**
 
-### Not checked in game yet
+### Cases identified for the original 0.23 in-game check
 
-- Everything above. In particular:
+- The 0.23 implementation had model and build evidence only. The later run records below cover a subset of these checks:
   - R1: whether a mirrored Lighting open really took over the other player's view before (the guard is in either way);
   - R3: whether reloading the PC on the case-modding table draws the design;
   - R2: how large a heavily painted case gets (limit 1 MB compressed);
@@ -241,3 +241,7 @@ Version **0.23** (network messages only; 0.23 reads 0.22 saves, `CoopSavePair.Sa
 ### Owned tool switch and host design checks in 0.35
 
 On November 5, 2026, both players switched table 1 through every tool and Build Mode with the game's menu. The guest saw the Case Modding label and was refused both entry and pickup while the host used the table. The host's Cityscape theme, stickers and 96-layer painted design rendered on both games after closing the tool. The native records agreed on the design number and hash. [Run record](acceptance-2026-11-04.md#both-table-selectors-and-the-hosts-deepcool-design-in-035)
+
+### Owned case design and Custom Cables checks in 0.36
+
+On November 6, 2026 the guest made a separate sunset design with a sticker and paint. Undo, Redo and Clear each visibly changed the test mark, and both games rendered the finished design after the table closed. Cold Continue and a fresh join kept both the host's and the guest's designs. Both players saw the six styles bought through the guest's tablet and used a style on the same test PC. The installed ATX cable kept its alternating pin colours on both games after a cold load. The Lighting and DLC checks remain open. [Run record](acceptance-2026-11-04.md#guest-case-design-and-custom-cable-purchase-in-036)

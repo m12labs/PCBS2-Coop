@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.35**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.36**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
@@ -23,7 +23,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 - [x] Plug in and unplug each cable type (24-pin, CPU 8-pin, GPU, SATA, fans, front panel/USB). Run acceptance-c checked 24-pin, GPU and fan in 0.27, CPU 8-pin, SATA data and power, and front panel in 0.29, and USB replay in 0.30 on November 5, 2026.
 - [ ] Fan header with no free connector: automatic splitter shows on both games. Native auto-splitter branches are for GPU power and SATA power in this build. A fixture that exhausts eligible PSU connections is still needed.
-- [ ] Custom-colour cable: same colours on both games
+- [x] Custom-colour cable: same colours on both games (0.36, November 6, 2026. Both ATX installs kept the same alternating violet and gold pin colours on both games.)
 - [x] Esc in the cable tool with nothing connected: no change (0.27, November 5, 2026: real Escape in the guest's HDMI connector choice)
 - [x] The other player is refused on that PC while a cable is being placed (0.27, November 5, 2026: host refused on PC 213 and could power PC 26)
 - [x] Power on/off with the case button and the HUD button (0.26, November 5, 2026: native case-button callback and real HUD clicks, run acceptance-c)
@@ -74,13 +74,13 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Case modding table ([phase 11](audit/phase-11.md))
 
-- [ ] Paint a case, add stickers and a theme, close the table, host and guest each: the other game shows the same design (0.35, November 5, 2026. The host's Cityscape theme, two stickers and paint appeared on both games. Guest design remains.)
-- [ ] Undo, redo and clear, then close: the other game shows what was left (0.35, November 5, 2026. The host used all three controls and both games showed the final design. Undo and Redo still need individual visual checks.)
-- [ ] Customize two different new cases, one from each side: each keeps its own design on both games
+- [x] Paint a case, add stickers and a theme, close the table, host and guest each: the other game shows the same design (November 5–6, 2026. Both games rendered the host's Cityscape Deepcool in 0.35 and the guest's sunset, blue heart and yellow paint in 0.36.)
+- [x] Undo, redo and clear, then close: the other game shows what was left (0.36, November 6, 2026. The guest saw the test mark disappear, reappear and clear. Both games showed the finished design after closing.)
+- [x] Customize two different new cases, one from each side: each keeps its own design on both games (0.36, November 6, 2026. Both games retained separate Deepcool and Kolink design numbers and hashes.)
 - [x] The other player gets "Someone is using the case modding table." and sees "Case modding" (0.35, November 5, 2026. The guest saw the prompt and the label under the host's name.)
 - [x] The PC on a table in use can't be picked up by the other player (case modding, 0.35, November 5, 2026. The guest's right-click pickup was refused.)
 - [x] A heavily painted case still shares (0.35, November 5, 2026. Both games rendered the same 96-layer Deepcool design.)
-- [ ] Save, Continue and a guest join after case modding: designs still there
+- [x] Save, Continue and a guest join after case modding: designs still there (0.36, November 6, 2026. Both saved designs retained their numbers, layer counts and native hashes.)
 
 ## Lighting ([phase 11](audit/phase-11.md))
 
@@ -94,9 +94,9 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 ## Cable app ([phase 11](audit/phase-11.md))
 
 - [x] Is the Cable app in Free Build? Yes: Custom Cables on the tablet (November 2, 2026)
-- [ ] Buy a custom cable set: it is in both inventories
-- [ ] Plug one of its cables in from each side
-- [ ] Save and Continue after buying
+- [x] Buy a custom cable set: it is in both inventories (0.36, November 6, 2026. The guest checked out Coop Violet Gold, then both players saw all six styles in the cable inventory.)
+- [x] Plug one of its cables in from each side (0.36, November 6, 2026. Both players selected a different style in the real inventory and used the native cable gesture on the same ATX connection.)
+- [x] Save and Continue after buying (0.36, November 6, 2026. The host and fresh guest both had all six styles and the installed lead kept its pin colours.)
 
 ## Workshop: decorating and lights ([phase 12](audit/phase-12.md))
 
