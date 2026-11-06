@@ -158,6 +158,6 @@ Needs two PCs with two different Steam accounts, preferably on separate networks
 
 - [x] Host and guest join, see each other, chat works (0.34, November 5, 2026. Both avatars and names were visible and plain chat reached both games.)
 - [x] Spawn, pick up, drop, store and retrieve PCs (0.36–0.38, November 6, 2026. Real catalog, bench and cupboard gestures kept the same PC identities on both games.)
-- [ ] Swap a workbench monitor, keyboard or mouse
+- [x] Swap a workbench monitor, keyboard or mouse (0.38, November 6, 2026. The guest installed the Green Edition monitor with the real workbench controls and both games showed it.)
 - [x] `/sync` repairs a world (0.33, November 5, 2026. Repaired a real assembly rebind fault and both games reloaded the same native state.)
 - [x] Solo saves are unchanged after playing co-op (0.24/0.25, November 4, 2026: 21 files byte-identical after owned runs acceptance-a and acceptance-b, including every stress-run restart)
