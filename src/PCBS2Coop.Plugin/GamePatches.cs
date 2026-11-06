@@ -86,6 +86,7 @@ internal static class GamePatches
             sim.PatchAll(typeof(NativeSimulation.FanApplyHook));
             var desktop = new Harmony(Plugin.Guid + ".desktop");
             desktop.PatchAll(typeof(NativeDesktopInput.BootFollow));
+            desktop.PatchAll(typeof(NativeDesktopInput.ReplayedProgramIcon));
             desktop.PatchAll(typeof(NativeDesktopInput.BootPromptAtlas));
             desktop.PatchAll(typeof(NativeDesktopInput.BootPromptText));
             desktop.PatchAll(typeof(NativeDesktopInput.MonitorTickScope));

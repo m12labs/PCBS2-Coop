@@ -544,6 +544,27 @@ internal sealed partial class NativeDesktopInput : IDesktopInputNative
     /// <summary>Null for a destroyed Unity object (a restart or closed window replaces the screen's objects).</summary>
     private static GameObject Live(GameObject go) => go == null ? null : go;
 
+    // The native desktop icon checks for a monitor state before it runs the double click.
+    [HarmonyPatch(typeof(ProgramIcon), nameof(ProgramIcon.OnClick))]
+    internal static class ReplayedProgramIcon
+    {
+        private static void Prefix(out (GameController Controller, State Previous) __state)
+        {
+            __state = default;
+            if (!Injecting || _instance == null || GameController.Get() is not { } controller) return;
+            var previous = controller.m_currentState;
+            if (previous?.TryCast<LookingAtMonitorState>() != null) return;
+            controller.m_currentState = _instance.StandIn();
+            __state = (controller, previous);
+        }
+
+        private static Exception Finalizer(Exception __exception, (GameController Controller, State Previous) __state)
+        {
+            if (__state.Controller != null) __state.Controller.m_currentState = __state.Previous;
+            return __exception;
+        }
+    }
+
     private static void Hover(Pointer p, GameObject over)
     {
         p.Hover = Live(p.Hover);
