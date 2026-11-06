@@ -229,6 +229,26 @@ internal sealed class NativeCaseAccess : IPanelNative
 
     // ---------------- interception ----------------
 
+    [ThreadStatic] private static IntPtr s_refittingCase;
+
+    internal static IntPtr BeginRefitSettle(InstallingPartState install)
+    {
+        var previous = s_refittingCase;
+        var slot = install.m_slot;
+        if (slot != null && Current?._finishing.Any(change => !change.Remove && change.Slot?.Pointer == slot.Pointer) == true)
+            s_refittingCase = install.m_case?.Pointer ?? IntPtr.Zero;
+        return previous;
+    }
+
+    internal static void EndRefitSettle(IntPtr previous) => s_refittingCase = previous;
+
+    /// <summary>The panel change carries no wiring. Leave its leads disconnected until a shared cable gesture.</summary>
+    [HarmonyPatch(typeof(Case), nameof(Case.ConnectCables))]
+    internal static class RefitAutoCableGuard
+    {
+        private static bool Prefix(Case __instance) => s_refittingCase == IntPtr.Zero || __instance.Pointer != s_refittingCase;
+    }
+
     private static NativeCaseAccess Current => CoopController.Instance?.Panels;
     private static bool Bypass => NativeProjection.Active || !NativePcLifecycle.InCoopWorkshop;
     private static bool NotReady()

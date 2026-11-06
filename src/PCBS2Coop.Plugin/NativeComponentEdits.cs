@@ -755,8 +755,9 @@ internal sealed partial class NativeComponentEdits : IEditNative
     [HarmonyPatch(typeof(InstallingPartState), nameof(InstallingPartState.OnStateDestroy))]
     internal static class SettleTrace
     {
-        private static void Prefix(InstallingPartState __instance)
+        private static void Prefix(InstallingPartState __instance, out IntPtr __state)
         {
+            __state = NativeCaseAccess.BeginRefitSettle(__instance);
             if (!Ours) return;
             try { Current.Settling(__instance); }
             catch (Exception e) { Plugin.Logger.LogError("[edits] settle trace failed: " + e); }
@@ -767,6 +768,8 @@ internal sealed partial class NativeComponentEdits : IEditNative
             try { Current.Settled(__instance); }
             catch (Exception e) { Plugin.Logger.LogError("[edits] settle trace failed: " + e); }
         }
+
+        private static void Finalizer(IntPtr __state) => NativeCaseAccess.EndRefitSettle(__state);
     }
 
     [HarmonyPatch(typeof(WorkingOnComputerState._Uninstall_d__72), nameof(WorkingOnComputerState._Uninstall_d__72.MoveNext))]

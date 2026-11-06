@@ -47,6 +47,7 @@ internal static class GamePatches
             panels.PatchAll(typeof(NativeCaseAccess.PipeRemovalIntercept));
             panels.PatchAll(typeof(NativeCaseAccess.InstallIntercept));
             panels.PatchAll(typeof(NativeCaseAccess.SelectionIntercept));
+            panels.PatchAll(typeof(NativeCaseAccess.RefitAutoCableGuard));
             var replay = new Harmony(Plugin.Guid + ".edit-replay");
             replay.PatchAll(typeof(NativeEditReplay.PreviousGuard));
             replay.PatchAll(typeof(NativeEditReplay.LastDifferentGuard));
