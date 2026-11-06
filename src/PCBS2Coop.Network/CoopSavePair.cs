@@ -28,9 +28,10 @@ public static class CoopSavePair
     /// 0.25 fixes admission snapshot timing, 0.26 shares the walking power shortcut, 0.27 fixes cold co-op boot and
     /// 0.28 restores the Windows wallpaper preview when its registry path is stale, 0.29 waits for local cable replays,
     /// 0.30 resolves external cable endpoints and discards unaccepted pipe routes, 0.31 keeps active orientation edits alive,
-    /// and 0.32 reports recovery after an interrupted native write.
+    /// 0.32 reports recovery after an interrupted native write, 0.33 lets sync recover failed assembly rebinds,
+    /// and 0.34 corrects the work-mode player pose and guards connected panels.
     /// The save layout is the same across those builds.</summary>
-    private static readonly string[] SameFormat = { "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
+    private static readonly string[] SameFormat = { "0.33", "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);

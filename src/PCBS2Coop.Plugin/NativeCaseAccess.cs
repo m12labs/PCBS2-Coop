@@ -119,6 +119,10 @@ internal sealed class NativeCaseAccess : IPanelNative
         if (c.Remove)
         {
             if (comp == null) return "The host's game shows that panel already off.";
+            // The native removal coroutine can unplug these connectors before it removes the panel. The panel
+            // change carries only the panel's state, so put the cable change through its own shared gesture first.
+            if (comp.powerConnectors?.Any(connector => connector != null && connector.Connected) == true)
+                return "Unplug the cables connected to that panel first.";
             if (!comp.CanBeUninstalled() || slot.IsUninstallingPathBlocked()) return "Something is in the way of that panel.";
             return null;
         }
