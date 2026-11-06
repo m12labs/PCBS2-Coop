@@ -105,7 +105,9 @@ Run `acceptance-c` passed GPU Tuner Apply and Reset from either player through t
 
 In 0.30, a native `GPU_HEAT` failure from the host reached both games. A shared case-button power cycle cleared the blue screen and both games reached the desktop. [Recovery run](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)
 
-In 0.34, powering a PC with an empty custom water loop let the native simulation reach `CPU_HEAT` at 184.6°C. The guest suppressed its matching local failure and showed the host's blue screen. Refilling the loop and rebooting returned both games to the desktop at 45.8°C. Failure from a missing cooler or paste and an overclocked OCCT run still need checks. [Dry-loop run](acceptance-2026-11-04.md#guest-thermal-paste-player-visibility-and-a-dry-loop-heat-failure-in-034)
+In 0.34, powering a PC with an empty custom water loop let the native simulation reach `CPU_HEAT` at 184.6°C. The guest suppressed its matching local failure and showed the host's blue screen. Refilling the loop and rebooting returned both games to the desktop at 45.8°C. Failure from a missing cooler or paste still needs a check. [Dry-loop run](acceptance-2026-11-04.md#guest-thermal-paste-player-visibility-and-a-dry-loop-heat-failure-in-034)
+
+On November 6, 2026, the 0.40 test build showed one matching `CPU_UNDER_VOLTAGE` failure on each game when the host started OCCT and again when the guest started it. Time Spy and Cinebench R20 also finished with matching scores on both games. [Run record](acceptance-2026-11-04.md#mirrored-bios-occt-failures-and-benchmarks-in-a-040-test-build)
 
 ## Owner decisions (November 1, 2026)
 
