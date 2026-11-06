@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.37**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.38**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
@@ -110,7 +110,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Custom picture from the wallpaper app's custom tab, each side: both screens show it, after Continue and a join too (0.28, November 5, 2026: real picks from both sides and cold reload of the guest's picture with its source file absent)
 - [x] Your Windows wallpaper, each side: both screens show the same picture (0.28, November 5, 2026: restored gallery tile and matching native textures, run acceptance-c)
 - [x] A picture over 8 MB is refused with a message (0.28, November 5, 2026: real browser applied a 9.45 MB image, refused and previous wallpaper restored)
-- [ ] Pick up a PC file from the cupboard, each side: it arrives in your hands on both games with its paint job; store it, Continue, join
+- [x] Pick up a PC file from the cupboard, each side: it arrives in your hands on both games with its paint job; store it, Continue, join (0.38, November 6, 2026. Both real file pickups and designs persisted in storage after the source files were moved out of the browser.)
 
 ## PC screens, BIOS and software ([phase 6](audit/phase-6.md), passed; quick check after updates)
 
@@ -157,7 +157,7 @@ Needs two PCs with two different Steam accounts, preferably on separate networks
 ## Everyday basics (quick regression after each update)
 
 - [x] Host and guest join, see each other, chat works (0.34, November 5, 2026. Both avatars and names were visible and plain chat reached both games.)
-- [ ] Spawn, pick up, drop, store and retrieve PCs
+- [x] Spawn, pick up, drop, store and retrieve PCs (0.36–0.38, November 6, 2026. Real catalog, bench and cupboard gestures kept the same PC identities on both games.)
 - [ ] Swap a workbench monitor, keyboard or mouse
 - [x] `/sync` repairs a world (0.33, November 5, 2026. Repaired a real assembly rebind fault and both games reloaded the same native state.)
 - [x] Solo saves are unchanged after playing co-op (0.24/0.25, November 4, 2026: 21 files byte-identical after owned runs acceptance-a and acceptance-b, including every stress-run restart)

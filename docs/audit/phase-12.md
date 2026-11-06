@@ -257,12 +257,15 @@ November 5, 2026 follow-up in 0.28. The Windows picture tile had disappeared on 
 
 ## Not checked in game yet
 
-- Picking up a real PC file in the cupboard, and a Steam-downloaded PC (its theme file isn't sent yet).
-- The real custom-picture browser apply, and the other player's mirrored click on it (skipped by design).
+- A Steam-downloaded PC (its theme file isn't sent yet).
 - A GIF as a wallpaper.
 - Walls, floor, ceiling, posters and "Apply To All" in the Decorator; the colour wheel and pulse by hand.
 - DLC decorations (none installed); the company plate.
 - Seeing a pick in the room after Continue.
+
+### Owned real cupboard file checks in 0.38
+
+On November 6, 2026 both players used the actual cupboard file browser and Pick Up button on separate painted `.pcbs` fixtures. The native exporter supplied the test files with a placeholder thumbnail. In 0.37 the file card was added to native storage without a co-op identity. Version 0.38 stages the card and design locally until an accepted pickup. Saving with a staged card worked, a cancelled duplicate left the cupboard intact, and both imports kept their paint and identity through storage, cold Continue and a fresh join with the source files out of the browser. [Run record](acceptance-2026-11-04.md#real-cupboard-file-pickup-in-037-and-038)
 
 ## Owner test (0.24)
 
