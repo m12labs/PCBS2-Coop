@@ -47,7 +47,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Put paste on a CPU (paste tool), host and guest each (host in 0.33 and guest in 0.34 on November 5, 2026. Both games reported paste on after each real syringe application.)
 - [x] Take paste off with the Q-tip, host and guest each (check whether the other game's paste goes away too). Both games reported paste off after the host's wipe in 0.33 and the guest's wipe in 0.34 on November 5, 2026.
 - [x] The other player is refused on that PC and sees "Applying thermal paste" under the name (guest refusal in 0.33, host saw the guest's label in 0.34 on November 5, 2026)
-- [ ] Run the PC after pasting: no overheat on either game
+- [x] Run the PC after pasting: no overheat on either game (0.39, November 6, 2026. The CPU pasted in the earlier owned run finished the real OCCT automatic test on both games.)
 - [x] Cleaning mode shows "Cleaning isn't shared in co-op yet" (0.33, November 5, 2026. The host selected Compressed Air from the real Tools inventory.)
 
 ## Delid table ([phase 9](audit/phase-9.md))
@@ -102,7 +102,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 - [x] Decorator (tablet, T): pick a wall, a floor and a desk, then Apply To All, from each side; the other player is refused while you decorate and sees "Decorating" (0.38–0.39, November 6, 2026. Both made real picks and saw the activity label. On 0.39 both occupied attempts returned to the tablet home.)
 - [ ] Light colour and pulse in Decorator: the other game's lights follow
-- [x] Save, Continue and a guest join after decorating: both rooms show the same decorations (0.39, November 6, 2026. Cold Continue and fresh join rendered the same walls, floor and Future Work Bench.)
+- [ ] Save, Continue and a guest join after decorating: both rooms show the same decorations (0.39, November 6, 2026. The first cold views matched. After the app refreshed the wall's saved pick, a fresh guest rendered Rustic while the running host still showed Space.)
 - [x] Light switch and the lights key, each side: both rooms and ceiling fans follow; a joining guest gets the same lights (0.39, November 6, 2026. Both clicked the real switch and pressed L. A fresh guest loaded with the lights off and both fans stopped.)
 
 ## Wallpapers and PC import ([phase 12](audit/phase-12.md))
