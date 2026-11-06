@@ -458,6 +458,8 @@ internal sealed partial class Phase6Probe
             Event("operator-command", command);
             if (command.StartsWith("aim:", StringComparison.Ordinal)) Aim(command);
             else if (command == "look-remote") LookAtRemote();
+            else if (command == "look-up" && LocalPlayer.Root is { } root && Camera.main is { } camera)
+                LookAt(root, camera.transform.position + Vector3.up);
             else if (command == "desktop-report") Event("desktop-report", DesktopReport());
             else if (command.StartsWith("screen-dump:", StringComparison.Ordinal)) Event("screen-dump", ScreenDump(command[12..]));
             else if (command.StartsWith("repair:", StringComparison.Ordinal) && uint.TryParse(command[7..], out var repairPc))
@@ -621,7 +623,7 @@ internal sealed partial class Phase6Probe
     {
         var bits = command.Split(':');
         if (bits.Length is < 3 or > 4 || !int.TryParse(bits[2], out var index) || index < 0)
-            throw new ArgumentException("aim:<bench|cupboard|peripheral>:<index>[:height-offset]");
+            throw new ArgumentException("aim:<bench|cupboard|peripheral|light-switch>:<index>[:height-offset]");
         var offset = 0f;
         if (bits.Length == 4 && (!float.TryParse(bits[3], System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out offset) || !float.IsFinite(offset) || Math.Abs(offset) > 1))
@@ -633,6 +635,7 @@ internal sealed partial class Phase6Probe
             "bench" => Object.FindObjectOfType<SaveLoadSystem>().benchSlots[index],
             "cupboard" => Object.FindObjectsOfType<Cupboard>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             "peripheral" => Object.FindObjectsOfType<PeripheralSlot>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
+            "light-switch" => Object.FindObjectsOfType<LightSwitch>().OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             _ => throw new ArgumentException("Unknown aim target.")
         };
         var col = target is BenchSlot bench ? bench.m_caseCol : target.GetComponentInChildren<Collider>();

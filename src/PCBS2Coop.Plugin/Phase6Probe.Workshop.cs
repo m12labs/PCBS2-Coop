@@ -142,6 +142,9 @@ internal sealed partial class Phase6Probe
         var tm = Object.FindObjectOfType<ThemeManager>();
         var ctrl = GameController.Get();
         var w = coop.Workshop?.Handler;
+        var ceilingFans = Object.FindObjectsOfType<CeilingFan>().Where(fan => fan?.animator != null)
+            .Select(fan => new { name = fan.name, ignoresSwitch = fan.ignoresLightSwitch, speed = fan.animator.GetFloat("Speed") })
+            .ToArray();
         var pictures = new List<object>();
         foreach (var pc in coop.Objects.Model.Pcs)
         {
@@ -161,11 +164,13 @@ internal sealed partial class Phase6Probe
         {
             role = coop.Session.Role.ToString(),
             lightsOn = ctrl?.IsLightsOn, worldLights = w?.LightsOn, season = ctrl?.m_season.ToString(), worldSeason = w?.Season,
+            ceilingFans,
             activeDecoration = Object.FindObjectsOfType<DecorationSwitch>(true).Where(s => s.IsDecorationActive()).Select(s => s.m_id.ToString()).ToArray(),
             worldDecoration = w?.ActiveDecoration, decorator = w?.Decorator?.ToString(), loading = dec?.Loading,
             decorations = items.Count, decorHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", items))))[..16],
             decorList = items.ToArray(),
             colour = tm == null ? null : $"{tm.m_currentColour.r:0.00},{tm.m_currentColour.g:0.00},{tm.m_currentColour.b:0.00}", pulse = tm?.GetPulse(),
+            colourWheelActive = tm?.m_attachedColourWheel?.isActiveAndEnabled,
             pictures,
             pcs = coop.Objects.Model.Pcs.Count, imported = coop.Objects.Model.Pcs.Count(p => p.Provenance.Origin == InstanceOrigin.Imported),
         };
