@@ -30,6 +30,10 @@ internal static class GamePatches
             lifecycle.PatchAll(typeof(NativePcLifecycle.SpawnIntercept));
             lifecycle.PatchAll(typeof(NativePcLifecycle.CarriedDeleteIntercept));
             lifecycle.PatchAll(typeof(NativePcLifecycle.StoredDeleteIntercept));
+            lifecycle.PatchAll(typeof(NativePcLifecycle.FileOpenHook));
+            lifecycle.PatchAll(typeof(NativePcLifecycle.FileDuplicateHook));
+            lifecycle.PatchAll(typeof(NativePcLifecycle.StageFileHook));
+            lifecycle.PatchAll(typeof(NativePcLifecycle.FileRowsHook));
             var transfers = new Harmony(Plugin.Guid + ".transfers");
             transfers.PatchAll(typeof(NativePcTransfers.BenchPickupIntercept));
             transfers.PatchAll(typeof(NativePcTransfers.ToolPickupIntercept));

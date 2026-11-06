@@ -30,6 +30,7 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
         public string What;
         public StoredPC Storage;
         public IntPtr State;
+        public IntPtr FileRecord;
     }
     private readonly CoopController _coop;
     private readonly WorldSync _world;
@@ -46,7 +47,7 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
         Handler = new PcLifecycle(coop.Objects.Model, coop.Activity, this, world.IsAuthority);
         world.Accepted += (OperationId op, ulong revision) => _pending.Remove(op);
         world.Rejected += OnRejected;
-        world.GenerationStarted += (uint generation, string reason) => _pending.Clear();
+        world.GenerationStarted += (uint generation, string reason) => { _pending.Clear(); _filePcs.Clear(); };
     }
 
     /// <summary>A co-op world is loaded here, whether or not this peer is admitted yet.</summary>
@@ -82,6 +83,7 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
 
     internal void RequestStoredDelete(StoredPC ui)
     {
+        if (ui?.m_computer != null && _filePcs.Remove(ui.m_computer.Pointer)) { PopulateStorage(); return; }
         var request = new Request { What = "PC delete", Storage = ui };
         if (!Ready("PC delete")) { Restore(request); return; }
         var id = Objects.IdOf(ui.m_computer);
@@ -309,6 +311,11 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
             for (var i = 0; i < custom.Count; i++)
                 if (custom[i] != null && custom[i].CustomisationID == record.CustomisationID) { custom.RemoveAt(i); break; }
         save.computersInStorage.Remove(record);
+        PopulateStorage();
+    }
+
+    private static void PopulateStorage()
+    {
         foreach (var storage in Object.FindObjectsOfType<Storage>()) storage.Populate(true, true, false);
     }
 
