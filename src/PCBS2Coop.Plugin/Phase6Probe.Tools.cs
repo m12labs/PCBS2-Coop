@@ -19,6 +19,15 @@ internal sealed partial class Phase6Probe
             return true;
         }
 
+        const string carrierPrefix = "carrier-report:";
+        if (command.StartsWith(carrierPrefix, StringComparison.Ordinal))
+        {
+            if (!Safe) return true;
+            try { Event("carrier-report", CarrierReport(command[carrierPrefix.Length..])); }
+            catch (Exception e) { Event("carrier-report-error", e.GetType().Name + ": " + e.Message); }
+            return true;
+        }
+
         const string pastePrefix = "paste-report:";
         if (!command.StartsWith(pastePrefix, StringComparison.Ordinal)) return false;
         if (!Safe) return true;
@@ -30,6 +39,28 @@ internal sealed partial class Phase6Probe
         }
         catch (Exception e) { Event("paste-report-error", e.GetType().Name + ": " + e.Message); }
         return true;
+    }
+
+    private object CarrierReport(string id)
+    {
+        var coop = RequireGestureWorld();
+        if (!ulong.TryParse(id, out var value) || value == 0) throw new ArgumentException("carrier-report:<pcId>");
+        var pc = coop.Objects.Model.Pcs.SingleOrDefault(pc => pc.Id == new NetObjectId(value) && pc.Location.Place == PcPlace.Carrier)
+            ?? throw new InvalidOperationException("The selected PC is not being carried.");
+        var record = coop.Objects.CaptureRecord(pc.Id) ?? throw new InvalidOperationException("The carried PC has no native record.");
+        string profileError = null;
+        try { NativeAssembly.CheckProfile(pc, record); }
+        catch (InvalidDataException e) { profileError = e.Message; }
+        return new
+        {
+            pc = value, owner = pc.Location.Actor.ToString(), role = coop.Session.Role.ToString(),
+            profile = pc.BuildProfile?.Signature, profileError, pciCovers = record.casePciCovers?.ToArray(),
+            bespokeSlots = record.m_bespokeCaseSlots?.ToArray(), cables = record.cablesInstalled?.Length,
+            parts = NativeObjectState.Parts(record).Select(part => new
+            {
+                path = part.Key, sku = part.Value.GetPartId(), orientation = part.Value.GetSlotOrientation(), flipped = part.Value.m_flipped
+            }).ToArray()
+        };
     }
 
     private static object ToolsReport()

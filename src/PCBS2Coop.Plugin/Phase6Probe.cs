@@ -620,17 +620,24 @@ internal sealed partial class Phase6Probe
     private static void Aim(string command)
     {
         var bits = command.Split(':');
-        if (bits.Length != 3 || !int.TryParse(bits[2], out var index) || index < 0) throw new ArgumentException("aim:<bench|peripheral>:<index>");
+        if (bits.Length is < 3 or > 4 || !int.TryParse(bits[2], out var index) || index < 0)
+            throw new ArgumentException("aim:<bench|cupboard|peripheral>:<index>[:height-offset]");
+        var offset = 0f;
+        if (bits.Length == 4 && (!float.TryParse(bits[3], System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out offset) || !float.IsFinite(offset) || Math.Abs(offset) > 1))
+            throw new ArgumentException("Aim height offset must be within one metre.");
         var root = LocalPlayer.Root;
         if (Camera.main == null || root == null) throw new InvalidOperationException("No workshop player.");
         Component target = bits[1] switch
         {
             "bench" => Object.FindObjectOfType<SaveLoadSystem>().benchSlots[index],
+            "cupboard" => Object.FindObjectsOfType<Cupboard>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             "peripheral" => Object.FindObjectsOfType<PeripheralSlot>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             _ => throw new ArgumentException("Unknown aim target.")
         };
         var col = target is BenchSlot bench ? bench.m_caseCol : target.GetComponentInChildren<Collider>();
         var point = col != null ? col.bounds.center : target.transform.position + Vector3.up;
+        point.y += offset;
         var reset = (target as BenchSlot)?.PlayerResetPosition;
         var pos = reset != null ? reset.transform.position : point + target.transform.forward * 1.3f;
         pos.y = root.position.y;
