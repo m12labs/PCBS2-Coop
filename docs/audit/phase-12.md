@@ -249,19 +249,18 @@ Fixed during the runs:
 
 November 5, 2026 follow-up in 0.28. The Windows picture tile had disappeared on a machine with a stale registry path and an existing Windows cached copy. The fix uses the cached picture for the missing gallery preview. Actual host and guest tile selections showed the same picture. Both real custom pickers shared distinct images. A cold Continue and join restored the guest's custom picture with its source file absent. The 9.45 MB fixture was refused while the previous wallpaper stayed. [Run record](acceptance-2026-11-04.md#real-wallpaper-picker-028)
 
-- **R1:** the Decorator app changes its own preview and the saved decoration list at once. The decompile shows the room itself is updated only by a workshop load (`UpdateToMainRoom` from the loading screen and the restore), so a pick shows in the room after Continue, on both games alike. Not confirmed by eye: in p12d the bench-5 desk looked unchanged after Continue, and which desk object 0 is wasn't identified.
+- **R1:** the editor sees its own picks in the room during the session. The other game gets the saved picks and renders them after loading. On November 6, 2026, cold Continue and a fresh guest in 0.39 showed matching rooms and identified the Future Work Bench visually at the fifth probe bench target. The native wall label can differ from the rendered theme after restore. [Run record](acceptance-2026-11-04.md#real-decorator-and-light-controls-in-038-and-039)
 - **R2:** the Free Build tablet has Music Player, Photo Mode, Select Wallpaper, Part Ranking, Custom Cables (phase 11's Cable app), Decorator, RamWizz, Thermal and Airflow.
 - **R6:** the season is Christmas when the SeasonalContent setting is on and the month is December, otherwise standard (no Halloween season). The Free Build workshop has no seasonal switches.
-- **R7:** `GameController.Update` also switches the lights with a key; hooking `SetOn` covers both.
+- **R7:** both actual hall-switch clicks and L-key presses shared the lights and ceiling-fan speeds in 0.39. A new guest took the lights-off state with stopped fans. [Run record](acceptance-2026-11-04.md#real-decorator-and-light-controls-in-038-and-039)
 - **R3, R4, R5, R8:** not checked.
 
 ## Not checked in game yet
 
 - A Steam-downloaded PC (its theme file isn't sent yet).
 - A GIF as a wallpaper.
-- Walls, floor, ceiling, posters and "Apply To All" in the Decorator; the colour wheel and pulse by hand.
+- Ceiling and poster picks in the Decorator, and the colour wheel and pulse by hand.
 - DLC decorations (none installed); the company plate.
-- Seeing a pick in the room after Continue.
 
 ### Owned real cupboard file checks in 0.38
 

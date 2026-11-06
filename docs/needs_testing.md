@@ -100,10 +100,10 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Workshop: decorating and lights ([phase 12](audit/phase-12.md))
 
-- [ ] Decorator (tablet, T): pick a wall, a floor and a desk, then Apply To All, from each side; the other player is refused while you decorate and sees "Decorating"
+- [x] Decorator (tablet, T): pick a wall, a floor and a desk, then Apply To All, from each side; the other player is refused while you decorate and sees "Decorating" (0.38–0.39, November 6, 2026. Both made real picks and saw the activity label. On 0.39 both occupied attempts returned to the tablet home.)
 - [ ] Light colour and pulse in Decorator: the other game's lights follow
-- [ ] Save, Continue and a guest join after decorating: both rooms show the same decorations
-- [ ] Light switch and the lights key, each side: both rooms and ceiling fans follow; a joining guest gets the same lights
+- [x] Save, Continue and a guest join after decorating: both rooms show the same decorations (0.39, November 6, 2026. Cold Continue and fresh join rendered the same walls, floor and Future Work Bench.)
+- [x] Light switch and the lights key, each side: both rooms and ceiling fans follow; a joining guest gets the same lights (0.39, November 6, 2026. Both clicked the real switch and pressed L. A fresh guest loaded with the lights off and both fans stopped.)
 
 ## Wallpapers and PC import ([phase 12](audit/phase-12.md))
 
