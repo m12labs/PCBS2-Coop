@@ -360,6 +360,9 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
         try
         {
             var prefab = handle.WaitForCompletion() ?? throw new InvalidDataException("The case prefab is unavailable.");
+            // Like PartsDatabase.GetPrefab, resolve a color variant's MaterialSwap before reading its case slots.
+            var swap = prefab.GetComponent<MaterialSwap>();
+            if (swap != null && swap.m_prefab != null) prefab = swap.m_prefab;
             var candidates = prefab.GetComponentsInChildren<Case>(true).ToArray();
             var mesh = candidates.SingleOrDefault(c => c.GetComponent<ComponentPC>()?.Type == desc.m_subPart) ?? (candidates.Length == 1 ? candidates[0] : null);
             if (mesh == null) throw new InvalidDataException("The case component cannot be identified in its prefab.");
