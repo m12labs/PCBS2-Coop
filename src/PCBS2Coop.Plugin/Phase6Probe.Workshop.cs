@@ -20,6 +20,10 @@ internal sealed partial class Phase6Probe
             switch (bits[0])
             {
                 case "room-report": Event("room-report", RoomReport(coop)); return true;
+                case "export-pc-fixture":
+                    if (bits.Length != 2) throw new ArgumentException("export-pc-fixture:<pc>");
+                    ExportPcFixture(coop, RequirePc(bits[1]));
+                    return true;
                 case "lights":
                 {
                     // As the switch's click: the game's own SetOn with the opposite of the current state.
@@ -96,6 +100,26 @@ internal sealed partial class Phase6Probe
         }
         catch (Exception e) { Event("room-command", $"{command} failed: {e.Message}"); return true; }
         return false;
+    }
+
+    private void ExportPcFixture(CoopController coop, PcFact pc)
+    {
+        var source = coop.Objects.CaptureRecord(pc.Id) ?? throw new InvalidOperationException("The test PC has no native record.");
+        var design = NativeToolBenches.DesignOf(source) ?? throw new InvalidOperationException("The test PC has no case design to export.");
+        var record = NativePcCodec.Read(NativePcCodec.Write(source));
+        // The import browser reads its thumbnail from this JSON. Use a one-pixel PNG without running the game's photo capture.
+        const string thumbnail = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/rS8AAAAASUVORK5CYII=";
+        record.screenshotBytes = null;
+        var name = $"Acceptance PC {pc.Id.Value}";
+        var components = NativeObjectState.Parts(record).Values.Select(part => part.GetPart()?.m_uiName ?? part.GetPartId()).ToArray();
+        var metadata = new PCSharingJsonData(name, components, thumbnail);
+        var file = new PcSharingSaveFile(record, design, $"<pcbs>{JsonUtility.ToJson(metadata)}</pcbs>");
+        var folder = Path.Combine(AutoTest.IsolatedSaveDir, "PCs");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, $"acceptance-pc-{pc.Id.Value}.pcbs");
+        if (File.Exists(path)) throw new IOException("The test PC file already exists in this role's isolated PC folder.");
+        PCFileSharing.ExportPcXorMethod(file, path);
+        Event("export-pc-fixture", new { pc = pc.Id.Value, path, bytes = new FileInfo(path).Length, design = design.CustomisationID });
     }
 
     private static OS OsOf(CoopController coop, NetObjectId pc)
