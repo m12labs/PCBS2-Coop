@@ -20,17 +20,38 @@ internal sealed partial class Phase6Probe
             switch (bits[0])
             {
                 case "room-report": Event("room-report", RoomReport(coop)); return true;
+                case "lighting-report":
+                {
+                    var pc = RequirePc(bits[1]);
+                    var ws = coop.Objects.FindBench(pc.Id)?.m_workStation;
+                    var vc = ws?.m_virtualComputer;
+                    var record = vc?.ComputerSave ?? coop.Objects.RecordFor(pc.Id);
+                    var sim = vc?.GetComputerSim();
+                    Event("lighting-report", new
+                    {
+                        pc = pc.Id.Value, generation = coop.Session.World.Generation, revision = coop.Session.World.Revision,
+                        state = GameController.Get()?.GetCurrentState()?.GetIl2CppType()?.Name,
+                        running = sim?.IsRunning(), time = sim?.m_LEDDriver?.m_time,
+                        sets = NativeCustomization.Sets(record, ws).Select(set => new { target = set.Target.ToString(), set.Preset, set.Slot, set.Lights }).ToArray(),
+                    });
+                    return true;
+                }
+                case "room-flags":
+                    Event("room-flags", Object.FindObjectsOfType<AddressableFlag>(true).Select(flag => new
+                    {
+                        path = DesktopPath(flag.transform, null), type = flag.m_decorationType.ToString(),
+                        active = flag.isActiveAndEnabled, wheel = flag.m_colourWheel != null,
+                    }).ToArray());
+                    return true;
                 case "export-pc-fixture":
                     if (bits.Length != 2) throw new ArgumentException("export-pc-fixture:<pc>");
                     ExportPcFixture(coop, RequirePc(bits[1]));
                     return true;
                 case "lights":
                 {
-                    // As the switch's click: the game's own SetOn with the opposite of the current state.
                     var sw = Object.FindObjectsOfType<LightSwitch>().FirstOrDefault();
-                    var on = !GameController.Get().IsLightsOn;
-                    sw.SetOn(on, true, true);
-                    Event("room-command", $"lights {(on ? "on" : "off")}");
+                    sw._GetInteractions_b__20_0();
+                    Event("room-command", $"lights {(GameController.Get().IsLightsOn ? "on" : "off")}");
                     return true;
                 }
                 case "season-switch":

@@ -114,7 +114,7 @@ internal sealed class NativeCustomization : ICustomizationNative
     }
 
     /// <summary>Every set of lights of a PC: its live lights, presets and the peripherals at its workstation.</summary>
-    private static List<(LightTarget Target, int Preset, string Slot, List<LedLight> Lights)> Sets(ComputerSave record, WorkStation ws)
+    internal static List<(LightTarget Target, int Preset, string Slot, List<LedLight> Lights)> Sets(ComputerSave record, WorkStation ws)
     {
         var sets = new List<(LightTarget, int, string, List<LedLight>)>();
         var software = record?.m_software;
