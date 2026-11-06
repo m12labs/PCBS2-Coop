@@ -41,6 +41,10 @@ internal sealed partial class Phase6Probe
                     if (bits.Length != 3) throw new ArgumentException("gesture-remove:<pc>:<slot-resource-id>");
                     GestureRemove(RequirePc(bits[1]), ParseResourceId(bits[2]));
                     return true;
+                case "gesture-refit":
+                    if (bits.Length != 3) throw new ArgumentException("gesture-refit:<pc>:<slot-resource-id>");
+                    GestureRefit(RequirePc(bits[1]), ParseResourceId(bits[2]));
+                    return true;
                 case "gesture-install":
                     if (bits.Length != 4) throw new ArgumentException("gesture-install:<pc>:<slot-resource-id>:<sku>");
                     GestureInstall(RequirePc(bits[1]), ParseResourceId(bits[2]), bits[3]);
@@ -275,6 +279,28 @@ internal sealed partial class Phase6Probe
         // exact generated game callback and runs the game's Uninstall coroutine, including animations/cable step.
         closure._DisassemblyTick_b__2();
         Event("gesture-entrypoint-returned", new { command = "gesture-remove", pc = pc.Id.Value, resource = fact.Id.Value, sku = component.GetPartInstance()?.GetPartId(), acceptedMustBeConfirmedByNativeEditTrace = true });
+    }
+
+    private void GestureRefit(PcFact pc, NetObjectId resourceId)
+    {
+        var coop = RequireGestureWorld();
+        var (_, mesh) = NativeBench(pc);
+        var work = RequireWork(pc, mesh);
+        var fact = pc.Resources.SingleOrDefault(resource => resource.Id == resourceId && resource.Kind == AssemblyResourceKind.Slot);
+        if (fact == null || string.IsNullOrEmpty(fact.IntegralHome) || !string.IsNullOrEmpty(fact.IntegralPart))
+            throw new InvalidOperationException("Choose an empty shared panel slot.");
+        var slot = coop.Objects.Assembly.NativeFor(pc.Id, fact.Id)?.TryCast<Slot>();
+        var component = slot?.GetComponent();
+        if (slot?.GetCase()?.Pointer != mesh.Pointer || component == null || !NativeAssembly.IsPreview(component) ||
+            component.GetPartInstance()?.GetPartId() != fact.IntegralHome)
+            throw new InvalidOperationException("Select the panel from the game's Removed Components inventory first.");
+        Event("gesture-direct-call", new
+        {
+            command = "gesture-refit", pc = pc.Id.Value, resource = resourceId.Value, sku = fact.IntegralHome,
+            callback = "WorkingOnComputerState.__c__DisplayClass69_0._AssemblyTick_b__0",
+            pointerReachAndHoldInputVerified = false
+        });
+        new WorkingOnComputerState.__c__DisplayClass69_0 { __4__this = work, ParentSlot = slot }._AssemblyTick_b__0();
     }
 
     private void GestureInstall(PcFact pc, NetObjectId resourceId, string sku)

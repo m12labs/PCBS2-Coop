@@ -457,6 +457,7 @@ internal sealed partial class Phase6Probe
             if (command.Length == 0) continue;
             Event("operator-command", command);
             if (command.StartsWith("aim:", StringComparison.Ordinal)) Aim(command);
+            else if (command == "look-remote") LookAtRemote();
             else if (command == "desktop-report") Event("desktop-report", DesktopReport());
             else if (command.StartsWith("screen-dump:", StringComparison.Ordinal)) Event("screen-dump", ScreenDump(command[12..]));
             else if (command.StartsWith("repair:", StringComparison.Ordinal) && uint.TryParse(command[7..], out var repairPc))
@@ -638,6 +639,25 @@ internal sealed partial class Phase6Probe
         if (wasEnabled) cc.enabled = false;
         try { root.position = pos; }
         finally { if (wasEnabled) cc.enabled = true; }
+        LookAt(root, point);
+        _current?.Event("camera-setup", new { target = target.name, path = DesktopPath(target.transform, null), position = pos.ToString(), aim = point.ToString() });
+    }
+
+    private void LookAtRemote()
+    {
+        var coop = CoopRunner.Instance?.Coop;
+        var root = LocalPlayer.Root;
+        if (coop?.RemoteViewPosition is not { } remote || root == null || Camera.main == null)
+        {
+            Event("look-remote", new { available = false });
+            return;
+        }
+        LookAt(root, remote + Vector3.up * 1.4f);
+        Event("look-remote", new { available = true, view = coop.RemoteViewReport, activity = coop.RemoteActivity });
+    }
+
+    private static void LookAt(Transform root, Vector3 point)
+    {
         var cam = Camera.main;
         var dir = point - cam.transform.position;
         var yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
@@ -649,6 +669,5 @@ internal sealed partial class Phase6Probe
             look.rotationY = -pitch;
         }
         cam.transform.rotation = Quaternion.Euler(pitch, yaw, 0);
-        _current?.Event("camera-setup", new { target = target.name, path = DesktopPath(target.transform, null), position = pos.ToString(), aim = point.ToString() });
     }
 }
