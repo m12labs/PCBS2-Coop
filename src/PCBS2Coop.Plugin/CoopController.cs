@@ -500,7 +500,7 @@ internal sealed partial class CoopController
 
     private void TakeSnapshot()
     {
-        if (Software?.Handler.Busy == true) return; // A native software result is still being transferred.
+        if (Software?.Handler.Busy == true || Workshop?.Settled == false) return;
         var saves = Object.FindObjectOfType<SaveLoadSystem>();
         var level = Object.FindObjectOfType<LevelLoadPersistency>();
         if (saves == null) return;
@@ -591,6 +591,8 @@ internal sealed partial class CoopController
                 throw new InvalidOperationException("The previous co-op save is still being paired.");
             if (Software?.Handler.Busy == true)
                 throw new InvalidOperationException("A software result is still being shared; wait before saving.");
+            if (!_syncSaving && Workshop?.Settled == false)
+                throw new InvalidOperationException("Workshop decorations are still being shown; wait before saving.");
             var s = Object.FindObjectOfType<SaveLoadSystem>();
             var wc = Object.FindObjectOfType<WorkshopController>();
             var db = PartsDatabase.s_instance;

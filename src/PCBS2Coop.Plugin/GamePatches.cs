@@ -110,6 +110,7 @@ internal static class GamePatches
             room.PatchAll(typeof(NativeWorkshop.AppOpenHook));
             room.PatchAll(typeof(NativeWorkshop.AppCloseHook));
             room.PatchAll(typeof(NativeWorkshop.DecorGuard));
+            room.PatchAll(typeof(NativeWorkshop.LightSwitchClickScope));
             room.PatchAll(typeof(NativeWorkshop.LightSwitchHook));
             room.PatchAll(typeof(NativeWorkshop.TableLightsScope));
             room.PatchAll(typeof(NativeWorkshop.DecorationSwitchHook));
