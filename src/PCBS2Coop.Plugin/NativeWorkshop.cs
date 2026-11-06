@@ -33,6 +33,8 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
     private bool _decorating, _closing, _claiming;
     private OperationId _claimOp;
     private float _closingSince, _nextDecorPoll;
+    private CustomiseWorkShopApp _appToClose;
+    private int _closeAppFrame;
     private Dictionary<(int, int, int), DecorItem> _baseline;
     private RoomLight? _baselineLight;
     // The other player's decorating, applied here.
@@ -54,6 +56,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
     private void ResetLocal()
     {
         _decorating = _closing = false; _baseline = null; _baselineLight = null; _decorTarget = null; _verifyLeft = 0;
+        _appToClose = null;
         ResetContent();
     }
 
@@ -70,7 +73,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         {
             _decorating = _closing = false;
             _coop.Notice(why);
-            CloseApp();
+            DeferAppClose();
         }
         else ContentRejected(op, why);
     }
@@ -130,7 +133,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         {
             _coop.Notice(busy);
             Plugin.Logger.LogInfo("[workshop] the other player is decorating; the Customise Workshop app closes here.");
-            CloseApp();
+            DeferAppClose();
             return;
         }
         if (Epoch is not { } epoch) return;
@@ -140,7 +143,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         try
         {
             if (!_world.Submit(CommandTypes.Workshop, WorkshopWorld.Decorate(epoch, true), out _claimOp))
-            { _decorating = false; _coop.Notice("Decorating isn't shared: not connected to the host's world."); CloseApp(); return; }
+            { _decorating = false; _coop.Notice("Decorating isn't shared: not connected to the host's world."); DeferAppClose(); return; }
         }
         finally { _claiming = false; }
         if (_decorating) Plugin.Logger.LogInfo($"[workshop] decorating ({_baseline.Count} decoration(s) at the start).");
@@ -153,12 +156,21 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         _closing = true; _closingSince = Time.realtimeSinceStartup;
     }
 
-    private static void CloseApp()
+    private void DeferAppClose()
     {
+        // OnEnable runs before the tablet finishes opening its native window.
+        _appToClose = CustomiseWorkShopApp.Get();
+        _closeAppFrame = Time.frameCount + 1;
+    }
+
+    private void UpdateAppClose()
+    {
+        var app = _appToClose;
+        if (app == null || Time.frameCount < _closeAppFrame) return;
+        _appToClose = null;
         try
         {
-            var app = CustomiseWorkShopApp.Get();
-            if (app != null && app.isActiveAndEnabled) app.OnClickCloseApp(true);
+            if (app.isActiveAndEnabled) app.OnClickCloseApp(true);
         }
         catch (Exception e) { Plugin.Logger.LogWarning("[workshop] closing the Customise Workshop app failed: " + e.Message); }
     }
@@ -204,7 +216,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         if (ctx.FromLocalPlayer) return;
         Plugin.Logger.LogInfo($"[workshop] the other player {(on ? "started" : "finished")} decorating.");
         // This player's app may have opened while the claim was on its way: the host gave decorating to the other player.
-        if (on && _decorating && !_closing) { _decorating = false; _coop.Notice(WorkshopWorld.Busy); CloseApp(); }
+        if (on && _decorating && !_closing) { _decorating = false; _coop.Notice(WorkshopWorld.Busy); DeferAppClose(); }
     }
 
     public void Decorated(in MutationContext ctx, IReadOnlyList<DecorItem> items, RoomLight? light)
@@ -383,6 +395,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
 
     public void Update()
     {
+        UpdateAppClose();
         if (!Active) return;
         UpdateState();
         UpdateDecorating();
