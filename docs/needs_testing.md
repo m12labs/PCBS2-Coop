@@ -44,9 +44,9 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Workbench: thermal paste ([phase 9](audit/phase-9.md))
 
-- [ ] Put paste on a CPU (paste tool), host and guest each (0.33, November 5, 2026. The host applied paste with the syringe and both games reported it on.)
-- [ ] Take paste off with the Q-tip, host and guest each (check whether the other game's paste goes away too). The host completed a native wipe in 0.33 on November 5, 2026, and both games reported it off.
-- [ ] The other player is refused on that PC and sees "Applying thermal paste" under the name
+- [x] Put paste on a CPU (paste tool), host and guest each (host in 0.33 and guest in 0.34 on November 5, 2026. Both games reported paste on after each real syringe application.)
+- [x] Take paste off with the Q-tip, host and guest each (check whether the other game's paste goes away too). Both games reported paste off after the host's wipe in 0.33 and the guest's wipe in 0.34 on November 5, 2026.
+- [x] The other player is refused on that PC and sees "Applying thermal paste" under the name (guest refusal in 0.33, host saw the guest's label in 0.34 on November 5, 2026)
 - [ ] Run the PC after pasting: no overheat on either game
 - [x] Cleaning mode shows "Cleaning isn't shared in co-op yet" (0.33, November 5, 2026. The host selected Compressed Air from the real Tools inventory.)
 
@@ -119,7 +119,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 ## Tests, tuning and failures ([phase 7](audit/phase-7.md), 7e)
 
 - [ ] OCCT on an overclocked PC that fails: both games blue-screen once, same reason (host starts it, then the guest)
-- [ ] A PC overheating from a missing cooler or paste fails the same way on both
+- [ ] A PC overheating from a missing cooler or paste fails the same way on both (0.34, November 5, 2026. Booting PC 26 with an empty water loop caused the same native `CPU_HEAT` failure on both games. The missing-cooler or missing-paste case remains.)
 - [x] GPU Tuner Apply and Reset from either player: same values, no restart (0.27, November 5, 2026: real slider and button interactions on both games)
 - [x] Fan Control custom curve, presets and Defaults from either player (0.27, November 5, 2026: real controls on PC 26, run acceptance-c)
 - [x] Late join with a custom fan curve applied (0.27, November 5, 2026: fresh guest restored the 11-point Max RPM curve and displayed 2000 RPM on all three GPU fans)
@@ -156,7 +156,7 @@ Needs two PCs with two different Steam accounts, preferably on separate networks
 
 ## Everyday basics (quick regression after each update)
 
-- [ ] Host and guest join, see each other, chat works (0.31, November 5, 2026: both remote models spawned and plain chat reached both games. Fresh visual check remains.)
+- [x] Host and guest join, see each other, chat works (0.34, November 5, 2026. Both avatars and names were visible and plain chat reached both games.)
 - [ ] Spawn, pick up, drop, store and retrieve PCs
 - [ ] Swap a workbench monitor, keyboard or mouse
 - [x] `/sync` repairs a world (0.33, November 5, 2026. Repaired a real assembly rebind fault and both games reloaded the same native state.)
