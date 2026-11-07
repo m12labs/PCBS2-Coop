@@ -248,4 +248,6 @@ On November 6, 2026 the guest made a separate sunset design with a sticker and p
 
 ### Owned Lighting checks in 0.40 and 0.41
 
-Both players used the real swatches, advanced sliders, GPU effects and preset controls. Both games matched the PC, keyboard and mouse settings during play. The 0.41 HUD fix passed in both directions. The native save retained the blue peripheral colours, but the load path reverted them to defaults. The physical hue ring, a fresh guest's Rainbow timing and cold peripheral restoration remain open. [Run record](acceptance-2026-11-04.md#lighting-hud-native-effects-presets-and-peripherals-in-040-and-041)
+Both players used the real swatches, advanced sliders, GPU effects and preset controls. Both games matched the PC, keyboard and mouse settings during play. The 0.41 HUD fix passed in both directions. The native save retained the blue peripheral colours, but the load path reverted them to defaults. [Run record](acceptance-2026-11-04.md#lighting-hud-native-effects-presets-and-peripherals-in-040-and-041)
+
+In 0.42 the mod restores the native saved LED configuration after the matching peripheral loads. Cold Continue and a fresh join both restored the blue keyboard and mouse, green cooler, GPU Rainbow and presets. The guest's Rainbow clock was about 4.8 seconds behind until the periodic update. The hue ring remains open. [Run record](acceptance-2026-11-04.md#peripheral-lighting-after-cold-continue-in-042)

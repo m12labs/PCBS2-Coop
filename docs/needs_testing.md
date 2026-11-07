@@ -89,7 +89,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Keyboard and mouse lighting from each side (0.40–0.41, November 6, 2026. The host's magenta and guest's blue reached both native peripherals during play.)
 - [x] Opening Lighting doesn't change the other player's view (0.41, November 6, 2026. Both real launches kept the other player's HUD hidden and left their view alone.)
 - [ ] Breathe or rainbow after a guest joins: in step on both games
-- [ ] Power off and on, then Continue: colours kept (0.41, November 6, 2026. PC and peripheral colours survived power cycling. Cold Continue kept PC colours and the preset, but reset the keyboard and mouse even though the native save contained their custom RGB.)
+- [x] Power off and on, then Continue: colours kept (0.41–0.42, November 6, 2026. The real power cycle kept the colours. The 0.42 cold Continue and fresh join restored the cooler, GPU effect, preset and both blue peripherals from the 0.41 save.)
 
 ## Cable app ([phase 11](audit/phase-11.md))
 
