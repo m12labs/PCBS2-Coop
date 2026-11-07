@@ -62,10 +62,14 @@ internal sealed class NativeSimulation : ISimulationNative
     private bool AllowLocalFailure(ComputerSim sim, int reason)
     {
         if (_world.IsAuthority || NativeProjection.Active || !Active) return true;
-        var pc = PcOf(sim);
+        return AllowLocalFailure(PcOf(sim), reason, sim.IsRunning() && !sim.BSODActive);
+    }
+
+    private bool AllowLocalFailure(NetObjectId pc, int reason, bool log)
+    {
         if (pc.IsNone) return true;
         // Only log when the game would really have failed (it calls this every frame while the condition holds).
-        if (sim.IsRunning() && !sim.BSODActive && (!_heldLogged.TryGetValue(pc, out var at) || Time.realtimeSinceStartup - at > 10f))
+        if (log && (!_heldLogged.TryGetValue(pc, out var at) || Time.realtimeSinceStartup - at > 10f))
         {
             _heldLogged[pc] = Time.realtimeSinceStartup;
             Plugin.Logger.LogInfo($"[sim] PC {pc}: this game would fail ({(EmergencyShutdownReason)reason}); waiting for the host's result.");
@@ -74,10 +78,9 @@ internal sealed class NativeSimulation : ISimulationNative
     }
 
     /// <summary>Host: a shared PC just failed in this game.</summary>
-    private void LocalFailed(ComputerSim sim, int reason)
+    private void LocalFailed(NetObjectId pc, int reason)
     {
         if (!_world.IsAuthority || !Active) return;
-        var pc = PcOf(sim);
         if (pc.IsNone || reason is < SimulationWorld.MinReason or > SimulationWorld.MaxReason) return;
         Plugin.Logger.LogInfo($"[sim] PC {pc} failed here ({(EmergencyShutdownReason)reason}); sharing it.");
         _hostFailures.Add((pc, reason));
@@ -376,8 +379,35 @@ internal sealed class NativeSimulation : ISimulationNative
         private static void Postfix(ComputerSim __instance, EmergencyShutdownReason __0, bool __state)
         {
             if (Bypass || __instance == null || NativeProjection.Active) return;
-            try { if (!__state && __instance.BSODActive) Instance?.LocalFailed(__instance, (int)__0); }
+            try { if (!__state && __instance.BSODActive && Instance is { } native) native.LocalFailed(native.PcOf(__instance), (int)__0); }
             catch (Exception e) { Plugin.Logger.LogError("[sim] failure hook: " + e); }
+        }
+    }
+
+    // The startup coroutine can show a heat failure directly. Simulation failures set BSODActive before this call.
+    [HarmonyPatch(typeof(VirtualComputer), nameof(VirtualComputer.BlueScreenOfDeath))]
+    internal static class StartupFailureHook
+    {
+        private static bool Prefix(VirtualComputer __instance, EmergencyShutdownReason __0, out NetObjectId __state)
+        {
+            __state = default;
+            if (Bypass || NativeProjection.Active || Instance is not { Active: true } native || __instance == null) return true;
+            try
+            {
+                var sim = __instance.GetComputerSim();
+                if (sim?.BSODActive == true) return true;
+                var pc = native._coop.Objects.IdOf(__instance.ComputerSave);
+                if (pc.IsNone) pc = native.PcOf(sim);
+                if (!native._world.IsAuthority) return native.AllowLocalFailure(pc, (int)__0, log: true);
+                __state = pc;
+                return true;
+            }
+            catch (Exception e) { Plugin.Logger.LogError("[sim] startup failure hook: " + e); return true; }
+        }
+
+        private static void Postfix(EmergencyShutdownReason __0, NetObjectId __state)
+        {
+            if (!__state.IsNone) Instance?.LocalFailed(__state, (int)__0);
         }
     }
 
