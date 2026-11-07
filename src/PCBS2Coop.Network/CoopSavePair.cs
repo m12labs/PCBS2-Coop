@@ -32,9 +32,9 @@ public static class CoopSavePair
     /// 0.34 corrects the work-mode player pose and guards connected panel removal, 0.35 keeps refits cable-free,
     /// 0.36 resolves the case prefab behind a catalog color variant, 0.37 matches its remote carrier defaults,
     /// 0.38 keeps local cupboard files separate until pickup is accepted, and 0.39 closes a refused Decorator after its window opens.
-    /// 0.40 replays desktop icon clicks while the other player works on a PC.
+    /// 0.40 refreshes workshop decorations and replays desktop icon clicks during work mode. 0.41 keeps Lighting's HUD local.
     /// The save layout is the same across those builds.</summary>
-    private static readonly string[] SameFormat = { "0.39", "0.38", "0.37", "0.36", "0.35", "0.34", "0.33", "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
+    private static readonly string[] SameFormat = { "0.40", "0.39", "0.38", "0.37", "0.36", "0.35", "0.34", "0.33", "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);

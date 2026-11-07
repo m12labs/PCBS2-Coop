@@ -13,8 +13,8 @@ namespace PCBS2Coop;
 /// short pause this player's game sends the PC's light settings, presets and peripheral lights, and the other game copies
 /// them into its own light objects, so its lights change in place with no restart. The colour wheel reads the mouse
 /// itself, which phase 6 doesn't mirror, so only the game of the player at that monitor sends.</item>
-/// <item><b>Opening Lighting</b>: on its first open the app pushes its own view state whoever is at the monitor; when it
-/// opens from the other player's mirrored click (or for nobody here), that push and its camera claim are skipped.</item>
+/// <item><b>Opening Lighting</b>: its HUD belongs to the player using the monitor. The other game receives the
+/// lighting settings without opening the HUD.</item>
 /// <item><b>Effect clock</b> (decision 3): each game's light clock starts at its own power-on; the host sends its clock and
 /// the guest keeps its own in step.</item>
 /// <item><b>Cable app</b> (decision 4): a bought cable set adds new part kinds and inventory items; the buyer's game sends
@@ -420,8 +420,6 @@ internal sealed class NativeCustomization : ICustomizationNative
 
     // ---------------- hooks ----------------
 
-    private static bool s_remoteOpen;
-
     [HarmonyPatch]
     internal static class LightingChangeHook
     {
@@ -442,41 +440,12 @@ internal sealed class NativeCustomization : ICustomizationNative
         }
     }
 
-    /// <summary>The Lighting app opening for someone who isn't this player (the other player's mirrored click, or the
-    /// host's open-app matching) doesn't take over this player's view.</summary>
-    [HarmonyPatch(typeof(LightingApp), "OnEnable")]
-    internal static class LightingOpenScope
+    /// <summary>Lighting instantiates a workshop HUD rather than opening a window on the PC screen.</summary>
+    [HarmonyPatch(typeof(OS), nameof(OS.Launch))]
+    internal static class LocalLightingHud
     {
-        private static void Prefix(LightingApp __instance, out bool __state)
-        {
-            __state = false;
-            if (Bypass) return;
-            try { __state = NativeDesktopInput.Injecting || NativeProjection.Active || !LocalAt(__instance.m_workStation); }
-            catch (Exception e) { Plugin.Logger.LogError("[lights] open hook failed: " + e); }
-            s_remoteOpen = __state;
-        }
-
-        private static void Postfix(LightingApp __instance, bool __state)
-        {
-            if (!__state) return;
-            try { __instance.initialised = false; } // this player's own first open still sets up the Lighting view
-            catch (Exception e) { Plugin.Logger.LogError("[lights] open hook failed: " + e); }
-            Plugin.Logger.LogInfo("[lights] the Lighting app opened on a monitor this player isn't using; its view stays as it is.");
-        }
-
-        private static Exception Finalizer(Exception __exception) { s_remoteOpen = false; return __exception; }
-    }
-
-    [HarmonyPatch(typeof(BenchSlot), nameof(BenchSlot.ClaimCamera))]
-    internal static class LightingCameraGuard
-    {
-        private static bool Prefix() => !s_remoteOpen;
-    }
-
-    [HarmonyPatch(typeof(GameController), nameof(GameController.SetCurrentState))]
-    internal static class LightingStateGuard
-    {
-        private static bool Prefix(State __0) => !(s_remoteOpen && __0?.TryCast<LightingAppState>() != null);
+        private static bool Prefix(OS __instance, OSProgramDesc desc) => Bypass || desc?.m_id != "LIGHTING" ||
+            (!NativeDesktopInput.Injecting && !NativeProjection.Active && LocalAt(__instance.m_workstation));
     }
 
     [HarmonyPatch(typeof(CableApp), nameof(CableApp.OnBuy))]

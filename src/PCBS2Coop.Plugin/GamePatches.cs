@@ -102,9 +102,7 @@ internal static class GamePatches
             tools.PatchAll(typeof(NativeToolBenches.ClearIntercept));
             var looks = new Harmony(Plugin.Guid + ".customization");
             looks.PatchAll(typeof(NativeCustomization.LightingChangeHook));
-            looks.PatchAll(typeof(NativeCustomization.LightingOpenScope));
-            looks.PatchAll(typeof(NativeCustomization.LightingCameraGuard));
-            looks.PatchAll(typeof(NativeCustomization.LightingStateGuard));
+            looks.PatchAll(typeof(NativeCustomization.LocalLightingHud));
             looks.PatchAll(typeof(NativeCustomization.BuyHook));
             var room = new Harmony(Plugin.Guid + ".workshop");
             room.PatchAll(typeof(NativeWorkshop.AppOpenHook));
