@@ -301,6 +301,33 @@ internal sealed class NativeAssembly : IAssemblyNative
             throw new InvalidDataException($"PC {pc.Id}: unconfirmed orientation, case membership or internal cable connections.");
     }
 
+    private const string GeneratedStandoff = "Standoff(Clone)";
+    private static string StandoffBinding(int index) => $"Screw:@standoff[{index}]#0";
+    private static NetObjectId MotherboardId(PcFact pc) => pc.Links.FirstOrDefault(link => link.Path == "motherboardID")?.Part ?? default;
+
+    /// <summary>Older saves key generated standoffs by their transient parent and sibling index. They are identical
+    /// at rest and moved as a group with the motherboard. Keep their IDs and links while updating their binding keys.</summary>
+    internal static PcFact NormalizeStandoffBindings(PcFact pc)
+    {
+        var board = MotherboardId(pc);
+        if (board.IsNone) return pc;
+        static int LegacyIndex(string binding)
+        {
+            var start = binding.LastIndexOf(GeneratedStandoff + "[", StringComparison.Ordinal);
+            if (start < "Screw:".Length || (start != "Screw:".Length && binding[start - 1] != '/') ||
+                !binding.EndsWith("]#0", StringComparison.Ordinal)) return -1;
+            return int.TryParse(binding.AsSpan(start + GeneratedStandoff.Length + 1, binding.Length - start - GeneratedStandoff.Length - 4), out var index)
+                ? index : -1;
+        }
+        var legacy = pc.Resources.Where(r => r.Parent == board && r.Kind == AssemblyResourceKind.Screw && r.NativeType == nameof(Screw))
+            .Select(r => (r.Id, Index: LegacyIndex(r.Binding))).Where(r => r.Index >= 0)
+            .OrderBy(r => r.Index).Select((r, i) => (r.Id, Key: StandoffBinding(i))).ToDictionary(r => r.Id, r => r.Key);
+        return legacy.Count == 0 ? pc : pc with
+        {
+            Resources = pc.Resources.Select(r => legacy.TryGetValue(r.Id, out var key) ? r with { Binding = key } : r).ToArray(),
+        };
+    }
+
     private static string Signature(PcFact pc, ComputerSave save, IReadOnlyList<string> internalConnectors)
     {
         var w = new NetDataWriter(); var graph = NativeObjectState.Parts(save);
@@ -408,13 +435,24 @@ internal sealed class NativeAssembly : IAssemblyNative
                 panels.Add(fitted.transform.Pointer);
         }
         var rows = new List<Row>();
+        var nativeScrews = mesh.GetComponentsInChildren<Screw>(true);
+        var boardId = MotherboardId(pc);
+        // The game's install and load paths parent these clones differently. Order the installed mounts in
+        // motherboard space, quantized to a tenth of a millimetre to avoid ties caused by transform rounding.
+        var standoffs = nativeScrews.Where(s => s.m_isStandOff && s.name == GeneratedStandoff)
+            .Select(s => (Screw: s, Owner: Owner(s.transform))).Where(s => s.Owner.Id == boardId)
+            .Select(s => (s.Screw.Pointer, Position: s.Owner.Root.InverseTransformPoint(s.Screw.transform.position)))
+            .OrderBy(s => Mathf.RoundToInt(s.Position.x * 10000)).ThenBy(s => Mathf.RoundToInt(s.Position.y * 10000))
+            .ThenBy(s => Mathf.RoundToInt(s.Position.z * 10000))
+            .Select((s, index) => (s.Pointer, Key: StandoffBinding(index))).ToDictionary(s => s.Pointer, s => s.Key);
         void Add(Component native, AssemblyResourceKind kind, NetObjectId occupant, long occupantMesh, bool open = false, float rotation = 0, float offset = 0)
         {
             var owner = Owner(native.transform);
             var indices = kind == AssemblyResourceKind.Slot ? native.gameObject.GetComponents<Slot>().Select(c => c.Pointer).ToArray()
                 : kind == AssemblyResourceKind.Screw ? native.gameObject.GetComponents<Screw>().Select(c => c.Pointer).ToArray()
                 : native.gameObject.GetComponents<CPin>().Select(c => c.Pointer).ToArray();
-            var key = kind + ":" + RelativePath(native.transform, owner.Root, panels) + "#" + Array.IndexOf(indices, native.Pointer);
+            if (!standoffs.TryGetValue(native.Pointer, out var key))
+                key = kind + ":" + RelativePath(native.transform, owner.Root, panels) + "#" + Array.IndexOf(indices, native.Pointer);
             rows.Add(new(native, owner.Root, owner.Id, key, kind, occupant, occupantMesh, open, rotation, offset));
         }
         foreach (var slot in nativeSlots)
@@ -430,7 +468,7 @@ internal sealed class NativeAssembly : IAssemblyNative
             if (pin.IsAnimating()) throw new InvalidDataException("A latch/socket is still animating.");
             Add(pin, pin.TryCast<AM3Slot>() != null || pin.TryCast<LGASlot>() != null ? AssemblyResourceKind.Socket : AssemblyResourceKind.Pin, default, 0, pin.IsOpen());
         }
-        foreach (var screw in mesh.GetComponentsInChildren<Screw>(true))
+        foreach (var screw in nativeScrews)
             Add(screw, AssemblyResourceKind.Screw, default, 0, rotation: screw.m_rotation, offset: screw.m_offset);
         rows = rows.OrderBy(r => r.Parent.Value).ThenBy(r => r.Key, StringComparer.Ordinal).ToList();
         var indicesByPointer = rows.Select((r, i) => (r.Native.Pointer, Index: i)).ToDictionary(r => r.Pointer, r => r.Index);

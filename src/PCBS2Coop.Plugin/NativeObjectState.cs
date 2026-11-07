@@ -791,6 +791,14 @@ internal sealed class NativeObjectState : IWorldState
         if (length is < 1 or > Protocol.MaxModStateBytes || length > r.AvailableBytes) throw new InvalidDataException("Invalid object model length.");
         var bytes = new byte[length]; r.GetBytes(bytes, length);
         var model = new ObjectWorld(); model.Read(new NetDataReader(bytes));
+        var pcs = model.Pcs.Select(NativeAssembly.NormalizeStandoffBindings).ToArray();
+        if (!pcs.SequenceEqual(model.Pcs))
+        {
+            // Import the migrated keys before any identity is live in the receiving registry.
+            var migrated = new ObjectWorld();
+            migrated.Replace(model.WorldId, model.NextId, model.Locations, pcs, model.Retired);
+            model = migrated;
+        }
         var catalog = r.GetString(128);
         var count = r.GetInt();
         if (count != model.Pcs.Count) throw new InvalidDataException("Incomplete saved PC bindings.");

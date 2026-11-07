@@ -103,6 +103,8 @@ For component installs and removals, read task 4e in `docs/audit/phase-4.md`. Co
 
 While another actor's edit claim is pending on a PC, latches, panels and edits on that PC are refused (owner decision). `DisassemblyTick` b__0 is a placeholder install, b__1 the direct removal, b__2 the `Uninstall` coroutine. Never hook `SetCurrentState`, `OnStateDestroy` or the replay targets through a second method that shares their native code.
 
+- The native install and load paths parent generated `Standoff(Clone)` screws differently. Bind these motherboard mounts by their order in motherboard space. On load, 0.48 translates old generated-standoff bindings before publishing the registry, keeping their IDs and links. Prefab screws keep their original paths.
+
 For cables and power, read `docs/audit/phase-5.md`. They are command 9 gestures `Connect`, `Unplug` and `Power`, each with a whole-PC edit claim (no targets):
 - The editor's gesture is the cabling long press `<CablingTick>b__0` (its `ConnectCableState` may install a splitter on entry), the unplug long press `<RemoveCableTick>b__0`, `PowerButton.Press`, `WorkingOnComputerStateBase.PowerClicked`, or a walking bench power callback (`BenchSlot.<GetInteractions>b__8/9/10`, 0.26). Only Power can claim a PC while walking.
 - The walking monitor's P prompt comes from `InteractableComputer.GetInteractions` and has its own on/off callbacks (shared in 0.44).
