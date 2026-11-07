@@ -2,22 +2,22 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.38**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.48**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
 ## Workbench: building a PC ([phase 4](audit/phase-4.md), 4f)
 
-- [ ] Build a full PC from an empty case (board, CPU, cooler, RAM, GPU, drives, PSU, fans), host and guest each
+- [x] Build a full PC from an empty case (board, CPU, cooler, RAM, GPU, drives, PSU, fans), host and guest each (0.47, November 7, 2026. The host built PC 1000 and the guest built PC 1115. Both native part graphs matched for each build.)
 - [ ] Take a full PC apart again, host and guest each
 - [x] Two identical parts (RAM sticks, fans): remove one, the other stays (0.30, November 5, 2026: both top fans stayed when the identical rear fan was removed)
 - [x] Both players work on different parts of the same PC at once: the second edit attempt is refused under the phase 4e waiting rule (0.30, November 5, 2026)
 - [x] Both players go for the same slot at once: one wins, one gets a refusal (0.30, November 5, 2026)
 - [x] Try a part that doesn't fit, or a blocked removal: refused, nothing changes (0.31, November 5, 2026: the installed cooler blocked CPU removal and both PCs kept the CPU)
-- [ ] Latches, CPU levers, RAM clips, case panels both ways (0.35, November 5, 2026. Both players removed and refitted the front panel after unplugging it, then the guest reconnected the lead. Latch and clip checks remain.)
+- [x] Latches, CPU levers, RAM clips, case panels both ways (0.35 and 0.47, November 5 and 7, 2026. Both players removed and refitted the front panel. Each opened the PCI latch, operated the AM4 lever and opened both RAM clips. Both games agreed on the results.)
 - [ ] Esc halfway through an install and a removal (phase 4 native checks found that Esc after install starts normally leaves it running. In 0.30 Esc at fan orientation also left the editor open. Removal retest remains.)
 - [x] Guest joins while the host is building (0.31, November 5, 2026: fresh guest waited through the host's fan install, then loaded the completed PC)
-- [ ] Save, Exit, Continue after a build
+- [x] Save, Exit, Continue after a build (0.47–0.48, November 7, 2026. Cold Continue initially refused the motherboard standoffs. Both fresh 0.48 games loaded the same pair with both completed builds and the saved empty RAM clip.)
 
 ## Workbench: cables and power ([phase 5](audit/phase-5.md), 5d)
 
@@ -132,7 +132,7 @@ Substantial actual two-game evidence already exists in [phase 8's p8a–p8m runs
 
 - [ ] New world: build, cable, power, BIOS, GPU Tuner, software; then Exit, Continue, guest joins: everything matches
 - [x] Guest drops (pull the network) and uses Rejoin: comes back where it stood, no duplicates (0.21, November 2, 2026: owned LAN runs, 12-second process suspension; exact position/facing and matching worlds)
-- [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits (November 5, 2026, run acceptance-c: cable guard and Exit wait in 0.27, coolant drain guard in 0.29, fan install guard in 0.30)
+- [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits (Cable and Exit in 0.27, coolant drain in 0.29, fan install in 0.30, and a moving RAM latch in 0.47 on November 7, 2026. The immediate RAM latch save waited and the retry succeeded. BIOS and software remain open.)
 - [x] Close the host's game during a save: next Continue loads the previous good save with a notice (0.32, November 5, 2026. The 39-PC pair stayed byte-identical, the host saw the notice, and the guest rejoined.)
 - [x] A world with more than 35 built PCs: save, join, `/sync`, Continue (0.25, November 4, 2026: 39 built PCs, matching native checks and object hashes after every step; fixed the 0.24 duplicate-snapshot failure, run acceptance-b)
 - [x] Host pause-menu Load and Reset reload both games; guest Save/Load/Reset are refused (0.21, November 2, 2026: owned two-game runs p8a–p8m)

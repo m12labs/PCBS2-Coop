@@ -318,3 +318,23 @@ On November 6, 2026 the host booted PC 26 with its connected custom loop empty. 
 On November 6, 2026 the probe identified PC 213's SilverStone AIO root in front radiator slot 258. The other two radiator slots and the CPU cooler slot were proxies to that root. The host used the root's native removal callback (`H#21`). The guest reloaded the resulting PC. Both native records had zero SilverStone references and zero pipes and passed projection checks at revision 89.
 
 The native case-button callback (`H#90`) booted the PC without its cooler. The host published `CPU_HEAT` once and the guest applied that failure once. Both simulation samples read 81.7°C, and both projection checks passed at revision 94. The probe bypassed pointer targeting for the removal and power press. This test used the complete AIO removal. The earlier CPU-slot-only save remains evidence of the separate proxy-removal bug.
+
+### Two complete Kolink builds in 0.47
+
+On November 7, 2026 the host started with a new stock black Kolink on bench 6 (PC 1000). The guest started with the same empty case on bench 5 (PC 1115), after using the game's actual Swap PC prompt and storing the swapped painted case. Both removed the side panels, fitted `Motherboard_MSI_30`, operated the AM4 lever for `CPU_AMD_58`, opened both clips and fitted `RAM_TeamGroup_41`, and installed `PSU_EVGA_13` and `Air_Cooler_AMD_1`. Each opened the PCI latch, removed the two covers needed for `GPU_NVIDIA_2`, and installed `SSD_TeamGroup_11` and a top `Case_Fan_ARCTIC_1`. The two stock fans remained. The host's blocked PCI cover removal was refused before the latch opened. The final native part paths, SKUs, orientations and flips matched for both PCs, with clean projection at revision 189.
+
+The fixture and gestures used the native game edit and replay paths. The operator invoked the native callbacks and used the editor's accept flag at orientation, bypassing pointer targeting, part selection for stock items and orientation input. The actual swap and cupboard store used normal input.
+
+The host opened a clip on empty RAM slot 4 (`H#73`) and asked the co-op save path to write during the same frame. It returned false and logged “a change is still being shown.” After the animation settled, the retry returned true and produced the native and sidecar pair.
+
+### Save, Exit and cold Continue after both builds
+
+The host used the game's Exit action after the explicit 0.47 save. Fresh 0.47 Continue refused PC 1000's motherboard assembly. Native installation had placed nine generated `Standoff(Clone)` objects directly under the board. The cold game recreated them under the board's `Screws` transform with different sibling indices. The nine prefab screws still had their original bindings.
+
+The revised 0.48 build orders the generated standoffs in motherboard space and translates old keys before their IDs enter the receiving registry. Fresh Continue and a fresh guest loaded the same 0.47 pair. Each of the two builds retained all 11 native part paths, SKUs, orientations and flips. The saved empty RAM clip remained open on both games. All ten PCs bound with matching object hash `C124C91E718C0FC8E75381483635ED1821259D3532535CEF3CBA3699DCDB9D1B` at generation 1, revision 3. The host and guest had clean native object and peripheral checks. The Release build had zero warnings and errors and passed **722/722** automated checks. The 21 owner saves matched their original hashes after the owned processes closed for the rebuild.
+
+### AIO proxy removal and reload
+
+The guest's 0.47 attempt at the CPU-side proxy was refused while the main radiator mount was blocked by the front panel. The guest disconnected `501>114`, removed the panel and repeated the same native removal callback on proxy slot 359. The accepted water edit (`G#7`) removed all SilverStone parts and pipes from the guest. The host reloaded the result. Both native projections passed, and the guest's work view showed the bare CPU and empty radiator mount. The actual game callbacks bypassed pointer targeting and holding the mouse.
+
+The same 0.47 save used for the two builds loaded in both fresh 0.48 games. PC 213's native part paths, SKUs, orientations and flips matched the records taken after removal, with zero AIO references and zero pipes.
