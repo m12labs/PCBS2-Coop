@@ -312,3 +312,9 @@ A separate save from the 0.43 removal failed cold Continue with `Carried PC topo
 ### One heat result per boot in 0.46
 
 On November 6, 2026 the host booted PC 26 with its connected custom loop empty. In 0.45 the host published `CPU_HEAT` twice and the guest applied it once, then received a redundant report. In 0.46 two separate on and off cycles using the native case-button callback produced one host publication and one guest application on each boot. The matching reason is kept for one native simulation run and cleared when the PC starts again. The Release build had zero warnings and errors and passed **722/722** automated checks.
+
+### Complete cooler removal and boot in 0.46
+
+On November 6, 2026 the probe identified PC 213's SilverStone AIO root in front radiator slot 258. The other two radiator slots and the CPU cooler slot were proxies to that root. The host used the root's native removal callback (`H#21`). The guest reloaded the resulting PC. Both native records had zero SilverStone references and zero pipes and passed projection checks at revision 89.
+
+The native case-button callback (`H#90`) booted the PC without its cooler. The host published `CPU_HEAT` once and the guest applied that failure once. Both simulation samples read 81.7°C, and both projection checks passed at revision 94. The probe bypassed pointer targeting for the removal and power press. This test used the complete AIO removal. The earlier CPU-slot-only save remains evidence of the separate proxy-removal bug.

@@ -111,6 +111,8 @@ In 0.43 the cooler-free startup reached a direct `VirtualComputer.BlueScreenOfDe
 
 An empty-loop boot in 0.45 could publish the startup and simulation reports for the same reason. In 0.46 the same reason is sent once per boot. Two successive dry-loop boots each produced one host publication and one guest application. [Run record](acceptance-2026-11-04.md#one-heat-result-per-boot-in-046)
 
+The 0.46 host then removed the complete AIO from PC 213 and booted it. Both native graphs had zero AIO references and zero pipes. The host published `CPU_HEAT` once and the guest applied it once. [Run record](acceptance-2026-11-04.md#complete-cooler-removal-and-boot-in-046)
+
 On November 6, 2026, the 0.40 test build showed one matching `CPU_UNDER_VOLTAGE` failure on each game when the host started OCCT and again when the guest started it. Time Spy and Cinebench R20 also finished with matching scores on both games. [Run record](acceptance-2026-11-04.md#mirrored-bios-occt-failures-and-benchmarks-in-a-040-test-build)
 
 ## Owner decisions (November 1, 2026)
