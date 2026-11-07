@@ -288,3 +288,9 @@ On November 6, 2026 the host continued the same 0.41 save in a fresh process and
 The first 0.42 candidate found both peripheral configurations empty before the game registered its LEDs. The revised candidate installs the native saved configuration at that point and copies values in place if the live configuration already exists. The forced asynchronous load can then use the saved colours when it registers the LEDs.
 
 During the same cold join, the first paired Rainbow samples were host `38.950924` seconds and guest `34.142628`. Five seconds later the gap was still about 4.8 seconds. After the periodic clock update at revision 12, the two samples were within 0.1 seconds. The early clock gap remains a separate failure.
+
+### Rainbow clock on late join in 0.43
+
+On November 6, 2026 the 0.43 host continued first. PC 213's saved Rainbow and blue peripherals were present and the guest joined later. The guest received a snapshot marked at revision 8 and entered with the host at revision 11. One second after the guest bound the workshop PCs, the running GPU clocks were `80.80195` and `80.74112` seconds. After adjusting for sample timestamps the difference was `0.058` seconds, within the mod's `0.15` second correction tolerance. The native GPU settings matched at Rainbow, speed `2.884523`, Ping Pong and Walk. The clock send now waits for admission so the transient command arrives after the snapshot mark.
+
+Entering the local Lighting HUD for the next check briefly held the host's native clock at `82.085304` and the samples drifted. With both players walking again they matched within `0.011` seconds at revision 66. Physical taps and a drag on the advanced hue ring still did not move its selection. The hue-ring row stays open. Release built with zero warnings and errors and passed **722/722** checks.
