@@ -19,6 +19,7 @@ internal sealed class NativeSimulation : ISimulationNative
     private readonly CoopController _coop;
     private readonly WorldSync _world;
     private readonly List<(NetObjectId Pc, int Reason)> _hostFailures = new();
+    private readonly HashSet<(NetObjectId Pc, int Reason)> _reportedFailures = new();
     private readonly List<PendingFailure> _guestFailures = new();
     private readonly Dictionary<NetObjectId, float> _fanSends = new();
     private readonly Dictionary<NetObjectId, float> _heldLogged = new();
@@ -31,7 +32,7 @@ internal sealed class NativeSimulation : ISimulationNative
         _coop = coop; _world = world;
         Handler = new SimulationWorld(coop.Objects.Model, coop.Activity, this);
         world.GenerationStarted += (uint _, string _) =>
-        { _hostFailures.Clear(); _guestFailures.Clear(); _fanSends.Clear(); _heldLogged.Clear(); _waitingFans.Clear(); _fansForGuest = 0; };
+        { _hostFailures.Clear(); _reportedFailures.Clear(); _guestFailures.Clear(); _fanSends.Clear(); _heldLogged.Clear(); _waitingFans.Clear(); _fansForGuest = 0; };
         world.Rejected += (OperationId op, RejectReason reason, string text) =>
         {
             if (op.Actor == world.Local && text.Contains(Handler.Name)) Plugin.Logger.LogWarning($"[sim] {op} refused: {text}");
@@ -82,6 +83,7 @@ internal sealed class NativeSimulation : ISimulationNative
     {
         if (!_world.IsAuthority || !Active) return;
         if (pc.IsNone || reason is < SimulationWorld.MinReason or > SimulationWorld.MaxReason) return;
+        if (!_reportedFailures.Add((pc, reason))) return;
         Plugin.Logger.LogInfo($"[sim] PC {pc} failed here ({(EmergencyShutdownReason)reason}); sharing it.");
         _hostFailures.Add((pc, reason));
     }
@@ -408,6 +410,18 @@ internal sealed class NativeSimulation : ISimulationNative
         private static void Postfix(EmergencyShutdownReason __0, NetObjectId __state)
         {
             if (!__state.IsNone) Instance?.LocalFailed(__state, (int)__0);
+        }
+    }
+
+    // Native restarts also call TurnOn. A later boot can report the same reason again.
+    [HarmonyPatch(typeof(ComputerSim), nameof(ComputerSim.TurnOn))]
+    internal static class SimulationBootHook
+    {
+        private static void Prefix(Case __0)
+        {
+            if (Bypass || Instance is not { } native || !native._world.IsAuthority || native._reportedFailures.Count == 0) return;
+            var pc = native._coop.Objects.IdOf(__0);
+            if (!pc.IsNone) native._reportedFailures.RemoveWhere(f => f.Pc == pc);
         }
     }
 

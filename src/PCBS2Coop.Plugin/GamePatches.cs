@@ -87,6 +87,7 @@ internal static class GamePatches
             var sim = new Harmony(Plugin.Guid + ".simulation");
             sim.PatchAll(typeof(NativeSimulation.FailureHook));
             sim.PatchAll(typeof(NativeSimulation.StartupFailureHook));
+            sim.PatchAll(typeof(NativeSimulation.SimulationBootHook));
             sim.PatchAll(typeof(NativeSimulation.FanApplyHook));
             var desktop = new Harmony(Plugin.Guid + ".desktop");
             desktop.PatchAll(typeof(NativeDesktopInput.BootFollow));
