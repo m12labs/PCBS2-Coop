@@ -25,14 +25,15 @@ internal sealed partial class Phase6Probe
                     {
                         var local = wheel.GetLocalMousePosForImage(wheel.Disc);
                         var cursor = InputModule.GetLocalCursorPos();
-                        var size = wheel.Disc.rectTransform.sizeDelta;
+                        var raw = InputModule.GetMousePosition();
+                        var halfWidth = wheel.Disc.rectTransform.rect.width * 0.5f;
                         var colour = wheel.ColourSelection_Disc;
                         return new
                         {
                             path = DesktopPath(wheel.transform, null), wheel.forTheme, wheel.IsDisabled,
                             wheel.toggleWheel, edit = wheel.EditState.ToString(), discVisible = wheel.Disc.gameObject.activeInHierarchy,
                             selected = wheel.m_colourWheelSelectable?.IsSelected, cursor = new { cursor.x, cursor.y }, local = new { local.x, local.y },
-                            radius = local.magnitude, inner = wheel.InnerRadius * size.x, outer = wheel.OuterRadius * size.x,
+                            raw = new { raw.x, raw.y }, radius = local.magnitude, inner = wheel.InnerRadius * halfWidth, outer = wheel.OuterRadius * halfWidth,
                             colour = new { colour.r, colour.g, colour.b },
                         };
                     }).ToArray());

@@ -37,6 +37,18 @@ internal sealed partial class Phase6Probe
                     if (bits.Length != 2) throw new ArgumentException("gesture-work:<pc>");
                     GestureWork(RequirePc(bits[1]));
                     return true;
+                case "gesture-pin":
+                    if (bits.Length != 3) throw new ArgumentException("gesture-pin:<pc>:<pin-resource-id>");
+                    GesturePin(RequirePc(bits[1]), ParseResourceId(bits[2]));
+                    return true;
+                case "gesture-fixture-case":
+                    if (bits.Length != 2) throw new ArgumentException("gesture-fixture-case:<case-sku>");
+                    FixtureCase(bits[1]);
+                    return true;
+                case "gesture-fixture-drop":
+                    if (bits.Length != 2) throw new ArgumentException("gesture-fixture-drop:<bench-index>");
+                    FixtureDrop(int.Parse(bits[1]));
+                    return true;
                 case "gesture-remove":
                     if (bits.Length != 3) throw new ArgumentException("gesture-remove:<pc>:<slot-resource-id>");
                     GestureRemove(RequirePc(bits[1]), ParseResourceId(bits[2]));
@@ -127,6 +139,8 @@ internal sealed partial class Phase6Probe
             var slot = native?.TryCast<Slot>();
             var occupant = slot == null ? null : slot.GetComponent();
             var part = occupant == null ? null : occupant.GetPartInstance();
+            var proxyOwner = occupant?.GetProxiedComponent();
+            var ownerSlot = proxyOwner != null ? coop.Objects.Assembly.Find(proxyOwner.Slot).Resource.Value : 0;
             var pin = native?.TryCast<CPin>();
             var screw = native?.TryCast<Screw>();
             return new
@@ -142,6 +156,9 @@ internal sealed partial class Phase6Probe
                 path = native == null ? null : GesturePath(native.transform, mesh.transform),
                 slotType = slot == null ? null : slot.m_slotType.ToString(),
                 sku = part?.GetPartId(),
+                proxyOwnerSlot = ownerSlot,
+                component = occupant?.GetIl2CppType()?.Name,
+                includesPipes = occupant?.m_includesPipes,
                 open = pin?.IsOpen(),
                 animating = pin?.IsAnimating(),
                 screwRotation = screw?.m_rotation,
@@ -194,7 +211,7 @@ internal sealed partial class Phase6Probe
             profile = pc.BuildProfile,
             parts = record == null ? null : NativeObjectState.Parts(record).Select(x => new
             {
-                path = x.Key, sku = x.Value.GetPartId(), orientation = x.Value.GetSlotOrientation(), flipped = x.Value.m_flipped
+                path = x.Key, sku = x.Value.GetPartId(), variant = PartVariants.Of(x.Value), orientation = x.Value.GetSlotOrientation(), flipped = x.Value.m_flipped
             }).ToArray(),
             pciCovers = record?.casePciCovers?.ToArray(),
             bespokeSlots = record?.m_bespokeCaseSlots?.ToArray(),
@@ -279,6 +296,38 @@ internal sealed partial class Phase6Probe
         // exact generated game callback and runs the game's Uninstall coroutine, including animations/cable step.
         closure._DisassemblyTick_b__2();
         Event("gesture-entrypoint-returned", new { command = "gesture-remove", pc = pc.Id.Value, resource = fact.Id.Value, sku = component.GetPartInstance()?.GetPartId(), acceptedMustBeConfirmedByNativeEditTrace = true });
+    }
+
+    private void GesturePin(PcFact pc, NetObjectId resourceId)
+    {
+        var (_, mesh) = NativeBench(pc);
+        RequireWork(pc, mesh);
+        var pin = RequireGestureWorld().Objects.Assembly.NativeFor(pc.Id, resourceId)?.TryCast<IPin>()
+            ?? throw new InvalidOperationException("The selected resource is not a native pin on that PC.");
+        Event("gesture-direct-call", new { command = "gesture-pin", pc = pc.Id.Value, resource = resourceId.Value,
+            path = "WorkingOnComputerState._PinTick_b__0", pointerReachInputVerified = false });
+        new WorkingOnComputerState.__c__DisplayClass51_0 { Pin = pin }._PinTick_b__0();
+    }
+
+    private void FixtureCase(string sku)
+    {
+        var coop = RequireGestureWorld();
+        if (Object.FindObjectOfType<WorkshopController>().GetCarriedCase() != null)
+            throw new InvalidOperationException("Put down the currently carried case first.");
+        var part = CareerStatus.Get().GetInventory().ToArray().First(p => p != null && p.GetPartId() == sku && p.GetPart().m_type == PartDesc.Type.CASE);
+        Event("gesture-fixture", new { action = "spawn", sku, path = "NativePcLifecycle.RequestCreate", inventoryClickVerified = false });
+        coop.Lifecycle.RequestCreate(part);
+    }
+
+    private void FixtureDrop(int index)
+    {
+        RequireGestureWorld();
+        var workshop = Object.FindObjectOfType<WorkshopController>();
+        var bench = Object.FindObjectOfType<SaveLoadSystem>().benchSlots[index];
+        if (workshop.GetCarriedCase() == null || bench == null || bench.GetCaseInSlot() != null)
+            throw new InvalidOperationException("An empty target bench and a carried case are required.");
+        Event("gesture-fixture", new { action = "drop", bench = bench.name, path = "WorkshopController.DropCase", pointerReachInputVerified = false });
+        workshop.DropCase(bench);
     }
 
     private void GestureRefit(PcFact pc, NetObjectId resourceId)
