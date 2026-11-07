@@ -294,3 +294,9 @@ During the same cold join, the first paired Rainbow samples were host `38.950924
 On November 6, 2026 the 0.43 host continued first. PC 213's saved Rainbow and blue peripherals were present and the guest joined later. The guest received a snapshot marked at revision 8 and entered with the host at revision 11. One second after the guest bound the workshop PCs, the running GPU clocks were `80.80195` and `80.74112` seconds. After adjusting for sample timestamps the difference was `0.058` seconds, within the mod's `0.15` second correction tolerance. The native GPU settings matched at Rainbow, speed `2.884523`, Ping Pong and Walk. The clock send now waits for admission so the transient command arrives after the snapshot mark.
 
 Entering the local Lighting HUD for the next check briefly held the host's native clock at `82.085304` and the samples drifted. With both players walking again they matched within `0.011` seconds at revision 66. Physical taps and a drag on the advanced hue ring still did not move its selection. The hue-ring row stays open. Release built with zero warnings and errors and passed **722/722** checks.
+
+### Walking monitor power in 0.44
+
+On November 6, 2026 the host pressed P while walking and aiming at PC 213's monitor after the cooler was removed in 0.43. Its PC entered Boot and the guest stayed off. No Power edit was sent. The monitor's walking prompt uses `InteractableComputer.GetInteractions` callbacks `b__1` and `b__3`, which call the board directly. The 0.44 hook submits both through the existing Power edit.
+
+The restored, cooled fixture loaded on both 0.44 games. The host switched off from that prompt (`H#32`) and the guest switched on from the same prompt (`G#6`). Both native reports showed the desktop and a running PC, with no divergence, projection fault or native check error at revision 42. Release built with zero warnings and errors.
