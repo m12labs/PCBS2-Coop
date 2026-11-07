@@ -20,6 +20,23 @@ internal sealed partial class Phase6Probe
             switch (bits[0])
             {
                 case "room-report": Event("room-report", RoomReport(coop)); return true;
+                case "wheel-report":
+                    Event("wheel-report", Object.FindObjectsOfType<ColourWheel>().Where(wheel => wheel.isActiveAndEnabled && wheel.Disc != null).Select(wheel =>
+                    {
+                        var local = wheel.GetLocalMousePosForImage(wheel.Disc);
+                        var cursor = InputModule.GetLocalCursorPos();
+                        var size = wheel.Disc.rectTransform.sizeDelta;
+                        var colour = wheel.ColourSelection_Disc;
+                        return new
+                        {
+                            path = DesktopPath(wheel.transform, null), wheel.forTheme, wheel.IsDisabled,
+                            wheel.toggleWheel, edit = wheel.EditState.ToString(), discVisible = wheel.Disc.gameObject.activeInHierarchy,
+                            selected = wheel.m_colourWheelSelectable?.IsSelected, cursor = new { cursor.x, cursor.y }, local = new { local.x, local.y },
+                            radius = local.magnitude, inner = wheel.InnerRadius * size.x, outer = wheel.OuterRadius * size.x,
+                            colour = new { colour.r, colour.g, colour.b },
+                        };
+                    }).ToArray());
+                    return true;
                 case "lighting-report":
                 {
                     var pc = RequirePc(bits[1]);
