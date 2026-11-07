@@ -105,6 +105,37 @@ internal sealed class NativeCustomization : ICustomizationNative
         return result.Where(l => l.IsValid).ToList();
     }
 
+    private static (int Applied, int Missing, bool Rebuild) CopyLights(LEDDriverConfig cfg, IReadOnlyList<LedLight> lights)
+    {
+        var applied = 0;
+        var missing = 0;
+        var rebuild = false;
+        foreach (var light in lights)
+        {
+            var list = cfg.GetConfig(light.Group);
+            if (list == null || light.Index >= list.Count || list[light.Index] == null) { missing++; continue; }
+            var c = list[light.Index];
+            var old = Values(c);
+            if (old == light.Values) continue;
+            rebuild |= old.Flow != light.Values.Flow || old.Effect != light.Values.Effect ||
+                old.AnimType != light.Values.AnimType || old.Enabled != light.Values.Enabled;
+            Write(c, light.Values);
+            applied++;
+        }
+        return (applied, missing, rebuild);
+    }
+
+    internal static (int Applied, int Missing) RestoreSavedPeripheralLights(Peripheral peripheral, LEDDriverConfig saved)
+    {
+        var lights = Read(saved);
+        var live = peripheral.m_LEDConfig;
+        var unregistered = live?.m_config?.Count is not > 0;
+        if (unregistered) peripheral.m_LEDConfig = saved;
+        var (applied, missing, rebuild) = unregistered ? (lights.Count, 0, true) : CopyLights(live, lights);
+        if (applied > 0 && peripheral.WorkStation?.m_virtualComputer is { } vc) Refresh(vc.ComputerSave, vc, rebuild);
+        return (applied, missing);
+    }
+
     private static Peripheral PeripheralAt(WorkStation ws, string slot)
     {
         if (ws == null) return null;
@@ -192,23 +223,14 @@ internal sealed class NativeCustomization : ICustomizationNative
                 _ => PeripheralAt(_coop.Objects.FindBench(pc.Id)?.m_workStation, slot)?.m_LEDConfig,
             };
             if (cfg == null) { Plugin.Logger.LogWarning($"[lights] PC {pc.Id}: no {target} lights {(slot == "" ? "" : slot + " ")}here; the other player's change waits for the next load."); return; }
-            int applied = 0, missing = 0; var rebuild = false;
+            (int Applied, int Missing, bool Rebuild) result = default;
             NativeProjection.Run(() =>
             {
                 if (target == LightTarget.Pc && preset >= 0 && software != null) software.m_currentPresetIndex = preset;
-                foreach (var light in lights)
-                {
-                    var list = cfg.GetConfig(light.Group);
-                    if (list == null || light.Index >= list.Count || list[light.Index] == null) { missing++; continue; }
-                    var c = list[light.Index];
-                    var old = Values(c);
-                    if (old == light.Values) continue;
-                    rebuild |= old.Flow != light.Values.Flow || old.Effect != light.Values.Effect || old.AnimType != light.Values.AnimType || old.Enabled != light.Values.Enabled;
-                    Write(c, light.Values);
-                    applied++;
-                }
-                if (target != LightTarget.Preset && applied > 0) Refresh(record, vc, rebuild);
+                result = CopyLights(cfg, lights);
+                if (target != LightTarget.Preset && result.Applied > 0) Refresh(record, vc, result.Rebuild);
             });
+            var (applied, missing, rebuild) = result;
             if (applied + missing > 0)
                 Plugin.Logger.LogInfo($"[lights] PC {pc.Id}: {applied} {target} light(s) from {ctx.Op} applied{(missing > 0 ? $", {missing} not on this PC here" : "")}{(rebuild ? ", lights rebuilt" : "")}.");
         }

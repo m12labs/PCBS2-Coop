@@ -40,7 +40,9 @@ internal static class GamePatches
             transfers.PatchAll(typeof(NativePcTransfers.DropIntercept));
             transfers.PatchAll(typeof(NativePcTransfers.StoreIntercept));
             transfers.PatchAll(typeof(NativePcTransfers.RetrieveIntercept));
-            new Harmony(Plugin.Guid + ".workstations").PatchAll(typeof(NativeWorkstations.SwapIntercept));
+            var workstations = new Harmony(Plugin.Guid + ".workstations");
+            workstations.PatchAll(typeof(NativeWorkstations.SwapIntercept));
+            workstations.PatchAll(typeof(NativeWorkstations.SavedLightingHook));
             new Harmony(Plugin.Guid + ".assembly-preview").PatchAll(typeof(NativeAssembly.PreviewTrace));
             var latches = new Harmony(Plugin.Guid + ".latches");
             latches.PatchAll(typeof(NativeMechanisms.GestureScope));

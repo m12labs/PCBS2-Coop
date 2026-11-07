@@ -64,6 +64,7 @@ internal sealed class WorldReadiness
         }
         if (LocalPlayer.Find() == null) return "player not spawned";
         if (PeripheralsLoading() is { } perif) return perif;
+        if (CoopController.Instance?.Workstations?.RestoringLighting == true) return "peripheral lighting loading";
         return "";
     }
 
