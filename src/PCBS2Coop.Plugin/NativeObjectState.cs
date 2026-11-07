@@ -537,7 +537,7 @@ internal sealed class NativeObjectState : IWorldState
             if (id.IsNone) _saves.TryGetValue(o.Save.Pointer.ToInt64(), out id);
             var pc = id.IsNone ? null : Model.Pcs.SingleOrDefault(x => x.Id == id);
             if (pc == null || pc.Provenance.Origin != InstanceOrigin.Catalog || pc.Resources.Count != 0) continue;
-            var native = Parts(o.Save);
+            var native = BindingParts(o.Save, pc);
             var known = new Dictionary<long, NetObjectId>(); var growth = true;
             foreach (var link in pc.Links)
             {
@@ -566,7 +566,7 @@ internal sealed class NativeObjectState : IWorldState
     internal static PcTemplate Template(ComputerSave record)
     {
         var index = new Dictionary<long, int>(); var parts = new List<TemplatePart>(); var links = new List<TemplateLink>();
-        foreach (var (path, part) in Parts(record))
+        foreach (var (path, part) in BindingParts(record))
         {
             if (!index.TryGetValue(part.Pointer.ToInt64(), out var i))
             {
@@ -610,7 +610,7 @@ internal sealed class NativeObjectState : IWorldState
             if (prior != null && !repair) CheckParts(prior, o.Save);
             if (prior != null && !repair) NativeAssembly.CheckProfile(prior, o.Save);
             var replaced = prior != null && repair ? Assembly.ReplacedParts(prior, o.Mesh) : new HashSet<NetObjectId>();
-            var parts = Parts(o.Save);
+            var parts = BindingParts(o.Save, prior);
             var aliases = new Dictionary<long, NetObjectId>();
             var facts = new List<PartFact>(); var links = new List<PartLink>();
             foreach (var (path, part) in parts)
@@ -716,7 +716,7 @@ internal sealed class NativeObjectState : IWorldState
 
     internal static void CheckParts(PcFact pc, ComputerSave save)
     {
-        var parts = Parts(save);
+        var parts = BindingParts(save, pc);
         if (parts.Count != pc.Links.Count) throw new InvalidDataException("Carried PC topology mismatch.");
         var nativeAliases = new Dictionary<long, NetObjectId>(); var logicalAliases = new Dictionary<NetObjectId, long>();
         foreach (var (path, part) in parts)
@@ -924,7 +924,12 @@ internal sealed class NativeObjectState : IWorldState
             NativePcLifecycle.SpawnIntoHands(this, carry.Id, carry.Record);
     }
 
-    public static SortedDictionary<string, PartInstance> Parts(ComputerSave pc)
+    internal static SortedDictionary<string, PartInstance> BindingParts(ComputerSave pc, PcFact expected = null) =>
+        Parts(pc, expected, includeNativeCopies: false);
+
+    public static SortedDictionary<string, PartInstance> Parts(ComputerSave pc) => Parts(pc, null, includeNativeCopies: true);
+
+    private static SortedDictionary<string, PartInstance> Parts(ComputerSave pc, PcFact expected, bool includeNativeCopies)
     {
         var result = new SortedDictionary<string, PartInstance>(StringComparer.Ordinal);
         var expanded = new HashSet<long>();
@@ -935,7 +940,16 @@ internal sealed class NativeObjectState : IWorldState
             result.Add(path, part);
             if (!expanded.Add(part.Pointer.ToInt64())) return;
             Array(path + ".m_caseFanSlots", part.m_caseFanSlots);
-            Add(path + ".m_proxyFor", part.m_proxyFor); Add(path + ".m_generatedCopy", part.m_generatedCopy);
+            Add(path + ".m_proxyFor", part.m_proxyFor);
+            if (part.m_generatedCopy is { } copy)
+            {
+                var copyPath = path + ".m_generatedCopy";
+                // The bench loader deep-copies water-loop members and caches the copy on the source part.
+                // A live reservoir install can lack this cache. Keep old bindings and actual loop/slot references.
+                var reservoirSlot = path.StartsWith(nameof(ComputerSave.reservoirSlots) + "[", StringComparison.Ordinal) && !path.Contains('.');
+                if (includeNativeCopies || !reservoirSlot || expected?.Links.Any(link => link.Path == copyPath) == true)
+                    Add(copyPath, copy);
+            }
             var gpu = part.TryCast<GpuPartInstance>(); if (gpu != null) Add(path + ".WaterCoolBlock", gpu.WaterCoolBlock);
             var ram = part.TryCast<RamPartInstance>(); if (ram != null) Add(path + ".WaterCoolBlock", ram.WaterCoolBlock);
             var board = part.TryCast<MotherboardPartInstance>();

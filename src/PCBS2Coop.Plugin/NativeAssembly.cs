@@ -330,7 +330,7 @@ internal sealed class NativeAssembly : IAssemblyNative
 
     private static string Signature(PcFact pc, ComputerSave save, IReadOnlyList<string> internalConnectors)
     {
-        var w = new NetDataWriter(); var graph = NativeObjectState.Parts(save);
+        var w = new NetDataWriter(); var graph = NativeObjectState.BindingParts(save, pc);
         foreach (var part in pc.Parts.OrderBy(p => p.Id.Value))
         {
             var path = pc.Links.First(l => l.Part == part.Id).Path;
@@ -365,7 +365,7 @@ internal sealed class NativeAssembly : IAssemblyNative
     private static (List<Row> Rows, IReadOnlyList<AssemblyTemplate> Templates) Scan(PcFact pc, Case mesh, ComputerSave save)
     {
         if (mesh == null || !mesh || save?.caseID == null) throw new InvalidDataException("A native prefab/record is missing.");
-        var parts = NativeObjectState.Parts(save);
+        var parts = NativeObjectState.BindingParts(save, pc);
         var identities = new Dictionary<long, NetObjectId>();
         foreach (var link in pc.Links)
             if (parts.TryGetValue(link.Path, out var part)) identities[part.Pointer.ToInt64()] = link.Part;

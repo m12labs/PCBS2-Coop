@@ -404,7 +404,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         var known = pc.Parts.ToDictionary(p => p.Id);
         var byPath = new Dictionary<string, NetObjectId>(StringComparer.Ordinal); var used = new HashSet<NetObjectId>();
         foreach (var link in pc.Links) byPath[link.Path] = link.Part;
-        foreach (var (path, part) in NativeObjectState.Parts(record))
+        foreach (var (path, part) in NativeObjectState.BindingParts(record, pc))
         {
             var pointer = part.Pointer.ToInt64();
             if (!aliases.TryGetValue(pointer, out var id))
@@ -436,7 +436,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         try { NativeObjectState.CheckParts(pc, record); }
         catch (Exception) { record = _coop.Objects.CaptureRecord(pc.Id); NativeObjectState.CheckParts(pc, record); }
         var result = new Dictionary<long, NetObjectId>();
-        foreach (var (path, part) in NativeObjectState.Parts(record)) result[part.Pointer.ToInt64()] = pc.Links.Single(l => l.Path == path).Part;
+        foreach (var (path, part) in NativeObjectState.BindingParts(record, pc)) result[part.Pointer.ToInt64()] = pc.Links.Single(l => l.Path == path).Part;
         return result;
     }
 
