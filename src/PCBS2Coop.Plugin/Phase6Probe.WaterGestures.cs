@@ -22,26 +22,35 @@ internal sealed partial class Phase6Probe
             switch (args[2])
             {
                 case "report" when args.Length == 3:
+                {
+                    var state = GameController.Get()?.GetCurrentState();
+                    var route = state?.TryCast<RoutePipeState>();
+                    var preview = route?.m_case?.Pointer == mesh.Pointer
+                        ? typeof(RoutePipeState).GetProperty("m_pipe", _gesturePrivateInstance)?.GetValue(route) as WaterPipe
+                        : null;
+                    object Nodes(WaterPipe pipe) => pipe.m_nodes?.ToArray().Where(n => n != null).Select(n =>
+                    {
+                        var position = mesh.transform.InverseTransformPoint(n.transform.position);
+                        return new { position.x, position.y, position.z, n.bendFitting };
+                    }).ToArray();
                     Event("gesture-water-report", new
                     {
                         pc = pc.Id.Value,
                         powered = mesh.IsRunning(),
-                        state = GameController.Get()?.GetCurrentState()?.GetIl2CppType().Name,
+                        state = state?.GetIl2CppType().Name,
                         connectors = connectors.Select((c, index) => new { index, path = GesturePath(c.transform, mesh.transform), connected = c.IsConnected() }),
                         pipes = pipes.Select((p, index) => new
                         {
                             index, from = ConnectorIndex(p.m_from), to = ConnectorIndex(p.m_to),
                             part = p.m_pipePartDesc?.m_id,
-                            nodes = p.m_nodes?.ToArray().Where(n => n != null).Select(n =>
-                            {
-                                var position = mesh.transform.InverseTransformPoint(n.transform.position);
-                                return new { position.x, position.y, position.z, n.bendFitting };
-                            }).ToArray()
+                            nodes = Nodes(p)
                         }),
+                        preview = preview == null ? null : new { part = preview.m_pipePartDesc?.m_id, nodes = Nodes(preview) },
                         loops = loopController?.Loops?.ToArray().Select(loop => new
                         { full = loop.IsFull(), complete = loop.IsComplete(), animating = loop.IsAnimating(), coolant = loop.m_coolant?.m_id })
                     });
                     break;
+                }
                 case "remove" when args.Length == 4:
                 {
                     var work = RequireWork(pc, mesh);
