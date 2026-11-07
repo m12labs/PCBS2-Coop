@@ -55,7 +55,11 @@ internal sealed partial class Phase6Probe
                     return true;
                 case "gesture-refit":
                     if (bits.Length != 3) throw new ArgumentException("gesture-refit:<pc>:<slot-resource-id>");
-                    GestureRefit(RequirePc(bits[1]), ParseResourceId(bits[2]));
+                    GestureCommitPreview(RequirePc(bits[1]), ParseResourceId(bits[2]), null, "", panel: true);
+                    return true;
+                case "gesture-commit-preview":
+                    if (bits.Length is < 4 or > 5) throw new ArgumentException("gesture-commit-preview:<pc>:<slot-resource-id>:<sku>[:inventory-variant]");
+                    GestureCommitPreview(RequirePc(bits[1]), ParseResourceId(bits[2]), bits[3], bits.ElementAtOrDefault(4) ?? "", panel: false);
                     return true;
                 case "gesture-install":
                     if (bits.Length != 4) throw new ArgumentException("gesture-install:<pc>:<slot-resource-id>:<sku>");
@@ -156,6 +160,7 @@ internal sealed partial class Phase6Probe
                 path = native == null ? null : GesturePath(native.transform, mesh.transform),
                 slotType = slot == null ? null : slot.m_slotType.ToString(),
                 sku = part?.GetPartId(),
+                variant = PartVariants.Of(part),
                 proxyOwnerSlot = ownerSlot,
                 component = occupant?.GetIl2CppType()?.Name,
                 includesPipes = occupant?.m_includesPipes,
@@ -290,6 +295,9 @@ internal sealed partial class Phase6Probe
             callback = "WorkingOnComputerState.__c__DisplayClass68_0._DisassemblyTick_b__2",
             slotPath = GesturePath(slot.transform, mesh.transform),
             sku = component.GetPartInstance()?.GetPartId(),
+            slotBlocked = slot.blocked,
+            nativeBlockers = slot.blockedBy?.ToArray().Where(blocker => blocker != null)
+                .Select(blocker => GesturePath(blocker.transform, mesh.transform)).ToArray(),
             pointerReachAndHoldInputVerified = false
         });
         // Production Harmony prefix submits NativeComponentEdits.RequestRemove. Its accepted replay invokes this
@@ -330,22 +338,25 @@ internal sealed partial class Phase6Probe
         workshop.DropCase(bench);
     }
 
-    private void GestureRefit(PcFact pc, NetObjectId resourceId)
+    private void GestureCommitPreview(PcFact pc, NetObjectId resourceId, string sku, string variant, bool panel)
     {
         var coop = RequireGestureWorld();
         var (_, mesh) = NativeBench(pc);
         var work = RequireWork(pc, mesh);
         var fact = pc.Resources.SingleOrDefault(resource => resource.Id == resourceId && resource.Kind == AssemblyResourceKind.Slot);
-        if (fact == null || string.IsNullOrEmpty(fact.IntegralHome) || !string.IsNullOrEmpty(fact.IntegralPart))
-            throw new InvalidOperationException("Choose an empty shared panel slot.");
+        var integral = !string.IsNullOrEmpty(fact?.IntegralHome);
+        if (fact == null || panel != integral || !fact.Occupant.IsNone || !string.IsNullOrEmpty(fact.IntegralPart))
+            throw new InvalidOperationException("Choose an empty shared slot of the requested kind.");
+        if (panel) sku = fact.IntegralHome;
         var slot = coop.Objects.Assembly.NativeFor(pc.Id, fact.Id)?.TryCast<Slot>();
         var component = slot?.GetComponent();
+        var part = component?.GetPartInstance();
         if (slot?.GetCase()?.Pointer != mesh.Pointer || component == null || !NativeAssembly.IsPreview(component) ||
-            component.GetPartInstance()?.GetPartId() != fact.IntegralHome)
-            throw new InvalidOperationException("Select the panel from the game's Removed Components inventory first.");
+            part?.GetPartId() != sku || PartVariants.Of(part) != variant)
+            throw new InvalidOperationException("Select the exact part from the game's inventory and wait for its preview first.");
         Event("gesture-direct-call", new
         {
-            command = "gesture-refit", pc = pc.Id.Value, resource = resourceId.Value, sku = fact.IntegralHome,
+            command = panel ? "gesture-refit" : "gesture-commit-preview", pc = pc.Id.Value, resource = resourceId.Value, sku, variant,
             callback = "WorkingOnComputerState.__c__DisplayClass69_0._AssemblyTick_b__0",
             pointerReachAndHoldInputVerified = false
         });
