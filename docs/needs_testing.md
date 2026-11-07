@@ -52,12 +52,12 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Delid table ([phase 9](audit/phase-9.md))
 
-- [ ] Delid a CPU, host and guest each: the delidded CPU is in both inventories
+- [ ] Delid a CPU, host and guest each: the delidded CPU is in both inventories (0.49, November 7, 2026. The host completed the i3-8350K and both games showed the delidded variant. The guest's first run stopped before it stored the result.)
 - [ ] Install the delidded CPU from each side: both games show it delidded
-- [ ] The other player gets "Someone is using the delidding table." and sees "Delidding"
+- [x] The other player gets "Someone is using the delidding table." and sees "Delidding" (0.49, November 7, 2026. The guest saw the refusal and the label over the host.)
 - [ ] The PC on a table in use can't be picked up by the other player
-- [ ] Esc halfway through: nothing shared, CPU back in the inventory
-- [ ] Save and Continue after a delid: the delidded CPU is still there, and the world loads
+- [x] Esc halfway through: nothing shared, CPU back in the inventory (0.49, November 7, 2026. The host exited after removing the lid and cleaning the CPU. Both inventories stayed unchanged and the stock i3-8350K was back in the host's CPU list.)
+- [x] Save and Continue after a delid: the delidded CPU is still there, and the world loads (0.49, November 7, 2026. Cold Continue and a fresh guest both retained one delidded i3-8350K and the same world.)
 
 ## Water-cooling table ([phase 9](audit/phase-9.md))
 
