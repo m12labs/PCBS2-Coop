@@ -31,6 +31,8 @@ internal sealed partial class Phase6Probe
                     {
                         pc = pc.Id.Value, generation = coop.Session.World.Generation, revision = coop.Session.World.Revision,
                         state = GameController.Get()?.GetCurrentState()?.GetIl2CppType()?.Name,
+                        hudActive = Object.FindObjectsOfType<LightingApp>().Any(app => app != null && app.isActiveAndEnabled &&
+                            ws != null && app.m_workStation?.Pointer == ws.Pointer),
                         running = sim?.IsRunning(), time = sim?.m_LEDDriver?.m_time,
                         sets = NativeCustomization.Sets(record, ws).Select(set => new { target = set.Target.ToString(), set.Preset, set.Slot, set.Lights }).ToArray(),
                     });
