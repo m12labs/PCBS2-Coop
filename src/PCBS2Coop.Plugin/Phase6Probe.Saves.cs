@@ -8,6 +8,8 @@ namespace PCBS2Coop;
 /// <summary>Phase 8 operator commands for the opt-in phase 6 probe (isolated saves only, see <see cref="Safe"/>).</summary>
 internal sealed partial class Phase6Probe
 {
+    private WorldSync _softwareSaveProbe;
+
     /// <summary>Returns false when <paramref name="command"/> isn't a phase 8 command.</summary>
     private bool SavesCommand(string command)
     {
@@ -18,6 +20,7 @@ internal sealed partial class Phase6Probe
             case "summary-report": Event("summary-report", Summary(coop)); return true;
             case "pose": Event("pose", LocalPlayer.Find() is { } p ? new { x = p.X, y = p.Y, z = p.Z, yaw = p.Yaw } : null); return true;
             case "save": Event("save", coop.SaveWorld("probe")); return true;
+            case "save-during-software": ArmSoftwareSaveProbe(coop); return true;
             case "world-reset": Event("world-switch", new { reset = true, nativeMayRun = coop.OnFreeBuildReset() }); return true;
             case "saves-report": Event("saves-report", SavesReport()); return true;
             case "dialog-report": Event("dialog-report", DialogReport()); return true;
@@ -45,6 +48,31 @@ internal sealed partial class Phase6Probe
             return true;
         }
         return false;
+    }
+
+    private void ArmSoftwareSaveProbe(CoopController coop)
+    {
+        if (!Safe || coop.Session.Role != Role.Host || coop.Session.World is not { Admitted: true } world || coop.Software == null)
+        { Event("software-save-probe", "An admitted isolated host is required."); return; }
+        if (_softwareSaveProbe == world) return;
+        _softwareSaveProbe = world;
+        world.Accepted += SaveWhileBusy;
+        Event("software-save-probe", "Waiting for the next accepted software Begin.");
+
+        void SaveWhileBusy(OperationId op, ulong revision)
+        {
+            if (Safe && coop.Session.World == world && coop.Software?.Handler.Busy != true) return;
+            world.Accepted -= SaveWhileBusy;
+            _softwareSaveProbe = null;
+            if (!Safe || coop.Session.World != world) return;
+            try
+            {
+                // Accepted runs after Begin has applied and before the publisher sends the next chunk.
+                var accepted = coop.SaveWorld("probe pending software");
+                Event("software-save-probe", new { operation = op.ToString(), revision, busy = coop.Software.Handler.Busy, accepted });
+            }
+            catch (Exception e) { Event("software-save-probe", e.ToString()); }
+        }
     }
 
     private static object Summary(CoopController coop)
