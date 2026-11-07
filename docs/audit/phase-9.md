@@ -218,3 +218,5 @@ On November 7, 2026, both games received the host's delidded i3-8350K and the gu
 Both players selected their finished delidded processors from the actual inventory and installed them in PC 213 in 0.50. Both native sockets showed the delidded variant after each installation. [Installation record](acceptance-2026-11-04.md#installing-delidded-cpus-in-050)
 
 The resident PC pickup case is inapplicable to Delidding in game 1.17.02. With the table claimed and again after release, a carried case could not be placed in its native slot. The separate occupied Case Modding pickup check passed. [Delid applicability check](acceptance-2026-11-04.md#delidding-bench-pc-pickup-applicability-in-051)
+
+In 0.51 the guest used Escape after three of six native RAM water-cooling steps. Both inventories stayed unchanged and the claim cleared. [Halfway Escape record](acceptance-2026-11-04.md#halfway-escape-from-the-ram-water-cooling-tool-in-051)

@@ -402,3 +402,9 @@ Fresh Continue and a fresh guest loaded the exact 0.50 pair written after the fa
 On November 7, 2026 the host opened the native Delidding bench on game 1.17.02. The guest carried a stock Kolink case (PC 1386). The target showed only the `B` refit prompt while the host held the claim and again after the host released it. Real left and right clicks at the bench left the case in the guest's hands and the Delidding slot empty in both states. The guest then stored the same case with the game's ordinary cupboard click. The probe spawned the stock fixture and positioned the players.
 
 The native `BenchToolSlot.PopulateToolActions` Delidding branch offers entry to the loose CPU tool. The case pickup and swap actions belong to its Case Modding branch. A resident PC pickup from the Delidding bench is inapplicable in this build. The occupied Case Modding pickup refusal has its own passing result above.
+
+### Halfway Escape from the RAM water-cooling tool in 0.51
+
+On November 7, 2026 the guest selected two Team Group T-Force DARK DDR4 sticks in the real Water Cooling inventory. Real clicks removed all 16 old pads and placed all 16 replacements. Three of six native objectives were complete when the guest pressed Escape at the heatsink choice. The guest returned to walking and the log reported “session over; nothing changed.”
+
+At revision 170 both native inventories had the same three variants as before, with no finished RAM item and no table claim. Both native object checks passed with hash `4F70879B2578665DCC063D8E08EC12409EFF59FE3BCBCD86972634B1D930BF8C`. The guest reopened the table and found the same stock DDR4 part in the catalog.
