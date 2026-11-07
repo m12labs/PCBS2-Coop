@@ -132,7 +132,7 @@ Substantial actual two-game evidence already exists in [phase 8's p8a–p8m runs
 
 - [ ] New world: build, cable, power, BIOS, GPU Tuner, software; then Exit, Continue, guest joins: everything matches
 - [x] Guest drops (pull the network) and uses Rejoin: comes back where it stood, no duplicates (0.21, November 2, 2026: owned LAN runs, 12-second process suspension; exact position/facing and matching worlds)
-- [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits (Cable and Exit in 0.27, coolant drain in 0.29, fan install in 0.30, and a moving RAM latch in 0.47 on November 7, 2026. The immediate RAM latch save waited and the retry succeeded. BIOS and software remain open.)
+- [ ] Save while an edit, latch, cable, water, BIOS or software change runs: the save waits (Cable and Exit in 0.27, coolant drain in 0.29, fan install in 0.30, a moving RAM latch in 0.47, and an active System Info transfer in 0.49. The retries succeeded. In 0.49 the BIOS draft stayed separate from the committed record, and a save during the Apply restart succeeded. Cold Continue and a fresh guest restored the committed settings and software.)
 - [x] Close the host's game during a save: next Continue loads the previous good save with a notice (0.32, November 5, 2026. The 39-PC pair stayed byte-identical, the host saw the notice, and the guest rejoined.)
 - [x] A world with more than 35 built PCs: save, join, `/sync`, Continue (0.25, November 4, 2026: 39 built PCs, matching native checks and object hashes after every step; fixed the 0.24 duplicate-snapshot failure, run acceptance-b)
 - [x] Host pause-menu Load and Reset reload both games; guest Save/Load/Reset are refused (0.21, November 2, 2026: owned two-game runs p8a–p8m)

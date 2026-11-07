@@ -232,3 +232,7 @@ Found and left for the owner:
 - The recovery notice after a real interrupted native write passed on November 5, 2026 in 0.32. The 39-PC pair stayed byte-identical, both games recovered the same world, and the host saw which save had been loaded. [Interrupted-save follow-up](acceptance-2026-11-04.md#interrupted-native-save-in-031-and-032)
 - A dropped connection during an install's animation (the faster-install power-up finished the GPU removal before the drop); during a BIOS session or a running OCCT test.
 - The owner's own pass of the deferred tests 4f, 5d, 10b and 7e (cables, water cooling, full builds in both directions).
+
+### Save boundaries in 0.49
+
+On November 7, 2026 the host's save waited for a real System Info install's software transfer. A retry succeeded. The native BIOS kept its x39 draft separate from the x40 committed record and accepted a save with the draft open. The save requested during the subsequent Apply restart wrote the committed x39 setting. Cold Continue and a fresh guest restored x39 and the installed program from that pair. [Run record](acceptance-2026-11-04.md#save-during-a-software-transfer-and-a-bios-restart-in-049)
