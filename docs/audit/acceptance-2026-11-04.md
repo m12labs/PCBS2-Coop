@@ -396,3 +396,9 @@ On November 7, 2026 the host removed PC 26's pipes, then removed its EKWB CPU bl
 Version 0.51 keeps the reservoir slot and loop references in the accepted graph. A new binding leaves out the loader's reservoir copy link. Existing saves that already recorded that link keep it. The fix leaves the native save record intact.
 
 Fresh Continue and a fresh guest loaded the exact 0.50 pair written after the failed reinstall. All ten PCs bound with clean checks. The host repeated the real pump removal and install callbacks. Both native slots showed `EKWB_WC_PUMP_4` after reinstall `H#84`, with no repair request or projection fault. The guest still had the extra native copy link. The common object hash at revision 162 was `431A5D2CE0D24E81F1E9BA434ED64D2172659D0E8C3663F73ADA806952B6F7C2`. The probe bypassed the physical pointer reach, hold and orientation confirmation. The Release build had zero warnings and errors and passed all 722 network checks. The 21 owner save hashes matched after both 0.50 test games closed.
+
+### Delidding bench PC pickup applicability in 0.51
+
+On November 7, 2026 the host opened the native Delidding bench on game 1.17.02. The guest carried a stock Kolink case (PC 1386). The target showed only the `B` refit prompt while the host held the claim and again after the host released it. Real left and right clicks at the bench left the case in the guest's hands and the Delidding slot empty in both states. The guest then stored the same case with the game's ordinary cupboard click. The probe spawned the stock fixture and positioned the players.
+
+The native `BenchToolSlot.PopulateToolActions` Delidding branch offers entry to the loose CPU tool. The case pickup and swap actions belong to its Case Modding branch. A resident PC pickup from the Delidding bench is inapplicable in this build. The occupied Case Modding pickup refusal has its own passing result above.

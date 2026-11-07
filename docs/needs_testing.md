@@ -55,7 +55,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Delid a CPU, host and guest each: the delidded CPU is in both inventories (0.49–0.50, November 7, 2026. The host finished an i3-8350K and the guest finished an i5-8600K. Both native inventories showed one of each delidded variant.)
 - [x] Install the delidded CPU from each side: both games show it delidded (0.50, November 7, 2026. The host installed the delidded i3-8350K and the guest replaced it with the delidded i5-8600K. Both native sockets showed the selected variant after each edit.)
 - [x] The other player gets "Someone is using the delidding table." and sees "Delidding" (0.49, November 7, 2026. The guest saw the refusal and the label over the host.)
-- [ ] The PC on a table in use can't be picked up by the other player
+- [ ] The PC on a table in use can't be picked up by the other player (Inapplicable in game 1.17.02. The native Delidding bench only accepts loose CPUs. The guest tried to place a carried case while the host held the table and after release in 0.51. The table stayed empty. The occupied Case Modding table pickup refusal passed in 0.49.)
 - [x] Esc halfway through: nothing shared, CPU back in the inventory (0.49, November 7, 2026. The host exited after removing the lid and cleaning the CPU. Both inventories stayed unchanged and the stock i3-8350K was back in the host's CPU list.)
 - [x] Save and Continue after a delid: the delidded CPU is still there, and the world loads (0.49, November 7, 2026. Cold Continue and a fresh guest both retained one delidded i3-8350K and the same world.)
 
