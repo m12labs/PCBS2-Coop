@@ -536,6 +536,30 @@ internal sealed partial class NativeComponentEdits
                 : () => __instance._GetInteractions_b__10());
     }
 
+    // Aiming at a monitor while walking offers a separate P shortcut from the bench or the monitor state.
+    [HarmonyPatch]
+    internal static class WalkingMonitorPowerIntercept
+    {
+        private static IEnumerable<System.Reflection.MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(InteractableComputer.__c__DisplayClass24_0), nameof(InteractableComputer.__c__DisplayClass24_0._GetInteractions_b__1));
+            yield return AccessTools.Method(typeof(InteractableComputer.__c__DisplayClass24_0), nameof(InteractableComputer.__c__DisplayClass24_0._GetInteractions_b__3));
+        }
+
+        private static bool Prefix(InteractableComputer.__c__DisplayClass24_0 __instance, System.Reflection.MethodBase __originalMethod)
+        {
+            if (WireBypass) return true;
+            try
+            {
+                if (Current == null) return NotReady();
+                var action = __originalMethod.Name == nameof(InteractableComputer.__c__DisplayClass24_0._GetInteractions_b__1)
+                    ? (System.Action)__instance._GetInteractions_b__1 : __instance._GetInteractions_b__3;
+                return Current.RequestPower(__instance.Mobo?.GetCase(), action);
+            }
+            catch (Exception e) { Plugin.Logger.LogError("[cables] walking monitor power request failed: " + e); return false; }
+        }
+    }
+
     /// <summary>The work HUD's power button.</summary>
     [HarmonyPatch(typeof(WorkingOnComputerStateBase), nameof(WorkingOnComputerStateBase.PowerClicked))]
     internal static class PowerClickIntercept

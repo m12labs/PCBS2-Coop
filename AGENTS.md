@@ -105,6 +105,7 @@ While another actor's edit claim is pending on a PC, latches, panels and edits o
 
 For cables and power, read `docs/audit/phase-5.md`. They are command 9 gestures `Connect`, `Unplug` and `Power`, each with a whole-PC edit claim (no targets):
 - The editor's gesture is the cabling long press `<CablingTick>b__0` (its `ConnectCableState` may install a splitter on entry), the unplug long press `<RemoveCableTick>b__0`, `PowerButton.Press`, `WorkingOnComputerStateBase.PowerClicked`, or a walking bench power callback (`BenchSlot.<GetInteractions>b__8/9/10`, 0.26). Only Power can claim a PC while walking.
+- The walking monitor's P prompt comes from `InteractableComputer.GetInteractions` and has its own on/off callbacks (shared in 0.44).
 - The editor is followed until nothing moves on that PC. The commit carries a `Wiring` change: cables off/on, splitter/adapter slots, inventory and power.
 - The other game applies that change with the game's own calls (`NativeComponentEdits.Wiring.cs`).
 - The guest may receive Settle before its cable replay starts or finishes. Assembly rebind waits for `WireMoving` on that PC, including a queued replay (0.29).

@@ -72,6 +72,7 @@ internal static class GamePatches
             cables.PatchAll(typeof(NativeComponentEdits.PowerButtonIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.BenchPowerOnIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.BenchPowerToggleIntercept));
+            cables.PatchAll(typeof(NativeComponentEdits.WalkingMonitorPowerIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.PowerClickIntercept));
             var water = new Harmony(Plugin.Guid + ".water");
             water.PatchAll(typeof(NativeComponentEdits.PipeIntercept));
