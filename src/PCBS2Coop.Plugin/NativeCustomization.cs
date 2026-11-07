@@ -284,6 +284,8 @@ internal sealed class NativeCustomization : ICustomizationNative
         _nextClock = now + (_world.IsAuthority ? 1f : 0.25f);
         if (_world.IsAuthority)
         {
+            // Clocks are transient. A send before the snapshot mark is never replayed to this guest.
+            if (_coop.Session.GuestState != GuestState.InWorld) { _clocksForGuest = 0; return; }
             var guest = _coop.Activity.Get(ActorSlot.Guest)?.Epoch ?? 0;
             var host = _coop.Activity.Get(ActorSlot.Host);
             if (guest == 0 || host == null) { _clocksForGuest = guest; return; }
