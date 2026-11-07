@@ -214,3 +214,5 @@ On November 6, 2026, both 0.39 games ran the previously pasted CPU in PC 213 wit
 ### Owned CPU delid checks in 0.49 and 0.50
 
 On November 7, 2026, both games received the host's delidded i3-8350K and the guest's delidded i5-8600K after the native procedures. The host's halfway Escape published no item, and its later finished i3-8350K survived cold Continue and a fresh guest join. The 0.50 retest of simultaneous table entry showed the refused guest returning to walking while the host kept the table. [Contention and cancellation record](acceptance-2026-11-04.md#tool-table-pickup-delid-contention-and-halfway-escape-in-049) · [Race and guest completion record](acceptance-2026-11-04.md#simultaneous-delid-table-entry-and-guest-completion-in-050)
+
+Both players selected their finished delidded processors from the actual inventory and installed them in PC 213 in 0.50. Both native sockets showed the delidded variant after each installation. [Installation record](acceptance-2026-11-04.md#installing-delidded-cpus-in-050)
