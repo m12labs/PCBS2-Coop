@@ -308,3 +308,7 @@ On November 6, 2026 the host ran the native removal callback for PC 213's CPU co
 In 0.45 the same live removal and boot produced one host `CPU_HEAT` publication and one guest application. Both monitors displayed `CLOCK_WATCHDOG_TIMEOUT`. The native display generated its own hexadecimal code on each game. The host's startup path leaves `ComputerSim.BSODActive` clear. The guest's forced simulation call sets it when showing the host's result. Both native projection checks passed at revision 14. The removal and power probes called the actual game callbacks and skipped pointer targeting. Release built with zero warnings and errors and passed **722/722** checks.
 
 A separate save from the 0.43 removal failed cold Continue with `Carried PC topology mismatch`. The CPU-side AIO proxy was removed, while its radiator-side entries and pipes remained. The failing pair is preserved separately. This heat test covers the live failure display, and the removal and cold-load path remains under investigation.
+
+### One heat result per boot in 0.46
+
+On November 6, 2026 the host booted PC 26 with its connected custom loop empty. In 0.45 the host published `CPU_HEAT` twice and the guest applied it once, then received a redundant report. In 0.46 two separate on and off cycles using the native case-button callback produced one host publication and one guest application on each boot. The matching reason is kept for one native simulation run and cleared when the PC starts again. The Release build had zero warnings and errors and passed **722/722** automated checks.

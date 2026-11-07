@@ -109,6 +109,8 @@ In 0.34, powering a PC with an empty custom water loop let the native simulation
 
 In 0.43 the cooler-free startup reached a direct `VirtualComputer.BlueScreenOfDeath(CPU_HEAT)` on the host and the guest stayed in Boot. The 0.45 hook shares the startup result. Both games displayed the same failure text with the CPU cooler slot empty. [Run record](acceptance-2026-11-04.md#missing-cpu-cooler-at-boot-in-043-and-045)
 
+An empty-loop boot in 0.45 could publish the startup and simulation reports for the same reason. In 0.46 the same reason is sent once per boot. Two successive dry-loop boots each produced one host publication and one guest application. [Run record](acceptance-2026-11-04.md#one-heat-result-per-boot-in-046)
+
 On November 6, 2026, the 0.40 test build showed one matching `CPU_UNDER_VOLTAGE` failure on each game when the host started OCCT and again when the guest started it. Time Spy and Cinebench R20 also finished with matching scores on both games. [Run record](acceptance-2026-11-04.md#mirrored-bios-occt-failures-and-benchmarks-in-a-040-test-build)
 
 ## Owner decisions (November 1, 2026)
