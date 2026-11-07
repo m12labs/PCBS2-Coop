@@ -210,3 +210,7 @@ In 0.35 the guest completed the real eight-step GTX 1070 water-cooling procedure
 On November 7, 2026, both players selected and installed that variant from their real inventories in 0.49. The opt-in probe called the game's commit callback for the actual preview. Both games showed the converted card and its water fittings. Version 0.49 loads attached part prefabs before replay construction. RAM, motherboard and radiator conversions still need their own checks. [Run record](acceptance-2026-11-04.md#installing-the-converted-gtx-1070-in-048-and-049)
 
 On November 6, 2026, both 0.39 games ran the previously pasted CPU in PC 213 with its cooler fitted. The actual OCCT automatic test finished on both without overheating or throttling. [Run record](acceptance-2026-11-04.md#occt-after-applying-paste-in-039)
+
+### Owned CPU delid checks in 0.49 and 0.50
+
+On November 7, 2026, both games received the host's delidded i3-8350K and the guest's delidded i5-8600K after the native procedures. The host's halfway Escape published no item, and its later finished i3-8350K survived cold Continue and a fresh guest join. The 0.50 retest of simultaneous table entry showed the refused guest returning to walking while the host kept the table. [Contention and cancellation record](acceptance-2026-11-04.md#tool-table-pickup-delid-contention-and-halfway-escape-in-049) · [Race and guest completion record](acceptance-2026-11-04.md#simultaneous-delid-table-entry-and-guest-completion-in-050)

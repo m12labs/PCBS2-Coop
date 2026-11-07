@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.49**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.50**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
@@ -52,7 +52,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Delid table ([phase 9](audit/phase-9.md))
 
-- [ ] Delid a CPU, host and guest each: the delidded CPU is in both inventories (0.49, November 7, 2026. The host completed the i3-8350K and both games showed the delidded variant. The guest's first run stopped before it stored the result.)
+- [x] Delid a CPU, host and guest each: the delidded CPU is in both inventories (0.49–0.50, November 7, 2026. The host finished an i3-8350K and the guest finished an i5-8600K. Both native inventories showed one of each delidded variant.)
 - [ ] Install the delidded CPU from each side: both games show it delidded
 - [x] The other player gets "Someone is using the delidding table." and sees "Delidding" (0.49, November 7, 2026. The guest saw the refusal and the label over the host.)
 - [ ] The PC on a table in use can't be picked up by the other player
