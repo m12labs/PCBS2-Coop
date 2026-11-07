@@ -84,12 +84,12 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Lighting ([phase 11](audit/phase-11.md))
 
-- [ ] Change colours (wheel and swatches), effects, speed and direction on a running PC, host and guest each: the other game's lights change without a restart
-- [ ] Save and load a preset from each side
-- [ ] Keyboard and mouse lighting from each side
-- [ ] Opening Lighting doesn't change the other player's view
+- [ ] Change colours (wheel and swatches), effects, speed and direction on a running PC, host and guest each: the other game's lights change without a restart (0.40–0.41, November 6, 2026. Both shared real swatches, advanced sliders and GPU effect controls. The hue-ring drag remains open.)
+- [x] Save and load a preset from each side (0.40–0.41, November 6, 2026. Host Preset 1 and guest Preset 2 each restored distinct native Rainbow speed and direction on both games.)
+- [x] Keyboard and mouse lighting from each side (0.40–0.41, November 6, 2026. The host's magenta and guest's blue reached both native peripherals during play.)
+- [x] Opening Lighting doesn't change the other player's view (0.41, November 6, 2026. Both real launches kept the other player's HUD hidden and left their view alone.)
 - [ ] Breathe or rainbow after a guest joins: in step on both games
-- [ ] Power off and on, then Continue: colours kept
+- [ ] Power off and on, then Continue: colours kept (0.41, November 6, 2026. PC and peripheral colours survived power cycling. Cold Continue kept PC colours and the preset, but reset the keyboard and mouse even though the native save contained their custom RGB.)
 
 ## Cable app ([phase 11](audit/phase-11.md))
 

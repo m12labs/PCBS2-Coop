@@ -203,7 +203,7 @@ Version **0.23** (network messages only; 0.23 reads 0.22 saves, `CoopSavePair.Sa
   - Sending: the Lighting app's `OnApply`, `OnReset`, preset save/load and power button schedule a send 0.5 s later, only on the game of the player at that monitor and not for mirrored input. Each set is sent only when it differs from the last one sent.
   - The other game copies the values into its own light objects (lights read them every frame). It rebuilds with `LEDDriver.TurnOn` when a flow, effect, animation or on/off changed, or refreshes an open Lighting app with `UpdateLightList`.
   - Phase 6's software sync now keeps the live light objects when it adopts the host's record (`KeepLights`), so the lights follow and later edits are still saved.
-  - Opening Lighting for someone else (mirrored input, open-app matching, or a monitor this player isn't at): `LightingApp.OnEnable` runs without its `BenchSlot.ClaimCamera` and `LightingAppState` push. `initialised` is reset so this player's own first open still sets up the view.
+  - The 0.23 camera guard skipped the view state when a remote launch opened Lighting. The 0.41 check found that the HUD was still visible on the receiving game. Lighting now launches only for the player using the monitor. Both games continue to receive lighting edits.
 - **Effect clock (11g)**, command 16 `Clock`: the host sends each powered PC's `LEDDriver.m_time` when a guest arrives, when that PC's lights restart, and every 30 s. The guest keeps its clock within 0.15 s of the host's.
 - **Cable app (11f)**, command 16 `Chunk`/`Purchase`:
   - `CableApp.OnBuy` on the buyer's game sends the new custom cable kinds (`PartDesc`, the game's formatter) and the inventory change (phase 9's format).
@@ -244,4 +244,8 @@ On November 5, 2026, both players switched table 1 through every tool and Build 
 
 ### Owned case design and Custom Cables checks in 0.36
 
-On November 6, 2026 the guest made a separate sunset design with a sticker and paint. Undo, Redo and Clear each visibly changed the test mark, and both games rendered the finished design after the table closed. Cold Continue and a fresh join kept both the host's and the guest's designs. Both players saw the six styles bought through the guest's tablet and used a style on the same test PC. The installed ATX cable kept its alternating pin colours on both games after a cold load. The Lighting and DLC checks remain open. [Run record](acceptance-2026-11-04.md#guest-case-design-and-custom-cable-purchase-in-036)
+On November 6, 2026 the guest made a separate sunset design with a sticker and paint. Undo, Redo and Clear each visibly changed the test mark, and both games rendered the finished design after the table closed. Cold Continue and a fresh join kept both the host's and the guest's designs. Both players saw the six styles bought through the guest's tablet and used a style on the same test PC. The installed ATX cable kept its alternating pin colours on both games after a cold load. The DLC checks remain open. [Run record](acceptance-2026-11-04.md#guest-case-design-and-custom-cable-purchase-in-036)
+
+### Owned Lighting checks in 0.40 and 0.41
+
+Both players used the real swatches, advanced sliders, GPU effects and preset controls. Both games matched the PC, keyboard and mouse settings during play. The 0.41 HUD fix passed in both directions. The native save retained the blue peripheral colours, but the load path reverted them to defaults. The physical hue ring, a fresh guest's Rainbow timing and cold peripheral restoration remain open. [Run record](acceptance-2026-11-04.md#lighting-hud-native-effects-presets-and-peripherals-in-040-and-041)
