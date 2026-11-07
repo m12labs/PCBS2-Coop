@@ -34,7 +34,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 ## Workbench: custom water cooling ([phase 10](audit/phase-10.md), 10b)
 
 - [x] Lay a pipe with corners (November 5, 2026: guest accepted a red rigid pipe in 0.30, and both games reported the same four nodes and two bend fittings in 0.31)
-- [ ] Undo and Esc in the pipe tool: nothing shared (0.30, November 5, 2026: Escape from fitting choice and from the rigid route after using Undo sent no record. Undo's geometry reversal still needs verification.)
+- [x] Undo and Esc in the pipe tool: nothing shared (0.30 and 0.50, November 5 and 7, 2026. A real rigid bend added a sixth node. Undo restored all five original positions exactly. Escape discarded the preview and both games kept the same committed route.)
 - [x] Remove a pipe (0.29, November 5, 2026, run acceptance-c)
 - [x] Fill the loop with coolant, then drain it (0.29, November 5, 2026, PC powered off)
 - [ ] Install and remove a CPU block, GPU block, pump/reservoir, VRM or RAM heatsink

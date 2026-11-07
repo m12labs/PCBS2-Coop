@@ -86,4 +86,6 @@ Both copies of PC 26 were at the desktop with the full loop. The guest clicked t
 
 In 0.31, native transform reports confirmed the retained red rigid pipe's two bend fittings and identical geometry on both games. [Route geometry](acceptance-2026-11-04.md#long-fan-orientation-and-blocked-cpu-removal-in-031)
 
+In 0.50 on November 7, 2026, a real bend added a node to the host's rigid preview. The game's Undo button restored the five original positions and fitting flags. Escape released the edit without sending a finished record, and both games retained the same committed pipe. [Undo geometry retest](acceptance-2026-11-04.md#rigid-pipe-geometry-undo-and-escape-in-050)
+
 In 0.43 removing the CPU-side proxy of a SilverStone AIO left its radiator and pipes in the native record. Cold Continue refused the resulting topology. Version 0.47 checks the main component's native blocker and uses its whole-PC removal when the editor targets a proxy. The guest reproduced that removal after disconnecting and removing the front panel, and the host reloaded the complete result. The 0.48 cold test kept the whole cooler and its pipes absent. [Run record](acceptance-2026-11-04.md#aio-proxy-removal-and-reload)

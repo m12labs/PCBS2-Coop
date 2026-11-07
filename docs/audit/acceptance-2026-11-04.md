@@ -382,3 +382,9 @@ After the host left the table, the guest entered normally and completed the nati
 On November 7, 2026, the host powered off PC 213, removed its air cooler, opened the native socket shield and removed the stock CPU. The host chose the i3-8350K marked “Delidded: yes” from the actual CPU inventory. Both native sockets showed `CPU_Intel_19|delidded` at revision 890, with object hash `1D8B1EB44D887A79AE5FAAE47EC61104B3669C564A0451453B064EDDF0E7473B`.
 
 The guest removed that CPU and chose the delidded i5-8600K from the same inventory category. Both native sockets showed `CPU_Intel_17|delidded` at revision 901, with object hash `FA1EB13E6BDD05EEB241AD24FAC8636A80EDA979506949E7238013B15C4BCCA9`. Neither install produced a native projection fault or divergence. The isolated probe supplied the native workbench callbacks, including the commit callback for each exact inventory preview.
+
+### Rigid pipe geometry, Undo and Escape in 0.50
+
+On November 7, 2026, the host opened a red rigid preview between PC 26's CPU outlet and radiator fitting. The isolated probe called the native fitting selection callbacks and read the preview's own node transforms. The host used the game's actual Bend tool. The native geometry changed from five nodes to six. The new internal node was at `(-0.14271443, 1.9992512, 0.20018518)` in case space. The real Undo button restored the five original positions and fitting flags exactly.
+
+The host pressed Escape. Edit `H#1290` cancelled without a finished record. Both games kept just the existing `5>0` flexible route with 29 nodes. The rigid preview disappeared and fittings 1, 2, 3 and 4 were free again. Both games reported revision 1306 and the same object hash as when the preview opened, `43E0DC057C17B4917C05285C27F8ABC0073B76A097AA11F71A26F3B7F36F1A3C`, with no projection fault or divergence.
