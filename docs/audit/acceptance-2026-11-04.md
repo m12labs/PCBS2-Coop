@@ -300,3 +300,11 @@ Entering the local Lighting HUD for the next check briefly held the host's nativ
 On November 6, 2026 the host pressed P while walking and aiming at PC 213's monitor after the cooler was removed in 0.43. Its PC entered Boot and the guest stayed off. No Power edit was sent. The monitor's walking prompt uses `InteractableComputer.GetInteractions` callbacks `b__1` and `b__3`, which call the board directly. The 0.44 hook submits both through the existing Power edit.
 
 The restored, cooled fixture loaded on both 0.44 games. The host switched off from that prompt (`H#32`) and the guest switched on from the same prompt (`G#6`). Both native reports showed the desktop and a running PC, with no divergence, projection fault or native check error at revision 42. Release built with zero warnings and errors.
+
+### Missing CPU cooler at boot in 0.43 and 0.45
+
+On November 6, 2026 the host ran the native removal callback for PC 213's CPU cooler slot. The two native slot and record reports agreed that `cpuCoolerID` was absent. A shared native case-button press started both PCs. In 0.43 the host displayed `CLOCK_WATCHDOG_TIMEOUT` and the guest stayed in Boot. The startup coroutine calls `VirtualComputer.BlueScreenOfDeath(CPU_HEAT)` directly, outside the simulation's existing `EmergencyShutdown` hook.
+
+In 0.45 the same live removal and boot produced one host `CPU_HEAT` publication and one guest application. Both monitors displayed `CLOCK_WATCHDOG_TIMEOUT`. The native display generated its own hexadecimal code on each game. The host's startup path leaves `ComputerSim.BSODActive` clear. The guest's forced simulation call sets it when showing the host's result. Both native projection checks passed at revision 14. The removal and power probes called the actual game callbacks and skipped pointer targeting. Release built with zero warnings and errors and passed **722/722** checks.
+
+A separate save from the 0.43 removal failed cold Continue with `Carried PC topology mismatch`. The CPU-side AIO proxy was removed, while its radiator-side entries and pipes remained. The failing pair is preserved separately. This heat test covers the live failure display, and the removal and cold-load path remains under investigation.

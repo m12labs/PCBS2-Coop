@@ -119,7 +119,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 ## Tests, tuning and failures ([phase 7](audit/phase-7.md), 7e)
 
 - [x] OCCT on an overclocked PC that fails: both games blue-screen once, same reason (host starts it, then the guest) (0.40 test build, November 6, 2026. Each started OCCT on PC 213 at 4,800 MHz and 1.20 V. Both games showed one `CPU_UNDER_VOLTAGE` failure per test.)
-- [ ] A PC overheating from a missing cooler or paste fails the same way on both (0.34, November 5, 2026. Booting PC 26 with an empty water loop caused the same native `CPU_HEAT` failure on both games. The missing-cooler or missing-paste case remains.)
+- [ ] A PC overheating from a missing cooler or paste fails the same way on both (0.45, November 6, 2026. The host's boot `CPU_HEAT` reached both screens with PC 213's cooler slot empty. The AIO head and radiator still rendered, so a complete removal remains to be checked.)
 - [x] GPU Tuner Apply and Reset from either player: same values, no restart (0.27, November 5, 2026: real slider and button interactions on both games)
 - [x] Fan Control custom curve, presets and Defaults from either player (0.27, November 5, 2026: real controls on PC 26, run acceptance-c)
 - [x] Late join with a custom fan curve applied (0.27, November 5, 2026: fresh guest restored the 11-point Max RPM curve and displayed 2000 RPM on all three GPU fans)
