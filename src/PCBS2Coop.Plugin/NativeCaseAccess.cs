@@ -71,6 +71,17 @@ internal sealed class NativeCaseAccess : IPanelNative
             CasePanelWorld.Remove(_coop.Activity.Get(_world.Local)!.Epoch, pc.Id, fact.Id, fact.Version), $"removal of {slot.name}");
     }
 
+    private bool RequestPipedOwnerRemoval(WorkingOnComputerState work, ComponentPC owner)
+    {
+        var slot = owner.Slot;
+        var mesh = work?.m_case;
+        if (slot == null || mesh == null || slot.GetCase()?.Pointer != mesh.Pointer || slot.GetComponent()?.Pointer != owner.Pointer)
+        { Refuse("The cooler's main slot isn't bound to this case."); return false; }
+        if (!owner.CanBeUninstalled()) { Refuse("Something is in the way of that cooler."); return false; }
+        var removal = new WorkingOnComputerState.__c__DisplayClass68_0 { __4__this = work, comp = owner };
+        return RequestRemove(owner, EditGesture.Remove, () => removal._DisassemblyTick_b__2());
+    }
+
     /// <summary>An install commit. Returns whether the native install may run now.</summary>
     internal bool RequestRefit(Slot slot, System.Action replay)
     {
@@ -285,6 +296,9 @@ internal sealed class NativeCaseAccess : IPanelNative
             {
                 if (Current == null) return NotReady();
                 var closure = __instance; var method = __originalMethod;
+                // Removing only the CPU-side proxy leaves the AIO's radiator and pipe links behind in the save.
+                if (method.Name == "_DisassemblyTick_b__2" && closure.comp?.GetProxiedComponent() is { m_includesPipes: true } owner)
+                    return Current.RequestPipedOwnerRemoval(closure.__4__this, owner);
                 System.Action replay = () => method.Invoke(closure, null);
                 return method.Name switch
                 {

@@ -113,6 +113,8 @@ For cables and power, read `docs/audit/phase-5.md`. They are command 9 gestures 
 
 For custom water cooling, read `docs/audit/phase-10.md`. It is command 9 gesture `Water` (whole-PC claim). Gestures: `<PipingTick>b__0`, `<DisassemblyTick>b__3`, `WaterLoopController.FillLoop`/`EmptyLoop`, and 4e installs/removals of water parts and slots. The editor sends its finished PC record in `Chunk` steps before the commit. The other game reloads that PC (`NativeObjectState.ReloadOnBench`), and the host captures part IDs by path.
 
+- A piped cooler can occupy multiple radiator slots and a CPU slot through `ComponentPC` proxies. From 0.47 the removal callback resolves a proxy to its piped owner, checks that the main slot can be uninstalled and removes the entire assembly through `Water`. Removing only the proxy leaves radiator and pipe entries that native Continue cannot restore.
+
 For BIOS, desktop and software (phase 6), read `docs/audit/phase-6.md` "Mirrored desktop input":
 - Command 13 `PcRepair`: a guest that can't show an edit (or rebind a PC) reloads that PC from the host's record with a notice (`NativePcRepair`); the host never repairs, its game is the reference. Edit replays need a camera even when `Camera.main` is null (player at a monitor).
 - Command 10 `Bios` (Apply/Factory Reset), command 11 `DesktopInput` (mirrored input batches; the sender's own game already ran them, so `Apply` skips the local actor), command 12 `Software` (host boot-drive records; the guest adopts the host's when they still differ after both settle).
