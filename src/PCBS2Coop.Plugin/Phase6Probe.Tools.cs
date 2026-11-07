@@ -11,6 +11,7 @@ internal sealed partial class Phase6Probe
 {
     private bool ToolsCommand(string command)
     {
+        if (DelidProbeCommand(command)) return true;
         if (command == "tools-report")
         {
             if (!Safe) return true;

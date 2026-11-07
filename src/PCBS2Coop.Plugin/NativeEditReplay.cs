@@ -490,7 +490,8 @@ internal sealed class NativeEditReplay
         {
             // Phase 6: a boot this game follows into BIOS sees the BIOS key held (NativeDesktopInput.BootFollow).
             if (__originalMethod.Name == nameof(InputButton.IsHeld) &&
-                (NativeDesktopInput.ForceHeld(__instance) || Phase6Probe.BiosKeyHeld(__instance)))
+                (NativeDesktopInput.ForceHeld(__instance) || Phase6Probe.BiosKeyHeld(__instance) ||
+                    (_step == null && Phase6Probe.DelidActionHeld(__instance))))
             { __result = true; return false; }
             if (_step == null) return true;
             __result = false;
