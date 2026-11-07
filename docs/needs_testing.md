@@ -2,7 +2,7 @@
 
 What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
 
-Current build: **0.48**. Tick a line when it passes, and note the date if it fails.
+Current build: **0.49**. Tick a line when it passes, and note the date if it fails.
 
 Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
 
@@ -62,7 +62,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 ## Water-cooling table ([phase 9](audit/phase-9.md))
 
 - [x] Water-cool a GPU (pads, paste, block): the finished card is in both inventories (0.35, November 5, 2026. The guest completed the real GTX 1070 procedure with the EKWB RGB block.)
-- [ ] Install that card from each side
+- [x] Install that card from each side (0.49, November 7, 2026. Host and guest each selected the converted GTX 1070 in the real inventory. Both native installs and remote replays kept its EKWB block and fittings.)
 - [ ] Same with RAM, a motherboard and a radiator
 - [x] The other player gets "Someone is using the water-cooling table." (0.35, November 5, 2026. The host saw the refusal while the guest worked on the GPU.)
 - [ ] Esc halfway through: nothing shared
