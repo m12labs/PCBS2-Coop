@@ -9,7 +9,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 ## Workbench: building a PC ([phase 4](audit/phase-4.md), 4f)
 
 - [x] Build a full PC from an empty case (board, CPU, cooler, RAM, GPU, drives, PSU, fans), host and guest each (0.47, November 7, 2026. The host built PC 1000 and the guest built PC 1115. Both native part graphs matched for each build.)
-- [ ] Take a full PC apart again, host and guest each
+- [x] Take a full PC apart again, host and guest each (0.48–0.49, November 7, 2026. Both stripped their builds to the case and two stock fans. Both games agreed on the remaining parts and zero internal cables.)
 - [x] Two identical parts (RAM sticks, fans): remove one, the other stays (0.30, November 5, 2026: both top fans stayed when the identical rear fan was removed)
 - [x] Both players work on different parts of the same PC at once: the second edit attempt is refused under the phase 4e waiting rule (0.30, November 5, 2026)
 - [x] Both players go for the same slot at once: one wins, one gets a refusal (0.30, November 5, 2026)
