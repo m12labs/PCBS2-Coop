@@ -96,7 +96,8 @@ internal sealed class NativeSoftwareSync : ISoftwareNative
                 var quiet = Time.realtimeSinceStartup - Math.Max(host.LocalChangedAt, host.Received);
                 if (quiet < 2f || _coop.Desktop?.Busy(id) == true || (vc != null && NativeDesktopInput.SurfaceOf(vc) == DesktopSurface.Boot && quiet < 10f))
                     continue;
-                Project(pc, host.DrivePath, host.Bytes);
+                Project(vc, drive, host.Bytes);
+                Plugin.Logger.LogInfo($"[software] PC {id} boot drive {host.DrivePath}: this game's software differed from the host's; adopted the host's record ({host.Bytes.Length} bytes).");
                 host.LocalHash = host.Hash;
                 host.Reported = true;
             }
@@ -108,19 +109,19 @@ internal sealed class NativeSoftwareSync : ISoftwareNative
         }
     }
 
-    private void Project(PcFact pc, string path, byte[] bytes)
+    private static void Project(VirtualComputer vc, PartInstance drive, byte[] bytes)
     {
-        var record = _coop.Objects.RecordFor(pc.Id);
-        if (record == null) throw new InvalidOperationException("The native PC record is still loading.");
-        if (_coop.Objects.IdOf(record) != pc.Id) throw new InvalidDataException("The software record belongs to another PC.");
-        var bios = record.GetBiosConfig(false);
-        if (!NativeObjectState.Parts(record).TryGetValue(path, out var drive) || drive == null ||
-            bios?.GetBootDrive()?.Pointer != drive.Pointer)
-            throw new InvalidDataException("The accepted boot drive is not present here.");
         var software = NativeSoftwareCodec.Read(bytes); // Host-produced bytes only.
-        // Phase 11: keep the light objects the running lights hold, with the host's settings.
-        NativeProjection.Run(() => { NativeCustomization.KeepLights(drive.m_software, software); drive.m_software = software; });
-        Plugin.Logger.LogInfo($"[software] PC {pc.Id} boot drive {path}: this game's software differed from the host's; adopted the host's record ({bytes.Length} bytes).");
+        NativeProjection.Run(() =>
+        {
+            // Keep the light objects the running lights hold, with the host's settings.
+            NativeCustomization.KeepLights(drive.m_software, software);
+            drive.m_software = software;
+            // The running desktop caches its installed programs and icons separately from the drive record.
+            if (vc?.InOS() == true && vc.m_os is { } os &&
+                !(os.m_programsInstalled?.ToArray() ?? Array.Empty<string>()).SequenceEqual(software.m_programs?.ToArray() ?? Array.Empty<string>()))
+                vc.AppsUpdate();
+        });
     }
 
     internal void Update()
