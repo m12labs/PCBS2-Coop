@@ -649,26 +649,30 @@ internal sealed partial class Phase6Probe
     {
         var bits = command.Split(':');
         if (bits.Length is < 3 or > 4 || !int.TryParse(bits[2], out var index) || index < 0)
-            throw new ArgumentException("aim:<bench|cupboard|peripheral|light-switch>:<index>[:height-offset]");
+            throw new ArgumentException("aim:<bench|cupboard|peripheral|light-switch|room-wheel>:<index>[:height-offset]");
         var offset = 0f;
         if (bits.Length == 4 && (!float.TryParse(bits[3], System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out offset) || !float.IsFinite(offset) || Math.Abs(offset) > 1))
             throw new ArgumentException("Aim height offset must be within one metre.");
         var root = LocalPlayer.Root;
         if (Camera.main == null || root == null) throw new InvalidOperationException("No workshop player.");
+        var roomWheel = bits[1] == "room-wheel";
         Component target = bits[1] switch
         {
             "bench" => Object.FindObjectOfType<SaveLoadSystem>().benchSlots[index],
             "cupboard" => Object.FindObjectsOfType<Cupboard>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             "peripheral" => Object.FindObjectsOfType<PeripheralSlot>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             "light-switch" => Object.FindObjectsOfType<LightSwitch>().OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
+            "room-wheel" when index <= 1 => Object.FindObjectsOfType<AddressableFlag>().Single(flag =>
+                flag.m_decorationType == DecorationType.COLOURWHEEL && flag.m_colourWheel != null &&
+                DesktopPath(flag.transform, null).StartsWith("Workshop/", StringComparison.Ordinal)).m_colourWheel,
             _ => throw new ArgumentException("Unknown aim target.")
         };
         var col = target is BenchSlot bench ? bench.m_caseCol : target.GetComponentInChildren<Collider>();
-        var point = col != null ? col.bounds.center : target.transform.position + Vector3.up;
+        var point = roomWheel ? target.transform.position : col != null ? col.bounds.center : target.transform.position + Vector3.up;
         point.y += offset;
         var reset = (target as BenchSlot)?.PlayerResetPosition;
-        var pos = reset != null ? reset.transform.position : point + target.transform.forward * 1.3f;
+        var pos = reset != null ? reset.transform.position : point + target.transform.forward * (roomWheel && index == 1 ? -1.3f : 1.3f);
         pos.y = root.position.y;
         var cc = LocalPlayer.Controller;
         var wasEnabled = cc != null && cc.enabled;

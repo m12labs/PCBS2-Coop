@@ -228,6 +228,7 @@ internal sealed partial class Phase6Probe
             foreach (var l in list) items.Add($"{(int)l.DecType}|{l.ID}|{l.SelectionIndex}|{l.CurrentIndex}|{(int)l.Theme}");
         }
         var tm = Object.FindObjectOfType<ThemeManager>();
+        var wheel = tm?.m_attachedColourWheel;
         var ctrl = GameController.Get();
         var w = coop.Workshop?.Handler;
         var ceilingFans = Object.FindObjectsOfType<CeilingFan>().Where(fan => fan?.animator != null)
@@ -255,10 +256,18 @@ internal sealed partial class Phase6Probe
             ceilingFans,
             activeDecoration = Object.FindObjectsOfType<DecorationSwitch>(true).Where(s => s.IsDecorationActive()).Select(s => s.m_id.ToString()).ToArray(),
             worldDecoration = w?.ActiveDecoration, decorator = w?.Decorator?.ToString(), loading = dec?.Loading,
+            viewingRoomWheel = ctrl?.GetCurrentState()?.TryCast<LookingAtMonitorState>()?.m_isColourPicker == true,
             decorations = items.Count, decorHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", items))))[..16],
             decorList = items.ToArray(),
             colour = tm == null ? null : $"{tm.m_currentColour.r:0.00},{tm.m_currentColour.g:0.00},{tm.m_currentColour.b:0.00}", pulse = tm?.GetPulse(),
-            colourWheelActive = tm?.m_attachedColourWheel?.isActiveAndEnabled,
+            colourWheelActive = wheel?.isActiveAndEnabled,
+            roomWheel = wheel == null ? null : new { path = DesktopPath(wheel.transform, null), wheel.forTheme, wheel.ForTablet,
+                selected = wheel.m_colourWheelSelectable?.IsSelected, pulseVisible = wheel.pulseButton?.gameObject.activeInHierarchy,
+                staticVisible = wheel.staticButton?.gameObject.activeInHierarchy },
+            themeLights = tm?.m_Lights?.ToArray().Where(light => light != null && light.isActiveAndEnabled).Select(light => new
+            {
+                path = DesktopPath(light.transform, null), light.intensity, light.color.r, light.color.g, light.color.b
+            }).ToArray(),
             pictures,
             pcs = coop.Objects.Model.Pcs.Count, imported = coop.Objects.Model.Pcs.Count(p => p.Provenance.Origin == InstanceOrigin.Imported),
         };
