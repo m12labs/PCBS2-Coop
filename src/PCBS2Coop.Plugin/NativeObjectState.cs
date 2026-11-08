@@ -717,7 +717,13 @@ internal sealed class NativeObjectState : IWorldState
     internal static void CheckParts(PcFact pc, ComputerSave save)
     {
         var parts = BindingParts(save, pc);
-        if (parts.Count != pc.Links.Count) throw new InvalidDataException("Carried PC topology mismatch.");
+        if (parts.Count != pc.Links.Count)
+        {
+            var expected = pc.Links.Select(link => link.Path).ToHashSet(StringComparer.Ordinal);
+            var missing = expected.Except(parts.Keys).Take(4);
+            var extra = parts.Keys.Except(expected).Take(4);
+            throw new InvalidDataException($"Carried PC topology mismatch ({pc.Links.Count} expected, {parts.Count} native; missing [{string.Join(", ", missing)}]; extra [{string.Join(", ", extra)}]).");
+        }
         var nativeAliases = new Dictionary<long, NetObjectId>(); var logicalAliases = new Dictionary<NetObjectId, long>();
         foreach (var (path, part) in parts)
         {
