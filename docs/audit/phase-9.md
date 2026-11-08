@@ -222,3 +222,5 @@ The resident PC pickup case is inapplicable to Delidding in game 1.17.02. With t
 In 0.51 the guest used Escape after three of six native RAM water-cooling steps. Both inventories stayed unchanged and the claim cleared. [Halfway Escape record](acceptance-2026-11-04.md#halfway-escape-from-the-ram-water-cooling-tool-in-051)
 
 In 0.51 both inventories received the guest's finished two-stick RAM assembly, X570 with its CPU and VRM monoblock, and Alphacool radiator with its custom Silent Wings fan. The guest installed the X570 and radiator. Both games restored their attached parts on cold Continue and fresh admission. [Conversion and installation record](acceptance-2026-11-04.md#ram-x570-and-radiator-table-results-in-051)
+
+On November 8 both players installed each finished variant from the native inventory and the other game replayed it. The guest also removed both modules of the host-installed RAM assembly, with clean native checks on both games before reinstalling it. [Two-way installation record](acceptance-2026-11-04.md#ram-x570-and-radiator-table-results-in-051)
