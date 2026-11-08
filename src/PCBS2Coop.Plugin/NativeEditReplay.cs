@@ -382,7 +382,9 @@ internal sealed class NativeEditReplay
                 if (!string.IsNullOrEmpty(c.Connector)) gc.m_cableConnectorType = PartsDatabase.s_instance.GetDesc(c.Connector, null);
                 if (c.Pins != null) gc.m_pinMaterialIndices = c.Pins;
             }
-            return NativeProjection.Run(call);
+            // A USB slot refreshes the edited PC's apps via the game's active-workstation getter.
+            var station = run.Plan.Slot?.m_slotType == Slot.SlotType.USB ? run.Plan.Bench?.m_workStation : null;
+            return NativeProjection.Run(call, station);
         }
         finally
         {
@@ -477,20 +479,6 @@ internal sealed class NativeEditReplay
         {
             if (_step == null || !_inDestroy || _step.StandIn == null) return true;
             __result = _step.StandIn;
-            return false;
-        }
-    }
-
-    /// <summary>The front USB slot refreshes the edited PC's apps through the game's active-workstation getter.</summary>
-    [HarmonyPatch(typeof(WorkStation), nameof(WorkStation.GetGetActiveWorkStation))]
-    internal static class UsbWorkstationGuard
-    {
-        private static bool Prefix(ref WorkStation __result)
-        {
-            if (_step?.Plan.Slot?.m_slotType != Slot.SlotType.USB) return true;
-            var station = _step.Plan.Bench?.m_workStation;
-            if (station == null) return true;
-            __result = station;
             return false;
         }
     }

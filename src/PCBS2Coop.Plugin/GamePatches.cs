@@ -59,7 +59,7 @@ internal static class GamePatches
             replay.PatchAll(typeof(NativeEditReplay.LastDifferentGuard));
             replay.PatchAll(typeof(NativeEditReplay.EnterGuard));
             replay.PatchAll(typeof(NativeEditReplay.PreviousStateGuard));
-            replay.PatchAll(typeof(NativeEditReplay.UsbWorkstationGuard));
+            replay.PatchAll(typeof(NativeProjection.WorkstationGuard));
             replay.PatchAll(typeof(NativeEditReplay.InputGuard));
             replay.PatchAll(typeof(NativeEditReplay.OrientationGuard));
             replay.PatchAll(typeof(NativeEditReplay.SelectableGuard));
@@ -94,6 +94,7 @@ internal static class GamePatches
             var desktop = new Harmony(Plugin.Guid + ".desktop");
             desktop.PatchAll(typeof(NativeDesktopInput.BootFollow));
             desktop.PatchAll(typeof(NativeDesktopInput.ReplayedProgramIcon));
+            desktop.PatchAll(typeof(NativeDesktopInput.ProgramManagerWorkstation));
             desktop.PatchAll(typeof(NativeDesktopInput.BootPromptAtlas));
             desktop.PatchAll(typeof(NativeDesktopInput.BootPromptText));
             desktop.PatchAll(typeof(NativeDesktopInput.MonitorTickScope));

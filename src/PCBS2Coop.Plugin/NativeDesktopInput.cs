@@ -565,6 +565,30 @@ internal sealed partial class NativeDesktopInput : IDesktopInputNative
         }
     }
 
+    // Start runs a frame after the mirrored click and reads the workstation even when this player is walking.
+    [HarmonyPatch(typeof(AddProgramApp), "Start")]
+    internal static class ProgramManagerWorkstation
+    {
+        private static void Prefix(AddProgramApp __instance, out WorkStation __state)
+        {
+            __state = NativeProjection.Workstation;
+            var self = _instance;
+            if (self?._world.Admitted != true || !self._coop.WorldReady) return;
+            var os = __instance.GetComponentInParent<OS>();
+            if (os == null) return;
+            foreach (var pc in self._coop.Objects.Model.Pcs.Where(x => x.Location.Place == PcPlace.Bench))
+            {
+                var station = self._coop.Objects.FindBench(pc.Id)?.m_workStation;
+                var computer = station?.m_virtualComputer;
+                if (computer?.m_os?.Pointer != os.Pointer || self._coop.Objects.IdOf(computer.ComputerSave) != pc.Id) continue;
+                NativeProjection.Workstation = station;
+                break;
+            }
+        }
+
+        private static void Finalizer(WorkStation __state) => NativeProjection.Workstation = __state;
+    }
+
     private static void Hover(Pointer p, GameObject over)
     {
         p.Hover = Live(p.Hover);
