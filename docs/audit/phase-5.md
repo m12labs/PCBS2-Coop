@@ -11,7 +11,7 @@ This audit is static: structural declarations and native ISIL in the preserved d
 ### Plugging a cable in
 
 - **Gesture.** In the work state's cabling mode, `WorkingOnComputerState.CablingTick` registers a long press on a connector. Its callback `<>c__DisplayClass70_0.<CablingTick>b__0` (field `connector`) constructs `ConnectCableState(case, camera, connector)` and makes it current.
-- **Entering `ConnectCableState`** can already change the PC. `OnStateEnter` looks for free connectors that cable can reach. When a fan header has none, it may **install a PSU splitter by itself**:
+- **Entering `ConnectCableState`** can already change the PC. `OnStateEnter` looks for free connectors that cable can reach. When an eligible GPU or SATA power connection has no compatible free PSU output, the game may **install a PSU splitter by itself**:
   - `CableInstance.Uninstall` + `DestroyCable` on the cable already there;
   - `PartInstance.NewPartInstance("PSU_SPLITTER_3X6PIN"/"PSU_SPLITTER_3X8PIN")`;
   - `Slot.InstantiatePart` into one of `Case.psuSplitterSlots`;
@@ -125,7 +125,7 @@ Release build: 0 warnings, 0 errors. Deployed to the game folder and checked ide
 ## Acceptance cases (owner's game test after 5b–5c)
 
 1. Plug in and unplug each standard cable type (24-pin, CPU 8-pin, GPU, SATA power/data, fan, front panel/USB headers where present), in both directions.
-2. A fan header with no free connector: the game's automatic splitter is shown on both games.
+2. A GPU or SATA power connection with no free compatible PSU output: the game's automatic splitter is shown on both games.
 3. A custom-colour cable: the same colours on both games.
 4. Esc in the cable state with nothing connected: no change, and the PC is free again.
 5. The waiting rule: the other player is refused while a cable state is open on that PC, and can still use a different PC.
@@ -146,6 +146,8 @@ In 0.27, the guest unplugged and reconnected 24-pin, GPU and case-fan leads thro
 In 0.29, overlapping CPU 8-pin and SATA data edits passed in both directions after a fix to wait for the local wiring replay before rebinding assembly. Front-panel and SATA power removal and reconnection also passed with the native callbacks. The native automatic splitter checks `Gpu6PinBoth`, `Gpu8PinBoth` and `HDDPower`, so the written fan-header scenario needs a PSU-power fixture instead. [Concurrency follow-up](acceptance-2026-11-04.md#overlapping-cable-edits-on-separate-pcs-028--029)
 
 On November 8, 2026 a two-GPU fixture exhausted all five compatible PSU leads in 0.51. The native chooser displayed “No More Power Slots!” with QuickCable enabled. A manually fitted `PSU_SPLITTER_3X8PIN` and two GPU leads matched on both games. The native automatic insertion remains open. [Run record](acceptance-2026-11-04.md#exhausted-psu-leads-and-a-manual-splitter-in-051)
+
+In 0.55 the real Install catalog rejected a second RTX 3090 on the MSI B550 Tomahawk because the board lacks SLI support. The automatic cable branch during assembly still needs a native-compatible fixture. [Fixture result](acceptance-2026-11-04.md#exhausted-psu-leads-and-a-manual-splitter-in-051)
 
 In 0.43 the P shortcut while walking and aiming at a monitor started only the local game. Those two `InteractableComputer.GetInteractions` callbacks are distinct from the bench's P callbacks. The 0.44 hooks share both through the existing Power edit. The host switched off and the guest switched on from that prompt. Both games reached the desktop after the guest press. [Run record](acceptance-2026-11-04.md#walking-monitor-power-in-044)
 
