@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using PCBS2Coop.Network;
 using UnityEngine;
 
@@ -16,6 +17,53 @@ namespace PCBS2Coop;
 /// </summary>
 internal sealed partial class NativeComponentEdits
 {
+    private const string FilledSplitterSuffix = "#Filled";
+    [ThreadStatic] private static (string Origin, string End) _savedSplitterRoute;
+
+    // The native save records the occupied PSU socket as e.g. 117#Filled. The cable routes list 117.
+    // During native reconstruction, use the saved ID for that route so the original lead finds its real socket.
+    [HarmonyPatch(typeof(Case), nameof(Case.CreateCableAsync), typeof(Il2CppReferenceArray<Cable>),
+        typeof(Il2CppReferenceArray<PowerConnector>), typeof(PartDesc), typeof(string), typeof(string),
+        typeof(PartDesc), typeof(Il2CppStructArray<CableSave.Node>), typeof(Il2CppStructArray<int>), typeof(bool),
+        typeof(Il2CppSystem.Action<CableInstance>), typeof(SaveLoadSystem.FinishCabling), typeof(BenchSlot))]
+    internal static class SavedSplitterCable
+    {
+        private static void Prefix(string Origin, string End, bool SnapInstall, out (string, string) __state)
+        {
+            __state = _savedSplitterRoute;
+            if (SnapInstall && CoopSaves.Current != CoopSaves.Mode.None)
+                _savedSplitterRoute = (FilledId(Origin), FilledId(End));
+        }
+
+        private static void Finalizer((string, string) __state) => _savedSplitterRoute = __state;
+
+        private static string FilledId(string id) => id?.EndsWith(FilledSplitterSuffix, StringComparison.Ordinal) == true ? id : null;
+    }
+
+    [HarmonyPatch]
+    internal static class SplitterCableRoute
+    {
+        private static IEnumerable<System.Reflection.MethodBase> TargetMethods() => new[]
+        {
+            AccessTools.Method(typeof(Cable), nameof(Cable.GetOriginPoints)),
+            AccessTools.Method(typeof(Cable), nameof(Cable.GetEndPoints)),
+        };
+
+        private static void Postfix(System.Reflection.MethodBase __originalMethod,
+            ref Il2CppSystem.Collections.Generic.List<string> __result)
+        {
+            var id = __originalMethod.Name == nameof(Cable.GetOriginPoints) ? _savedSplitterRoute.Origin : _savedSplitterRoute.End;
+            if (id == null || __result == null || __result.Contains(id)) return;
+            var routeIndex = __result.IndexOf(id[..^FilledSplitterSuffix.Length]);
+            if (routeIndex < 0) return;
+
+            // Preserve the index used by the native route and avoid altering a cable prefab's cached list.
+            var points = new Il2CppSystem.Collections.Generic.List<string>(__result.Count);
+            for (var i = 0; i < __result.Count; i++) points.Add(i == routeIndex ? id : __result[i]);
+            __result = points;
+        }
+    }
+
     /// <summary>The wiring of one PC at a moment: cables by key, splitter/adapter slots, power and the inventory.</summary>
     internal sealed class WireState
     {

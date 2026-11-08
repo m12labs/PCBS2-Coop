@@ -298,7 +298,11 @@ internal sealed class NativeAssembly : IAssemblyNative
     internal static void CheckProfile(PcFact pc, ComputerSave save)
     {
         if (pc.BuildProfile is { } profile && Signature(pc, save, profile.InternalConnectors) != profile.Signature)
-            throw new InvalidDataException($"PC {pc.Id}: unconfirmed orientation, case membership or internal cable connections.");
+        {
+            var wires = save.cablesInstalled?.Take(20).Select(c =>
+                $"{c.m_from}>{c.m_to} {c.m_desc}/{c.m_connectorType} fixed={c.m_isNonModularConnector} chosen={c.m_playerChoice} pins={c.m_pinMaterialIndices?.Length ?? -1}");
+            throw new InvalidDataException($"PC {pc.Id}: unconfirmed orientation, case membership or internal cable connections (native cables [{string.Join(", ", wires ?? Array.Empty<string>())}]).");
+        }
     }
 
     private const string GeneratedStandoff = "Standoff(Clone)";

@@ -71,6 +71,8 @@ internal static class GamePatches
             var cables = new Harmony(Plugin.Guid + ".cables");
             cables.PatchAll(typeof(NativeComponentEdits.ConnectIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.UnplugIntercept));
+            cables.PatchAll(typeof(NativeComponentEdits.SavedSplitterCable));
+            cables.PatchAll(typeof(NativeComponentEdits.SplitterCableRoute));
             cables.PatchAll(typeof(NativeComponentEdits.PowerButtonIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.BenchPowerOnIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.BenchPowerToggleIntercept));
