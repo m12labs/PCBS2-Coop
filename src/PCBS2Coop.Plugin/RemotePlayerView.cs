@@ -13,6 +13,7 @@ internal sealed class RemotePlayerView
 {
     private const float Height = 1.8f;
     private const float Radius = 0.3f;
+    private const float CameraClearance = 0.65f;
     /// <summary>Faster than this between two frames is a teleport (spawn, respawn), not movement.</summary>
     private const float TeleportSpeed = 10f;
 
@@ -156,10 +157,19 @@ internal sealed class RemotePlayerView
         t.position = Vector3.Lerp(t.position, _targetPos, k);
         t.rotation = Quaternion.Euler(0, Mathf.LerpAngle(t.eulerAngles.y, _targetYaw, k), 0);
         SnapToFloor(t.position, k);
-        if (_animator != null) Animate(t.position, dt);
 
-        var cam = Camera.main;
-        if (cam != null) _label.rotation = Quaternion.LookRotation(_label.position - cam.transform.position);
+        var cam = Camera.main ?? GameController.Get()?.GetActiveCamera();
+        if (cam != null)
+        {
+            // Both players can stand at the same bench. Keep the model out of a camera that overlaps it.
+            var fromBody = cam.transform.position - _visual.position;
+            fromBody.y -= Mathf.Clamp(fromBody.y, 0f, Height);
+            var visible = fromBody.sqrMagnitude >= CameraClearance * CameraClearance;
+            if (_visual.gameObject.activeSelf != visible) _visual.gameObject.SetActive(visible);
+            if (visible) _label.rotation = Quaternion.LookRotation(_label.position - cam.transform.position);
+        }
+        if (_animator != null && _visual.gameObject.activeSelf) Animate(t.position, dt);
+        else _lastPos = t.position;
     }
 
     /// <summary>
@@ -223,7 +233,7 @@ internal sealed class RemotePlayerView
     /// <summary>Show or hide the box. Derived from the accepted facts; it has no colliders and no game components.</summary>
     public void SetCarrying(bool carrying)
     {
-        if (_animator != null) _animator.SetBool(CarryingParam, carrying);
+        if (_animator != null && _visual.gameObject.activeSelf) _animator.SetBool(CarryingParam, carrying);
         if (!carrying) { if (_box != null) _box.SetActive(false); return; }
         if (_box == null)
         {

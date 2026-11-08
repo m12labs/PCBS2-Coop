@@ -500,7 +500,7 @@ internal sealed partial class CoopController
 
     private void TakeSnapshot()
     {
-        if (Software?.Handler.Busy == true) return; // A native software result is still being transferred.
+        if (Software?.Handler.Busy == true || Workshop?.Settled == false) return;
         var saves = Object.FindObjectOfType<SaveLoadSystem>();
         var level = Object.FindObjectOfType<LevelLoadPersistency>();
         if (saves == null) return;
@@ -591,6 +591,8 @@ internal sealed partial class CoopController
                 throw new InvalidOperationException("The previous co-op save is still being paired.");
             if (Software?.Handler.Busy == true)
                 throw new InvalidOperationException("A software result is still being shared; wait before saving.");
+            if (!_syncSaving && Workshop?.Settled == false)
+                throw new InvalidOperationException("Workshop decorations are still being shown; wait before saving.");
             var s = Object.FindObjectOfType<SaveLoadSystem>();
             var wc = Object.FindObjectOfType<WorkshopController>();
             var db = PartsDatabase.s_instance;
@@ -819,11 +821,10 @@ internal sealed partial class CoopController
                       (Session.Role == Role.Client || Session.GuestState == GuestState.InWorld);
         if (!inWorld) { DestroyView(); return; }
 
-        var local = inWorkshop ? LocalPlayer.Find() : null;
-        if (local != null && Time.realtimeSinceStartup >= _nextSend)
+        if (inWorkshop && Time.realtimeSinceStartup >= _nextSend && LocalPlayer.Find(forRemote: true) is { } local)
         {
             _nextSend = Time.realtimeSinceStartup + SendInterval;
-            Session.SendState(local.Value with { Cursor = _localCursor });
+            Session.SendState(local with { Cursor = _localCursor });
         }
 
         var fresh = _lastRemoteAt >= 0 && Time.realtimeSinceStartup - _lastRemoteAt < RemoteTimeout;
@@ -934,7 +935,7 @@ internal static class LocalPlayer
     private static CharacterController _cc;
     private static Transform _camera;
 
-    public static PlayerState? Find()
+    public static PlayerState? Find(bool forRemote = false)
     {
         if (_cc == null)
         {
@@ -945,8 +946,24 @@ internal static class LocalPlayer
         }
         var t = _cc.transform;
         var feet = t.TransformPoint(_cc.center) - Vector3.up * (_cc.height * 0.5f * t.lossyScale.y);
+        if (forRemote && WorkPosition() is { } standingAt) feet += standingAt - t.position;
         var yaw = (_camera != null ? _camera : t).eulerAngles.y;
         return new PlayerState(feet.x, feet.y, feet.z, yaw, true);
+    }
+
+    private static Vector3? WorkPosition()
+    {
+        var controller = GameController.Get();
+        var state = controller?.GetCurrentState();
+        if (state == null || state.TryCast<WalkingState>() != null) return null;
+
+        // Work mode moves the first-person controller under the floor. Its outermost work state remembers
+        // where the player stood, even while a paste, cable or inventory state covers it.
+        var work = state.TryCast<WorkingOnComputerStateBase>();
+        if (controller.m_previousState != null)
+            foreach (var previous in controller.m_previousState)
+                if (previous?.TryCast<WorkingOnComputerStateBase>() is { } outer) work = outer;
+        return work?.m_lastPlayerPosition;
     }
 
     public static Transform Root => _cc != null ? _cc.transform : null;

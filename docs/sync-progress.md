@@ -1,5 +1,17 @@
 # PCBS2 Co-op synchronization progress
 
+**November 8, 2026 — Free Build gameplay acceptance complete, version 0.57.** All 90 applicable gameplay checks passed. The native automatic PSU splitter and all six GPU leads survived cold Continue and guest admission. The 21 owner save files remained byte-identical. Release built with zero warnings or errors and all 722 automated checks passed. Phase 13 presentation and phase 14 release acceptance precede phase 15 Career. [Gameplay checklist](needs_testing.md) · [Run record](audit/acceptance-2026-11-04.md#automatic-psu-splitter-during-gpu-assembly) · [Roadmap](../plan.md)
+
+**November 5, 2026 — overlapping cable edits, version 0.29.** `6f05b8c` waits for the local cable replay before checking the host's new assembly profile. The two-game repeat overlapped CPU 8-pin and SATA data unplug and reconnect with clean native checks and no repair. Front-panel and SATA power also matched. **719/719** automated checks passed. [Run record](audit/acceptance-2026-11-04.md#overlapping-cable-edits-on-separate-pcs-028--029)
+
+**November 5, 2026 — wallpaper gallery, version 0.28.** A stale Windows wallpaper path hid the Windows picture tile despite a readable cached copy. `f69429f` restores the preview. Actual host and guest wallpaper selections matched on both games. The native browser refused a 9.45 MB picture and restored the previous one. **719/719** automated checks passed. [Run record](audit/acceptance-2026-11-04.md#real-wallpaper-picker-028)
+
+**November 5, 2026 — powered Continue and late join, version 0.27.** A native BIOS prompt formatting error left a powered PC at Boot in cold co-op processes. The fix confines recovery to the prompt's atlas and text calls during a co-op boot step. Both games reached the desktop on the first boot in the repeat, with matching world hashes and the host's OCCT window. [Run record](audit/acceptance-2026-11-04.md#cold-continue-and-late-join-027)
+
+**November 5, 2026 — acceptance follow-up, version 0.26.** Two guest presses reproduced a walking bench power shortcut that booted only the guest. `db13358` routes that shortcut through the shared Power edit. The guest's real bench shortcut, native case button and real work HUD button powered PC 213 on and off on both games. The guest's powered pickup turned it off on both. **719/719** automated checks passed. A fresh guest hit a native boot prompt exception while loading the powered PC. [Run record](audit/acceptance-2026-11-04.md#run-acceptance-c-walking-power-and-powered-pickup)
+
+**November 4, 2026 — acceptance follow-up, version 0.25, ongoing.** [Run record](audit/acceptance-2026-11-04.md). The >35-PC case passed with 39 built PCs through save, late join, `/sync`, fresh-process Continue and another join, with matching native checks and object hashes. It exposed duplicate admission snapshots after the sender queue drained; `de2bee3` fixes that race and the received-generation acknowledgement. 0.25 reads 0.24 saves. **715/715** automated checks; Release 0/0. Steam is owner-confirmed complete; prior building and save/rejoin evidence is preserved. Run acceptance-a passed the guest's busy-table switch refusal. All 21 owner-save files stayed byte-identical. Other combined feature cases in [needs_testing.md](needs_testing.md) remain open. Probe ownership and resume-history defects were fixed separately.
+
 **November 2, 2026 — phase 12 workshop, wallpapers and PC import, version 0.24 (checked in owned two-game runs).** [Phase 12 audit](audit/phase-12.md); the owner answered its eight questions the same day.
 - Decorator app (tablet): one player at a time ("Someone is decorating the workshop.", "Decorating" under the name). Picks and the light colour reach the other game. The room shows new decorations after the next load, the same way on both games.
 - The light switch (and the lights key) changes both rooms. Lights, the seasonal decoration and the host's season are kept with the world, so Continue and a joining guest get them.
@@ -29,7 +41,7 @@
 - When the guest itself installed a part or removed a panel, its game could reload that PC ("PC reloaded to avoid a desync") and drop out of work mode. Fixed on the owner's go-ahead: blocker links on slots are no longer compared on the other game.
 - Clearer messages: a restored save is announced in the world too, and a lost connection says so instead of "PeerNotFound".
 
-**624/624** checks; Release 0/0; deployed. Still open: Steam rejoin, a world over 35 PCs, and the owner's own pass of the deferred cable, water-cooling and simulation checklists.
+**624/624** checks; Release 0/0; deployed. The >35-PC case subsequently passed in 0.25 (November 4, 2026); the remaining deferred cable, water-cooling and simulation checklists remain open. Steam rejoin was subsequently owner-confirmed complete (November 4, 2026).
 
 **November 1, 2026 — phase 8 durable saves and rejoin, version 0.21 (code and model tests only, not run in game).** [Phase 8 audit](audit/phase-8.md) of saves, rejoin and resume across phases 2–7, done without starting the game; the owner answered its nine questions the same day.
 
@@ -231,7 +243,7 @@ Detailed evidence: [SS-001–042](audit/session-and-consistency.md).
 | Stable PC/part/slot/connector/job/order/operation IDs | | ✅ | | Phase 3c binds PC/part identities and workshop locations, persisting allocator/tombstones and native aliases. Phase 3d binds session activity and acquisition tokens to actor epochs. Connector/job/order identities remain later work. |
 | Conflict resolution, reliable mutations, exactly-once outcomes | | ✅ | | Host-ordered reliable changes and duplicate/out-of-order/stale handling. Phase 3d adds shared work, exclusive part claims and movement exclusion of an active PC (206 checks; D1–D3). Phase 3e: PC creation/removal is validated and canonicalized by the host with refusals shown to the requester (231 checks; E3–E5). Phase 3f verifies atomic transfers and pinned competing requests over the real network (F5); later families retain their own validation. |
 | Shared pause/time/simulation authority and host departure | | ✅ | | Phase 2: no shared pause (owner decision); the game keeps running in the background and sync continues during either player's pause (S3). Host departure returns the guest to the menu with the reason. Shared simulation time: phase 7. |
-| Co-op save ownership/isolation and fresh-process recovery | | ✅ | | Host/guest co-op folders stay separate from solo saves. Phase 3c pairs native saves with persistent identity and full carrier graphs; 3d clears saved transient activity on host resume (C1–C7, D2/D3). Wider recovery/migration remains phase 8. |
+| Co-op save ownership/isolation and fresh-process recovery | | | ✅ | Named host saves, isolated guest copies, backups, Load/Reset, interrupted-write recovery, the 39-PC case, and a fresh build through cold Continue and rejoin passed. |
 | World diagnostics, divergence detection, large payload delivery | | ✅ | | Phase 1c/1f: change-hash divergence, counters, world summary, census dumps. Phase 2: chunked snapshot transfer up to 64 MiB (2.2 MB saves in practice). Images: phase 12. Phase 3h (0.11, H1–H6): out-of-sync marker for divergence, unshown changes and unfinished PC loads on both games; chat box and the players' `/sync` save-and-reload repair. |
 
 ## Player, workshop, animation and sound
@@ -240,18 +252,18 @@ Detailed evidence: [PW-001–075](audit/player-workshop-and-presentation.md).
 
 | Feature | Not synced | Partially synced | Synced | Comments |
 | --- | :---: | :---: | :---: | --- |
-| Player position and horizontal facing | | | ✅ | 20 Hz send target; interpolated remote capsule. |
+| Player position and horizontal facing | | | ✅ | Interpolated remote movement, with an animated character and a capsule fallback. |
 | Workshop presence/remote visibility | | ✅ | | Flag/freshness gate; no scene identity/readiness or explicit exit snapshot. |
-| Capsule/visor and Host/Client label | | | ✅ | No animation rig or player collision. |
+| Character and Host/Client label | | | ✅ | The avatar has a name and activity label. Players pass through each other. Phase 13 covers detailed poses and presentation. |
 | Look pitch, gait, remote activity/tool/target/pose | | ✅ | | Phase 3d shares actor work targets and resource claims. Head/body/tool animation, gait, pitch and visible activity poses remain later work. |
 | PC/package/post-it pickup/carry/drop/store/spawn/despawn | | ✅ | | Phase 3e: catalog case spawn/switch, in-world carried-case delete and confirmed storage delete are host-approved changes applied once on both peers (E3–E5). Phase 3f adds host-approved pickup/drop/swap/store/retrieve, matching peer placement, a remote package box, races, departure recovery and stale-load suppression (F2/F5/F7, 0.8); packages and physical notes are refused (3g, 0.10): a world containing one can't be hosted. |
 | Bench/tool/workstation assignment and independent activities | | ✅ | | Phase 3d verifies independent native work benches/cameras, shared-PC activity and part-claim conflicts. Remote activity stays outside native singleton fields. Live transfers/workstation associations are 3f/3g. Phase 9 (0.22): one player per delidding/water-cooling table (command 15). Phase 11 (0.23): the case-modding table the same way, and switching a table's tool is shared (refused while in use). |
 | Job notes, package visuals, status/sale placards and ghost meshes | ✅ | | | Must follow underlying PC/job/location. |
 | Doors, workshop travel/upgrade and room customization | ✅ | | | Furniture/material/prefab/collision/AR-preview-versus-commit. |
 | Company name plate and generated textures | ✅ | | | Text, position, theme and material appearance. |
-| Light switches, roof lights, ceiling-fan ramp/audio | ✅ | | | Animation/effect chain identified in native excerpts. |
-| Seasons/decorations/clocks/traffic/ambience | ✅ | | | Full shared-world detail/phase parity selected; time/randomness/state paths remain unimplemented. |
-| Tool/screw/latch/connector animations and completion callbacks | ✅ | | | Visible replay differs from committing an action once. |
+| Light switches, roof lights, ceiling-fan ramp/audio | | ✅ | | The switch and L key share lights and fan speeds. The MSI wall picker shares colour and pulse. Detailed audio parity remains phase 13. |
+| Seasons/decorations/clocks/traffic/ambience | | ✅ | | The host's season and supported decorations are shared. Clocks and traffic are personal. Seasonal switches are absent in the default Free Build workshop. |
+| Tool/screw/latch/connector animations and completion callbacks | | ✅ | | Standard part, latch and cable edits use native animations. Detailed tool presentation and observer effects are phase 13. |
 | Tablet raise/lower/orientation/minimize/hidden transitions | ✅ | | | Callbacks, camera/input gates and remote representation. |
 | Footsteps, tool sound one-shots/loops and dust particles | ✅ | | | Timing, source attachment and stop/cleanup. |
 | Shared music/audio-reactive effects and photo/GIF content | ✅ | | | Shared track/effect phases and automatic required content transfer selected; personal preferences stay local. |
@@ -262,15 +274,15 @@ Detailed evidence: [HW-001–078](audit/hardware-and-building.md).
 
 | Feature | Not synced | Partially synced | Synced | Comments |
 | --- | :---: | :---: | :---: | --- |
-| PC/case/part identity, topology, installed/removed/held state | | | ✅ | Phase 3c synchronizes persistent baseline IDs, native topology bindings and carrier facts at save/join. Phase 3e creates/retires PCs with host-assigned IDs and gives parts a native load adds (default case fans) IDs through the change stream before a capture. Phase 3f adds atomic movement and makes default fan identities explicit at catalog creation. Phase 4e (0.14) shares every standard install and removal; 0.17 animates them on both games at once. The owner built a PC from start to finish in game (0.17); the full phase 4 acceptance (4f) is still to run. |
-| Component variants, compatibility and blockers | | | ✅ | 4e: the host checks fit and blockers with the game's own checks (0.17: unpaused, skipped for a part model it hasn't loaded); splitters/adapters since 5b. LED strips: the tool can't be opened in this build. Owner test pending for the full category list (4f). |
-| Screws/standoffs/socket/RAM/PCI locks/covers/hinges | | | ✅ | 4d: latches, CPU levers/shields, clips, covers and case panels are host-ordered with the game's animation (0.17: the CPU shield also moves on a paused game); screws and standoffs are automatic inside 4e edits. |
-| Paste/Q-tip/dust/cleaning/delid/varnish/pads | | ✅ | | Phase 9 (0.22, not tested in game): thermal paste on/off is a host-ordered whole-PC edit set in place on the other game; the delidding and water-cooling tables (pads, GPU paste) share their finished inventory items, one player per table. Cleaning is refused until career co-op (dust only builds up when a career day passes). The paste picture itself is each game's default. |
-| Cable endpoints/connectors/custom colours/pins/routing | | | ✅ | Phase 5b (0.15): plugging in and unplugging, automatic splitters and custom-colour cables, replayed with the game's animation. Hand-routing has no caller in this build. Marked synced by the owner (October 30, 2026); their full test (5d) is pending. |
-| Water loops/pipes/fittings/coolant/fill/drain/pump/run/direction | | | ✅ | Phase 10b (0.16): pipes, coolant fill/drain, water blocks, pumps and reservoirs; the other game reloads the finished PC (owner decision). The water-cooling workbench is not shared. Marked synced by the owner (October 30, 2026); their full test is pending. |
-| Case themes/paint/material/stickers/brush strokes/transforms | | ✅ | | Phase 11 (0.23, not tested in game): the case-modding table shares the finished design when it closes (one player per table); the host gives out design numbers; the other game reloads the PC on the table. Live co-op painting is not planned yet. |
-| LEDs/RGB/strip nodes and fan curves/direction/flipping/spin/blur | | ✅ | | Phase 11 (0.23, not tested in game): Lighting settings, presets and peripheral lights shared after each change, lights change in place. Fan flip with installs (4e); reverse spin is fixed per fan; blur follows fan speed. LED strips: the tool can't be opened in this build. |
-| Peripheral/desk/monitor/LCD assignment, plugs and power | | ✅ | | Phase 3g (0.10): workbench peripheral swaps (monitor, keyboard, mouse, mouse pad, headset) are host-approved and applied once on both games, verified in owned two-instance runs (G1–G7). Phase 5c (0.15): physical power (case and HUD buttons) is shared and restored after a load; each game runs its own boot screen. Desk/LCD assignment, screens and LED config remain (phases 6, 11). |
+| PC/case/part identity, topology, installed/removed/held state | | | ✅ | Host-ordered creation, removal, transfers and part edits. Two-game builds, teardown, interrupted edits and cold restore passed for the tested hardware. |
+| Component variants, compatibility and blockers | | | ✅ | Native fit and blocker checks, delidded and water-cooled variants, and refused edits were exercised in game. |
+| Screws/standoffs/socket/RAM/PCI locks/covers/hinges | | | ✅ | Native latches, levers, clips, covers and panels passed. The guest's manual GPU screw step waited and finished on both games, followed by a successful save. |
+| Paste/Q-tip/dust/cleaning/delid/varnish/pads | | ✅ | | Paste and finished delidding and water-cooling items passed. Tables are exclusive. Cleaning is deferred to Career. |
+| Cable endpoints/connectors/custom colours/pins/routing | | ✅ | | Native standard cables, custom colours, manual and automatic PSU splitters and power passed. Cold Continue and guest admission kept the automatic splitter and its leads. Hand routing has no native caller in this build. |
+| Water loops/pipes/fittings/coolant/fill/drain/pump/run/direction | | | ✅ | Supported pipe, coolant, water part and cold-restore cases passed. The peer reloads the finished PC. Specialist table results are shared through inventory. |
+| Case themes/paint/material/stickers/brush strokes/transforms | | ✅ | | Both players shared finished case designs from the exclusive table. Painting input stays with the editor. |
+| LEDs/RGB/strip nodes and fan curves/direction/flipping/spin/blur | | ✅ | | Lighting settings, colours, presets and effects passed. Fan Control curves share on Apply and late join. The LED strip tool is unreachable in this build. |
+| Peripheral/desk/monitor/LCD assignment, plugs and power | | ✅ | | Workbench peripheral swaps and physical power passed in both games, including cold Continue and rejoin. Display presentation details remain in phase 13. |
 | Condition/breakage/repair and powered/damage presentation | ✅ | | | Logical consequences versus visual damage evidence. |
 
 ## Computer screens, software and simulation
@@ -279,14 +291,14 @@ Detailed evidence: [SW-001–053](audit/screens-software-and-simulation.md).
 
 | Feature | Not synced | Partially synced | Synced | Comments |
 | --- | :---: | :---: | :---: | --- |
-| Power/boot/BIOS/no-signal/install/OS/restart/BSOD phases | | ✅ | | Phase 6: power, BIOS entry and boot screens mirrored. Phase 7 (0.20): a blue screen happens once, on both games, for the host's reason. |
+| Power/boot/BIOS/no-signal/install/OS/restart/BSOD phases | | ✅ | | Native shared power, BIOS, USB OS install, desktop boot and host-ordered blue screens were exercised in two games. |
 | BIOS pending/applied values, boot drive, CPU/GPU/RAM tuning | | ✅ | | BIOS Apply/Reset host-ordered (phase 6); GPU Tuner Apply/Reset host-ordered and live (0.20). |
-| Programs/files/folders/storage/junk/virus/OS clone/USB | ✅ | | | Canonical image and operation outcome, not only text. |
+| Programs/files/folders/storage/junk/virus/OS clone/USB | | ✅ | | Front USB, USB OS installation, program installation and the host boot-drive record were checked. Other content and clone paths retain their audit coverage. |
 | Flat/curved monitor routing/aspect/resolution/display | ✅ | | | Local render/camera binding to the correct PC. |
 | Case/component LCD text/graphs/sensors/time/power | ✅ | | | Data source, update clock/history and assignment. |
 | Windows/z-order/taskbar/minimize/maximize/cursor/focus/typing | | ✅ | | Phase 6 mirrors input; open apps reconcile, window positions don't. |
-| Wallpaper/images/GIF capture/trim/frame/encode/save | ✅ | | | Static pipeline evidenced; assets/runtime formats unverified. |
-| Cinebench/3DMark/OCCT progress/results/video/telemetry | | ✅ | | Runs start on both games from mirrored clicks (same load, same temperatures in run sim-1); the host's software record keeps results. A guest joining mid-test doesn't run it. |
+| Wallpaper/images/GIF capture/trim/frame/encode/save | | ✅ | | Custom and Windows wallpapers passed live and after cold rejoin. GIF capture is personal and GIF wallpaper remains an open content check. |
+| Cinebench/3DMark/OCCT progress/results/video/telemetry | | ✅ | | Two-game runs matched Cinebench and 3DMark scores and OCCT failures. A late guest joins an ongoing test idle by design. |
 | Fan/lighting/airflow/thermal/power/noise apps and overlays | | ✅ | | Fan Control curves shared on Apply/presets (0.20, also on late join); Lighting settings shared since 0.23 (phase 11); airflow app is on the personal tablet. |
 | Temperature/load/voltage/wattage/throttle/failure schedules | | ✅ | | Each game simulates from the same inputs; readings differ only by the game's sensor noise. Failures follow the host (0.20). |
 | RGB effect/flow direction/speed/phase/music/thermal inputs | | ✅ | | Phase 11 (0.23, not tested in game): settings shared; the effect clock follows the host's. Music-reactive lights follow each game's music until music is shared; temperature lights follow each game's sensors. |
@@ -322,12 +334,10 @@ These personal preferences were accepted with the scope decisions in [plan.md](.
 | Graphics/detail/display settings | Each player chooses their own machine's rendering quality/window/display settings; simulated computer desktops remain shared. |
 | Language | UI localization remains personal; synchronize underlying IDs/values instead of translated strings. |
 | Keybindings/input sensitivity | Each player keeps their own controls. |
-| Personal camera and guest menus | Cameras/input focus remain per player; guest menus do not pause the host. Host pause still freezes shared gameplay. |
+| Personal camera and pause menus | Cameras and input focus remain per player. Either pause menu leaves the co-op session running. |
 
-## Current stopping point and evidence gaps
+## Remaining source and runtime evidence
 
 The broad static audit and documentation checks are finished. [Coverage](audit/coverage-and-evidence.md) distinguishes source-reviewed findings from automatic field enumeration; it does not claim every native method was read. Declarations and inspected ISIL match the installed binary/metadata.
 
-`docs/audit/` was missing and has been created. **No extracted Unity scene/prefab/Animator asset directory was found**, and the final native `coverage.json` summary is absent. Shipped Addressables files and ISIL are present. Exact clip/event bindings, scene-specific screen/material assignments, DLC variants and live behavior remain open in the [verification backlog](audit/open-questions-and-runtime-checks.md).
-
-No game instances were started or closed, no owner's saves or game files changed, and no build/deploy/commit/push performed. Existing logs/root diagnostics were read as historical evidence only.
+The initial audit found shipped Addressables files and ISIL. Extracted Unity scene, prefab and Animator assets and the native `coverage.json` summary were unavailable. Exact clip and event bindings, scene-specific screen and material assignments, and DLC variants remain in the [verification backlog](audit/open-questions-and-runtime-checks.md).

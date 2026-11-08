@@ -71,6 +71,17 @@ internal sealed class NativeCaseAccess : IPanelNative
             CasePanelWorld.Remove(_coop.Activity.Get(_world.Local)!.Epoch, pc.Id, fact.Id, fact.Version), $"removal of {slot.name}");
     }
 
+    private bool RequestPipedOwnerRemoval(WorkingOnComputerState work, ComponentPC owner)
+    {
+        var slot = owner.Slot;
+        var mesh = work?.m_case;
+        if (slot == null || mesh == null || slot.GetCase()?.Pointer != mesh.Pointer || slot.GetComponent()?.Pointer != owner.Pointer)
+        { Refuse("The cooler's main slot isn't bound to this case."); return false; }
+        if (!owner.CanBeUninstalled()) { Refuse("Something is in the way of that cooler."); return false; }
+        var removal = new WorkingOnComputerState.__c__DisplayClass68_0 { __4__this = work, comp = owner };
+        return RequestRemove(owner, EditGesture.Remove, () => removal._DisassemblyTick_b__2());
+    }
+
     /// <summary>An install commit. Returns whether the native install may run now.</summary>
     internal bool RequestRefit(Slot slot, System.Action replay)
     {
@@ -119,6 +130,10 @@ internal sealed class NativeCaseAccess : IPanelNative
         if (c.Remove)
         {
             if (comp == null) return "The host's game shows that panel already off.";
+            // The native removal coroutine can unplug these connectors before it removes the panel. The panel
+            // change carries only the panel's state, so put the cable change through its own shared gesture first.
+            if (comp.powerConnectors?.Any(connector => connector != null && connector.Connected) == true)
+                return "Unplug the cables connected to that panel first.";
             if (!comp.CanBeUninstalled() || slot.IsUninstallingPathBlocked()) return "Something is in the way of that panel.";
             return null;
         }
@@ -225,6 +240,26 @@ internal sealed class NativeCaseAccess : IPanelNative
 
     // ---------------- interception ----------------
 
+    [ThreadStatic] private static IntPtr s_refittingCase;
+
+    internal static IntPtr BeginRefitSettle(InstallingPartState install)
+    {
+        var previous = s_refittingCase;
+        var slot = install.m_slot;
+        if (slot != null && Current?._finishing.Any(change => !change.Remove && change.Slot?.Pointer == slot.Pointer) == true)
+            s_refittingCase = install.m_case?.Pointer ?? IntPtr.Zero;
+        return previous;
+    }
+
+    internal static void EndRefitSettle(IntPtr previous) => s_refittingCase = previous;
+
+    /// <summary>The panel change carries no wiring. Leave its leads disconnected until a shared cable gesture.</summary>
+    [HarmonyPatch(typeof(Case), nameof(Case.ConnectCables))]
+    internal static class RefitAutoCableGuard
+    {
+        private static bool Prefix(Case __instance) => s_refittingCase == IntPtr.Zero || __instance.Pointer != s_refittingCase;
+    }
+
     private static NativeCaseAccess Current => CoopController.Instance?.Panels;
     private static bool Bypass => NativeProjection.Active || !NativePcLifecycle.InCoopWorkshop;
     private static bool NotReady()
@@ -261,6 +296,9 @@ internal sealed class NativeCaseAccess : IPanelNative
             {
                 if (Current == null) return NotReady();
                 var closure = __instance; var method = __originalMethod;
+                // Removing only the CPU-side proxy leaves the AIO's radiator and pipe links behind in the save.
+                if (method.Name == "_DisassemblyTick_b__2" && closure.comp?.GetProxiedComponent() is { m_includesPipes: true } owner)
+                    return Current.RequestPipedOwnerRemoval(closure.__4__this, owner);
                 System.Action replay = () => method.Invoke(closure, null);
                 return method.Name switch
                 {

@@ -13,8 +13,8 @@ namespace PCBS2Coop;
 /// short pause this player's game sends the PC's light settings, presets and peripheral lights, and the other game copies
 /// them into its own light objects, so its lights change in place with no restart. The colour wheel reads the mouse
 /// itself, which phase 6 doesn't mirror, so only the game of the player at that monitor sends.</item>
-/// <item><b>Opening Lighting</b>: on its first open the app pushes its own view state whoever is at the monitor; when it
-/// opens from the other player's mirrored click (or for nobody here), that push and its camera claim are skipped.</item>
+/// <item><b>Opening Lighting</b>: its HUD belongs to the player using the monitor. The other game receives the
+/// lighting settings without opening the HUD.</item>
 /// <item><b>Effect clock</b> (decision 3): each game's light clock starts at its own power-on; the host sends its clock and
 /// the guest keeps its own in step.</item>
 /// <item><b>Cable app</b> (decision 4): a bought cable set adds new part kinds and inventory items; the buyer's game sends
@@ -105,6 +105,37 @@ internal sealed class NativeCustomization : ICustomizationNative
         return result.Where(l => l.IsValid).ToList();
     }
 
+    private static (int Applied, int Missing, bool Rebuild) CopyLights(LEDDriverConfig cfg, IReadOnlyList<LedLight> lights)
+    {
+        var applied = 0;
+        var missing = 0;
+        var rebuild = false;
+        foreach (var light in lights)
+        {
+            var list = cfg.GetConfig(light.Group);
+            if (list == null || light.Index >= list.Count || list[light.Index] == null) { missing++; continue; }
+            var c = list[light.Index];
+            var old = Values(c);
+            if (old == light.Values) continue;
+            rebuild |= old.Flow != light.Values.Flow || old.Effect != light.Values.Effect ||
+                old.AnimType != light.Values.AnimType || old.Enabled != light.Values.Enabled;
+            Write(c, light.Values);
+            applied++;
+        }
+        return (applied, missing, rebuild);
+    }
+
+    internal static (int Applied, int Missing) RestoreSavedPeripheralLights(Peripheral peripheral, LEDDriverConfig saved)
+    {
+        var lights = Read(saved);
+        var live = peripheral.m_LEDConfig;
+        var unregistered = live?.m_config?.Count is not > 0;
+        if (unregistered) peripheral.m_LEDConfig = saved;
+        var (applied, missing, rebuild) = unregistered ? (lights.Count, 0, true) : CopyLights(live, lights);
+        if (applied > 0 && peripheral.WorkStation?.m_virtualComputer is { } vc) Refresh(vc.ComputerSave, vc, rebuild);
+        return (applied, missing);
+    }
+
     private static Peripheral PeripheralAt(WorkStation ws, string slot)
     {
         if (ws == null) return null;
@@ -114,7 +145,7 @@ internal sealed class NativeCustomization : ICustomizationNative
     }
 
     /// <summary>Every set of lights of a PC: its live lights, presets and the peripherals at its workstation.</summary>
-    private static List<(LightTarget Target, int Preset, string Slot, List<LedLight> Lights)> Sets(ComputerSave record, WorkStation ws)
+    internal static List<(LightTarget Target, int Preset, string Slot, List<LedLight> Lights)> Sets(ComputerSave record, WorkStation ws)
     {
         var sets = new List<(LightTarget, int, string, List<LedLight>)>();
         var software = record?.m_software;
@@ -192,23 +223,14 @@ internal sealed class NativeCustomization : ICustomizationNative
                 _ => PeripheralAt(_coop.Objects.FindBench(pc.Id)?.m_workStation, slot)?.m_LEDConfig,
             };
             if (cfg == null) { Plugin.Logger.LogWarning($"[lights] PC {pc.Id}: no {target} lights {(slot == "" ? "" : slot + " ")}here; the other player's change waits for the next load."); return; }
-            int applied = 0, missing = 0; var rebuild = false;
+            (int Applied, int Missing, bool Rebuild) result = default;
             NativeProjection.Run(() =>
             {
                 if (target == LightTarget.Pc && preset >= 0 && software != null) software.m_currentPresetIndex = preset;
-                foreach (var light in lights)
-                {
-                    var list = cfg.GetConfig(light.Group);
-                    if (list == null || light.Index >= list.Count || list[light.Index] == null) { missing++; continue; }
-                    var c = list[light.Index];
-                    var old = Values(c);
-                    if (old == light.Values) continue;
-                    rebuild |= old.Flow != light.Values.Flow || old.Effect != light.Values.Effect || old.AnimType != light.Values.AnimType || old.Enabled != light.Values.Enabled;
-                    Write(c, light.Values);
-                    applied++;
-                }
-                if (target != LightTarget.Preset && applied > 0) Refresh(record, vc, rebuild);
+                result = CopyLights(cfg, lights);
+                if (target != LightTarget.Preset && result.Applied > 0) Refresh(record, vc, result.Rebuild);
             });
+            var (applied, missing, rebuild) = result;
             if (applied + missing > 0)
                 Plugin.Logger.LogInfo($"[lights] PC {pc.Id}: {applied} {target} light(s) from {ctx.Op} applied{(missing > 0 ? $", {missing} not on this PC here" : "")}{(rebuild ? ", lights rebuilt" : "")}.");
         }
@@ -262,6 +284,8 @@ internal sealed class NativeCustomization : ICustomizationNative
         _nextClock = now + (_world.IsAuthority ? 1f : 0.25f);
         if (_world.IsAuthority)
         {
+            // Clocks are transient. A send before the snapshot mark is never replayed to this guest.
+            if (_coop.Session.GuestState != GuestState.InWorld) { _clocksForGuest = 0; return; }
             var guest = _coop.Activity.Get(ActorSlot.Guest)?.Epoch ?? 0;
             var host = _coop.Activity.Get(ActorSlot.Host);
             if (guest == 0 || host == null) { _clocksForGuest = guest; return; }
@@ -420,8 +444,6 @@ internal sealed class NativeCustomization : ICustomizationNative
 
     // ---------------- hooks ----------------
 
-    private static bool s_remoteOpen;
-
     [HarmonyPatch]
     internal static class LightingChangeHook
     {
@@ -442,41 +464,12 @@ internal sealed class NativeCustomization : ICustomizationNative
         }
     }
 
-    /// <summary>The Lighting app opening for someone who isn't this player (the other player's mirrored click, or the
-    /// host's open-app matching) doesn't take over this player's view.</summary>
-    [HarmonyPatch(typeof(LightingApp), "OnEnable")]
-    internal static class LightingOpenScope
+    /// <summary>Lighting instantiates a workshop HUD rather than opening a window on the PC screen.</summary>
+    [HarmonyPatch(typeof(OS), nameof(OS.Launch))]
+    internal static class LocalLightingHud
     {
-        private static void Prefix(LightingApp __instance, out bool __state)
-        {
-            __state = false;
-            if (Bypass) return;
-            try { __state = NativeDesktopInput.Injecting || NativeProjection.Active || !LocalAt(__instance.m_workStation); }
-            catch (Exception e) { Plugin.Logger.LogError("[lights] open hook failed: " + e); }
-            s_remoteOpen = __state;
-        }
-
-        private static void Postfix(LightingApp __instance, bool __state)
-        {
-            if (!__state) return;
-            try { __instance.initialised = false; } // this player's own first open still sets up the Lighting view
-            catch (Exception e) { Plugin.Logger.LogError("[lights] open hook failed: " + e); }
-            Plugin.Logger.LogInfo("[lights] the Lighting app opened on a monitor this player isn't using; its view stays as it is.");
-        }
-
-        private static Exception Finalizer(Exception __exception) { s_remoteOpen = false; return __exception; }
-    }
-
-    [HarmonyPatch(typeof(BenchSlot), nameof(BenchSlot.ClaimCamera))]
-    internal static class LightingCameraGuard
-    {
-        private static bool Prefix() => !s_remoteOpen;
-    }
-
-    [HarmonyPatch(typeof(GameController), nameof(GameController.SetCurrentState))]
-    internal static class LightingStateGuard
-    {
-        private static bool Prefix(State __0) => !(s_remoteOpen && __0?.TryCast<LightingAppState>() != null);
+        private static bool Prefix(OS __instance, OSProgramDesc desc) => Bypass || desc?.m_id != "LIGHTING" ||
+            (!NativeDesktopInput.Injecting && !NativeProjection.Active && LocalAt(__instance.m_workstation));
     }
 
     [HarmonyPatch(typeof(CableApp), nameof(CableApp.OnBuy))]

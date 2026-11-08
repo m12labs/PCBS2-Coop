@@ -247,22 +247,30 @@ Fixed during the runs:
 
 ## Runtime checks answered
 
-- **R1:** the Decorator app changes its own preview and the saved decoration list at once. The decompile shows the room itself is updated only by a workshop load (`UpdateToMainRoom` from the loading screen and the restore), so a pick shows in the room after Continue, on both games alike. Not confirmed by eye: in p12d the bench-5 desk looked unchanged after Continue, and which desk object 0 is wasn't identified.
+November 5, 2026 follow-up in 0.28. The Windows picture tile had disappeared on a machine with a stale registry path and an existing Windows cached copy. The fix uses the cached picture for the missing gallery preview. Actual host and guest tile selections showed the same picture. Both real custom pickers shared distinct images. A cold Continue and join restored the guest's custom picture with its source file absent. The 9.45 MB fixture was refused while the previous wallpaper stayed. [Run record](acceptance-2026-11-04.md#real-wallpaper-picker-028)
+
+- **R1:** 0.39 shared the saved picks without redrawing the peer's room. A guest snapshot could therefore show a different wall from the running host. In 0.40 the peer refreshes its main room through the native Decorator, preserves the chosen save-list values, and keeps the shared switch setting during theme work. The 0.40 live views and cold Continue with a fresh guest matched. [Run record](acceptance-2026-11-04.md#decorator-live-and-cold-room-retest-in-040)
 - **R2:** the Free Build tablet has Music Player, Photo Mode, Select Wallpaper, Part Ranking, Custom Cables (phase 11's Cable app), Decorator, RamWizz, Thermal and Airflow.
 - **R6:** the season is Christmas when the SeasonalContent setting is on and the month is December, otherwise standard (no Halloween season). The Free Build workshop has no seasonal switches.
-- **R7:** `GameController.Update` also switches the lights with a key; hooking `SetOn` covers both.
+- **R7:** both actual hall-switch clicks and L-key presses shared the lights and ceiling-fan speeds in 0.39. A new guest took the lights-off state with stopped fans. The real hall switch and L key passed again in 0.40 after scene-light setup was excluded from sharing. [Run record](acceptance-2026-11-04.md#real-decorator-and-light-controls-in-038-and-039)
 - **R3, R4, R5, R8:** not checked.
 
-## Not checked in game yet
+## Content checks still open
 
-- Picking up a real PC file in the cupboard, and a Steam-downloaded PC (its theme file isn't sent yet).
-- The real custom-picture browser apply, and the other player's mirrored click on it (skipped by design).
+- A Steam-downloaded PC (its theme file isn't sent yet).
 - A GIF as a wallpaper.
-- Walls, floor, ceiling, posters and "Apply To All" in the Decorator; the colour wheel and pulse by hand.
+- Poster picks in the Decorator.
 - DLC decorations (none installed); the company plate.
-- Seeing a pick in the room after Continue.
 
-## Owner test (0.24)
+The real MSI ceiling and wall selections, wall colour, Pulse, the shared picker claim, and save/rejoin coverage are recorded in the November follow-up. [Run record](acceptance-2026-11-04.md#msi-workshop-colour-picker-in-051-and-052)
+
+### Owned real cupboard file checks in 0.38
+
+On November 6, 2026 both players used the actual cupboard file browser and Pick Up button on separate painted `.pcbs` fixtures. The native exporter supplied the test files with a placeholder thumbnail. In 0.37 the file card was added to native storage without a co-op identity. Version 0.38 stages the card and design locally until an accepted pickup. Saving with a staged card worked, a cancelled duplicate left the cupboard intact, and both imports kept their paint and identity through storage, cold Continue and a fresh join with the source files out of the browser. [Run record](acceptance-2026-11-04.md#real-cupboard-file-pickup-in-037-and-038)
+
+## Original 0.24 test outline
+
+The current gameplay checklist records the follow-up runs. [Workshop acceptance](../needs_testing.md)
 
 1. Each player: open the tablet (T) → Decorator, pick a wall, a floor and a desk, then Apply To All once. The other player trying to open Decorator meanwhile gets "Someone is decorating the workshop." and sees "Decorating" under your name.
 2. Change the light colour (and pulse) in Decorator: the other game's lights change too.

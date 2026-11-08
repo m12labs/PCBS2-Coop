@@ -73,3 +73,21 @@ Release build: 0 warnings, 0 errors. Deployed and checked identical. Nothing ran
 6. While someone builds water cooling, the other player is refused on that PC with the water message, and a different PC still works.
 7. Water edits on a powered PC.
 8. Late join and save/Continue after water edits; `/sync`.
+
+## Owned two-game run, November 5, 2026
+
+In 0.29 the guest filled the powered-off loop with `WC_COOLANT_PURPLE_CLEAR`, drained it and removed the pipe between the pump and CPU block. Both native games showed the filled loop, then the empty loop, then the two remaining pipes. The host's save request during the initial drain waited, and a later save succeeded. While the guest held the pipe chooser open, the host received the water-cooling refusal on that PC and completed a cable removal on a different PC. The callbacks bypassed pointer reach and hold input. [Run acceptance-c](acceptance-2026-11-04.md#custom-water-cooling-in-029)
+
+In 0.30, `RoutePipeState.OnAccept` distinguishes a confirmed route from a discarded preview. Opening the pipe tool can change the native PC record even when Escape leaves the pipes alone. An unaccepted route now cancels without sending a record. Both games showed the guest's accepted flexible and rigid routes. [Escape and Accept retest](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)
+
+Cold Continue and fresh guest admission kept the removed pipe absent and the loop empty. After replacing the pipe and refilling, `/sync` kept the replacement and coolant on both games. [Persistence retest](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)
+
+Both copies of PC 26 were at the desktop with the full loop. The guest clicked the reservoir in Remove mode. The game's drain gesture powered down the guest's PC, and the host reloaded the drained record with power off. Both loops were complete and empty at revision 298. [Powered drain](acceptance-2026-11-04.md#powered-coolant-drain-in-030)
+
+In 0.31, native transform reports confirmed the retained red rigid pipe's two bend fittings and identical geometry on both games. [Route geometry](acceptance-2026-11-04.md#long-fan-orientation-and-blocked-cpu-removal-in-031)
+
+In 0.50 on November 7, 2026, a real bend added a node to the host's rigid preview. The game's Undo button restored the five original positions and fitting flags. Escape released the edit without sending a finished record, and both games retained the same committed pipe. [Undo geometry retest](acceptance-2026-11-04.md#rigid-pipe-geometry-undo-and-escape-in-050)
+
+The same day's 0.50 games agreed on CPU-block removal and reinstall. Pump reinstall exposed a guest binding mismatch caused by the loader's generated reservoir copy. Both 0.51 games loaded the exact failed 0.50 pair, then agreed after the repeated removal and reinstall. [Pump reload retest](acceptance-2026-11-04.md#cpu-block-and-pump-reload-in-050-and-051)
+
+In 0.43 removing the CPU-side proxy of a SilverStone AIO left its radiator and pipes in the native record. Cold Continue refused the resulting topology. Version 0.47 checks the main component's native blocker and uses its whole-PC removal when the editor targets a proxy. The guest reproduced that removal after disconnecting and removing the front panel, and the host reloaded the complete result. The 0.48 cold test kept the whole cooler and its pipes absent. [Run record](acceptance-2026-11-04.md#aio-proxy-removal-and-reload)

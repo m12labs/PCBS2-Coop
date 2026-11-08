@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using PCBS2Coop.Network;
 using UnityEngine;
 
@@ -16,6 +17,53 @@ namespace PCBS2Coop;
 /// </summary>
 internal sealed partial class NativeComponentEdits
 {
+    private const string FilledSplitterSuffix = "#Filled";
+    [ThreadStatic] private static (string Origin, string End) _savedSplitterRoute;
+
+    // The native save records the occupied PSU socket as e.g. 117#Filled. The cable routes list 117.
+    // During native reconstruction, use the saved ID for that route so the original lead finds its real socket.
+    [HarmonyPatch(typeof(Case), nameof(Case.CreateCableAsync), typeof(Il2CppReferenceArray<Cable>),
+        typeof(Il2CppReferenceArray<PowerConnector>), typeof(PartDesc), typeof(string), typeof(string),
+        typeof(PartDesc), typeof(Il2CppStructArray<CableSave.Node>), typeof(Il2CppStructArray<int>), typeof(bool),
+        typeof(Il2CppSystem.Action<CableInstance>), typeof(SaveLoadSystem.FinishCabling), typeof(BenchSlot))]
+    internal static class SavedSplitterCable
+    {
+        private static void Prefix(string Origin, string End, bool SnapInstall, out (string, string) __state)
+        {
+            __state = _savedSplitterRoute;
+            if (SnapInstall && CoopSaves.Current != CoopSaves.Mode.None)
+                _savedSplitterRoute = (FilledId(Origin), FilledId(End));
+        }
+
+        private static void Finalizer((string, string) __state) => _savedSplitterRoute = __state;
+
+        private static string FilledId(string id) => id?.EndsWith(FilledSplitterSuffix, StringComparison.Ordinal) == true ? id : null;
+    }
+
+    [HarmonyPatch]
+    internal static class SplitterCableRoute
+    {
+        private static IEnumerable<System.Reflection.MethodBase> TargetMethods() => new[]
+        {
+            AccessTools.Method(typeof(Cable), nameof(Cable.GetOriginPoints)),
+            AccessTools.Method(typeof(Cable), nameof(Cable.GetEndPoints)),
+        };
+
+        private static void Postfix(System.Reflection.MethodBase __originalMethod,
+            ref Il2CppSystem.Collections.Generic.List<string> __result)
+        {
+            var id = __originalMethod.Name == nameof(Cable.GetOriginPoints) ? _savedSplitterRoute.Origin : _savedSplitterRoute.End;
+            if (id == null || __result == null || __result.Contains(id)) return;
+            var routeIndex = __result.IndexOf(id[..^FilledSplitterSuffix.Length]);
+            if (routeIndex < 0) return;
+
+            // Preserve the index used by the native route and avoid altering a cable prefab's cached list.
+            var points = new Il2CppSystem.Collections.Generic.List<string>(__result.Count);
+            for (var i = 0; i < __result.Count; i++) points.Add(i == routeIndex ? id : __result[i]);
+            __result = points;
+        }
+    }
+
     /// <summary>The wiring of one PC at a moment: cables by key, splitter/adapter slots, power and the inventory.</summary>
     internal sealed class WireState
     {
@@ -130,9 +178,11 @@ internal sealed partial class NativeComponentEdits
         return new(removed, added, accessories, inventory, after.Powered);
     }
 
-    /// <summary>A cable is animating or loading on that PC, or its power button is moving.</summary>
+    /// <summary>A cable, automatic splitter or power button is still moving or loading on that PC.</summary>
     internal static bool CablesBusy(Case mesh)
     {
+        // The native splitter coroutine waits for its prefab before it creates any cable.
+        if (mesh?.m_splitterInstalling == true) return true;
         var db = PartsDatabase.s_instance;
         if ((db?.m_loadCableOperations?.Count ?? 0) + (db?.m_loadPlugOperations?.Count ?? 0) > 0) return true;
         foreach (var c in CablesOf(mesh)) if (c.Installing || c.Uninstalling) return true;
@@ -140,13 +190,23 @@ internal sealed partial class NativeComponentEdits
         return button != null && button.animationRunning;
     }
 
-    /// <summary>Host stability: a cable edit or power press is still moving there, or being shown.</summary>
-    private bool WireMoving(Case mesh) => CablesBusy(mesh) || _wireRuns.Any(r => r.Mesh != null && r.Mesh.Pointer == mesh.Pointer);
+    /// <summary>A cable edit or power press is still moving on this PC, or its replay is queued or running here.</summary>
+    internal bool WireMoving(Case mesh) => CablesBusy(mesh) || _wireRuns.Any(r => r.Mesh != null && r.Mesh.Pointer == mesh.Pointer);
 
     private static PowerConnector FindConnector(Case mesh, BenchSlot bench, string id)
     {
         if (mesh != null)
             foreach (var c in mesh.GetComponentsInChildren<PowerConnector>(true)) if (c != null && c.id == id) return c;
+        // The native chooser offers desk plugs such as KEYBOARD. Cable saves name their remote end (KEYBOARD_SRC),
+        // which can sit outside the bench slot's transform hierarchy and share its ID with other workstations.
+        if (bench?.m_workStation?.m_connectors is { } connectors)
+            foreach (var c in connectors)
+            {
+                if (c == null) continue;
+                if (c.id == id) return c;
+                var remote = c.Remote();
+                if (remote != null && remote.id == id) return remote;
+            }
         if (bench != null)
             foreach (var c in bench.GetComponentsInChildren<PowerConnector>(true)) if (c != null && c.id == id) return c;
         // An external end (a monitor or the mains at the workstation): only when that ID is unique in the scene.
@@ -488,6 +548,65 @@ internal sealed partial class NativeComponentEdits
                 return Current.RequestPower(mesh, () => button.Press());
             }
             catch (Exception e) { Plugin.Logger.LogError("[cables] power request failed: " + e); return false; }
+        }
+    }
+
+    // The bench's walking shortcut calls the motherboard directly. Capture the interaction, so native power calls
+    // during boot, part edits and other game activity keep their original behavior.
+    private static bool BenchPower(BenchSlot bench, System.Action replay)
+    {
+        if (WireBypass) return true;
+        try
+        {
+            if (Current == null) return NotReady();
+            return Current.RequestPower(bench?.GetCaseInSlot(), replay);
+        }
+        catch (Exception e) { Plugin.Logger.LogError("[cables] bench power request failed: " + e); return false; }
+    }
+
+    [HarmonyPatch(typeof(BenchSlot.__c__DisplayClass63_0), nameof(BenchSlot.__c__DisplayClass63_0._GetInteractions_b__8))]
+    internal static class BenchPowerOnIntercept
+    {
+        private static bool Prefix(BenchSlot.__c__DisplayClass63_0 __instance) =>
+            BenchPower(__instance.__4__this, () => __instance._GetInteractions_b__8());
+    }
+
+    [HarmonyPatch]
+    internal static class BenchPowerToggleIntercept
+    {
+        private static IEnumerable<System.Reflection.MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(BenchSlot.__c__DisplayClass63_1), nameof(BenchSlot.__c__DisplayClass63_1._GetInteractions_b__9));
+            yield return AccessTools.Method(typeof(BenchSlot.__c__DisplayClass63_1), nameof(BenchSlot.__c__DisplayClass63_1._GetInteractions_b__10));
+        }
+
+        private static bool Prefix(BenchSlot.__c__DisplayClass63_1 __instance, System.Reflection.MethodBase __originalMethod) =>
+            BenchPower(__instance.__4__this, __originalMethod.Name == nameof(BenchSlot.__c__DisplayClass63_1._GetInteractions_b__9)
+                ? () => __instance._GetInteractions_b__9()
+                : () => __instance._GetInteractions_b__10());
+    }
+
+    // Aiming at a monitor while walking offers a separate P shortcut from the bench or the monitor state.
+    [HarmonyPatch]
+    internal static class WalkingMonitorPowerIntercept
+    {
+        private static IEnumerable<System.Reflection.MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(InteractableComputer.__c__DisplayClass24_0), nameof(InteractableComputer.__c__DisplayClass24_0._GetInteractions_b__1));
+            yield return AccessTools.Method(typeof(InteractableComputer.__c__DisplayClass24_0), nameof(InteractableComputer.__c__DisplayClass24_0._GetInteractions_b__3));
+        }
+
+        private static bool Prefix(InteractableComputer.__c__DisplayClass24_0 __instance, System.Reflection.MethodBase __originalMethod)
+        {
+            if (WireBypass) return true;
+            try
+            {
+                if (Current == null) return NotReady();
+                var action = __originalMethod.Name == nameof(InteractableComputer.__c__DisplayClass24_0._GetInteractions_b__1)
+                    ? (System.Action)__instance._GetInteractions_b__1 : __instance._GetInteractions_b__3;
+                return Current.RequestPower(__instance.Mobo?.GetCase(), action);
+            }
+            catch (Exception e) { Plugin.Logger.LogError("[cables] walking monitor power request failed: " + e); return false; }
         }
     }
 

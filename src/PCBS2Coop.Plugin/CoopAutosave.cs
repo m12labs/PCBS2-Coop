@@ -55,7 +55,7 @@ internal sealed partial class CoopController
         if (_sync != SyncStep.None || Session.GuestNeedsWorld) return "a sync or a joining player's world copy is in progress";
         if (_initialSave != null) return "the new world's first save is still pending";
         if (OutOfSync != null) return "this game is out of sync";
-        if (Workstations?.Settled == false || !NativeAssembly.CanCapture) return "a change is still being shown";
+        if (Workstations?.Settled == false || Workshop?.Settled == false || !NativeAssembly.CanCapture) return "a change is still being shown";
         return null;
     }
 

@@ -4,10 +4,11 @@ param(
     [string]$GameDir,
     [switch]$Deploy,
     [ValidateSet('3', '4', '6')][string]$Phase = '3',
-    # Relaunch a host on this run's own disposable saves (fresh-process Continue); the earlier process must have exited.
+    # Relaunch on this run's disposable saves. Hosts Continue; phase 6 guests request a fresh host snapshot.
     [switch]$Resume
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'ProbeProcessIdentity.ps1')
 . (Join-Path $PSScriptRoot 'LocalPaths.ps1')
 $probeGame = [IO.Path]::GetFullPath((Resolve-LocalPath -Value $GameDir -EnvName 'PCBS2_GAME_DIR' -PropName 'GameDir' -What 'game folder'))
 $probeWorkspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -15,12 +16,17 @@ $probeRecordDir = Join-Path $probeWorkspace ".local/phase$Phase-$RunId"
 $probeEvidenceDir = Join-Path $probeGame "BepInEx/PCBS2Coop-diag/phase$Phase/$RunId"
 $probeRecordFile = Join-Path $probeRecordDir "$Role-process.json"
 if ($Resume) {
-    if ($Role -ne 'host') { throw 'Only a host can resume a probe run.' }
     $probeCoopSaves = Join-Path $probeEvidenceDir "saves-$Role/Coop"
-    if (-not ((Test-Path -LiteralPath $probeCoopSaves) -and @(Get-ChildItem -LiteralPath $probeCoopSaves -Filter '*.binary*' -File).Count -gt 0)) { throw 'Nothing to resume: this run has no disposable co-op save.' }
+    if ($Role -eq 'host') {
+        if (-not ((Test-Path -LiteralPath $probeCoopSaves) -and @(Get-ChildItem -LiteralPath $probeCoopSaves -Filter '*.binary*' -File).Count -gt 0)) { throw 'Nothing to resume: this run has no disposable co-op save.' }
+    }
+    elseif ($Phase -ne '6' -or -not (Test-Path -LiteralPath (Join-Path $probeEvidenceDir 'saves-join') -PathType Container)) {
+        throw 'A guest can relaunch only an existing isolated phase 6 run.'
+    }
     if (Test-Path -LiteralPath $probeRecordFile) {
         $probePrevious = Get-Content -LiteralPath $probeRecordFile -Raw | ConvertFrom-Json
-        if (Get-Process -Id $probePrevious.id -ErrorAction SilentlyContinue | Where-Object { $_.StartTime.ToUniversalTime().ToString('O') -eq $probePrevious.startedUtc }) {
+        $probePreviousProcess = Get-Process -Id $probePrevious.id -ErrorAction SilentlyContinue
+        if (Test-ProbeProcessIdentity -Process $probePreviousProcess -Record $probePrevious -ExpectedName 'PCBS2' -ExpectedPath (Join-Path $probePrevious.game 'PCBS2.exe')) {
             throw "The run's earlier process (PID $($probePrevious.id)) is still running. Stop it first."
         }
         # Keep the earlier record for the stop script's save check; the new launch takes the main record name.
@@ -41,7 +47,7 @@ if (Test-Path -LiteralPath $probeRecordDir) {
 }
 $probeRunning = @(Get-Process PCBS2 -ErrorAction SilentlyContinue)
 foreach ($probeProcess in $probeRunning) {
-    $probeOwned = @($probeKnown | Where-Object { $_.id -eq $probeProcess.Id -and $_.startedUtc -eq $probeProcess.StartTime.ToUniversalTime().ToString('O') })
+    $probeOwned = @($probeKnown | Where-Object { Test-ProbeProcessIdentity -Process $probeProcess -Record $_ -ExpectedName 'PCBS2' -ExpectedPath (Join-Path $_.game 'PCBS2.exe') })
     if ($probeOwned.Count -ne 1) { throw "An unowned game instance is running (PID $($probeProcess.Id)). It was left alone." }
 }
 if ($Deploy -and $probeRunning.Count -gt 0) { throw 'Close only your owned probe instances before deploying; game DLLs may be locked.' }

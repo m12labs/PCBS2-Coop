@@ -24,8 +24,30 @@ public static class CoopSavePair
     /// and 0.19's software transfer state is optional. 0.17 changed edit progress and host save timing only; 0.20 added
     /// simulation messages (nothing saved). 0.21 compresses the state (both layouts are read); 0.22 adds tool-table and
     /// thermal paste messages (nothing saved); 0.23 adds case-modding, lighting and purchase messages (nothing new saved). 0.24
-    /// adds the optional workshop state (lights, seasonal decoration, shared pictures): older saves load without it.</summary>
-    private static readonly string[] SameFormat = { "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
+    /// adds the optional workshop state (lights, seasonal decoration, shared pictures): older saves load without it.
+    /// 0.25 fixes admission snapshot timing, 0.26 shares the walking power shortcut, 0.27 fixes cold co-op boot and
+    /// 0.28 restores the Windows wallpaper preview when its registry path is stale, 0.29 waits for local cable replays,
+    /// 0.30 resolves external cable endpoints and discards unaccepted pipe routes, 0.31 keeps active orientation edits alive,
+    /// 0.32 reports recovery after an interrupted native write, 0.33 lets sync recover failed assembly rebinds,
+    /// 0.34 corrects the work-mode player pose and guards connected panel removal, 0.35 keeps refits cable-free,
+    /// 0.36 resolves the case prefab behind a catalog color variant, 0.37 matches its remote carrier defaults,
+    /// 0.38 keeps local cupboard files separate until pickup is accepted, and 0.39 closes a refused Decorator after its window opens.
+    /// 0.40 refreshes workshop decorations and replays desktop icon clicks during work mode. 0.41 keeps Lighting's HUD local.
+    /// 0.42 restores peripheral lighting from the native save once the peripheral has loaded.
+    /// 0.43 sends the first effect clock after the guest enters the world.
+    /// 0.44 shares the walking power shortcut when aiming at the monitor.
+    /// 0.45 shares the native startup heat failure.
+    /// 0.46 shares a matching startup and simulation failure once per boot.
+    /// 0.47 removes a piped cooler as a whole when the editor selects its proxy.
+    /// 0.48 normalizes generated motherboard standoff bindings on load.
+    /// 0.49 loads nested part prefabs for edit replay and 0.50 unwinds refused tool states.
+    /// 0.51 keeps existing reservoir clone bindings when reading older saves.
+    /// 0.52 shares the workshop's native wall colour picker through the decorating command.
+    /// 0.53 lets manual screws and standoffs wait for the editor's input.
+    /// 0.54 and 0.55 give the desktop's program manager its own workstation during startup.
+    /// 0.56 waits for the native automatic splitter install before settling.
+    /// The save layout is the same across those builds.</summary>
+    private static readonly string[] SameFormat = { "0.56", "0.55", "0.54", "0.53", "0.52", "0.51", "0.50", "0.49", "0.48", "0.47", "0.46", "0.45", "0.44", "0.43", "0.42", "0.41", "0.40", "0.39", "0.38", "0.37", "0.36", "0.35", "0.34", "0.33", "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);

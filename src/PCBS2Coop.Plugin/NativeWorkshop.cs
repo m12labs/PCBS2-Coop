@@ -11,7 +11,7 @@ namespace PCBS2Coop;
 /// <item><b>Decorating</b> (decision 1): opening the Customise Workshop app claims decorating for this player; the other
 /// player's app closes with "Someone is decorating the workshop.". While it's open this game compares the game's own
 /// decoration list (<c>Decorator.CreateSaveList</c>) and the light colour after each change has loaded, and sends what
-/// changed; the other game merges it into its own list and runs the game's own restore (<c>RestoreFromSaveList</c>).</item>
+/// changed; the other game merges the picks and refreshes the room with <c>Decorator.UpdateOnlyMainRoom</c>.</item>
 /// <item><b>Lights</b> (decision 2): the light switch's click is shared; the other game switches with the game's own
 /// <c>LightSwitch.SetOn</c> (lights and ceiling fans).</item>
 /// <item><b>Seasonal decorations</b> (decision 3): the switch's click is shared (<c>DecorationSwitch.OnClickSwitch</c>);
@@ -33,8 +33,15 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
     private bool _decorating, _closing, _claiming;
     private OperationId _claimOp;
     private float _closingSince, _nextDecorPoll;
+    private CustomiseWorkShopApp _appToClose;
+    private int _closeAppFrame;
+    private CalendarInteraction _roomPickerRequest;
+    private bool _roomPickerOpen;
     private Dictionary<(int, int, int), DecorItem> _baseline;
     private RoomLight? _baselineLight;
+    private bool _localRoomChanged, _refreshRoom;
+    private float _refreshAt;
+    private Dictionary<(int, int, int), DecorItem> _refreshPicks;
     // The other player's decorating, applied here.
     private List<DecorItem> _decorTarget;
     private float _verifyAt;
@@ -54,6 +61,11 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
     private void ResetLocal()
     {
         _decorating = _closing = false; _baseline = null; _baselineLight = null; _decorTarget = null; _verifyLeft = 0;
+        _appToClose = null;
+        _roomPickerRequest = null;
+        _roomPickerOpen = false;
+        _localRoomChanged = _refreshRoom = false;
+        _refreshPicks = null;
         ResetContent();
     }
 
@@ -70,7 +82,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         {
             _decorating = _closing = false;
             _coop.Notice(why);
-            CloseApp();
+            DeferAppClose();
         }
         else ContentRejected(op, why);
     }
@@ -79,6 +91,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
 
     private static Decorator Decorator => Object.FindObjectOfType<Decorator>();
     private static ThemeManager Theme => Object.FindObjectOfType<ThemeManager>();
+    internal bool Settled => !_refreshRoom && _refreshPicks == null && Decorator?.Loading != true;
 
     private static List<DecorItem> ReadDecor()
     {
@@ -126,39 +139,90 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
     internal void AppOpened()
     {
         if (!Active || _decorating) return;
+        if (!BeginDecorating()) DeferAppClose();
+    }
+
+    private bool BeginDecorating()
+    {
+        if (!Active) return false;
         if (Handler.DecorBusy(_world.Local) is { } busy)
         {
             _coop.Notice(busy);
-            Plugin.Logger.LogInfo("[workshop] the other player is decorating; the Customise Workshop app closes here.");
-            CloseApp();
-            return;
+            return false;
         }
-        if (Epoch is not { } epoch) return;
+        if (Epoch is not { } epoch) return false;
         _baseline = Keyed(ReadDecor()); _baselineLight = ReadLight();
         _decorating = true; _closing = false;
+        _localRoomChanged = false;
         _claiming = true;
         try
         {
             if (!_world.Submit(CommandTypes.Workshop, WorkshopWorld.Decorate(epoch, true), out _claimOp))
-            { _decorating = false; _coop.Notice("Decorating isn't shared: not connected to the host's world."); CloseApp(); return; }
+            { _decorating = false; _coop.Notice("Decorating isn't shared: not connected to the host's world."); return false; }
         }
         finally { _claiming = false; }
         if (_decorating) Plugin.Logger.LogInfo($"[workshop] decorating ({_baseline.Count} decoration(s) at the start).");
+        return _decorating;
     }
 
     /// <summary>The app closed: send the last change once it has loaded, then free decorating.</summary>
     internal void AppClosed()
     {
-        if (!_decorating || _closing) return;
+        if (!_decorating || _closing || _roomPickerRequest is not null || _roomPickerOpen) return;
         _closing = true; _closingSince = Time.realtimeSinceStartup;
     }
 
-    private static void CloseApp()
+    private void DeferAppClose()
     {
+        if (_roomPickerRequest is not null || _roomPickerOpen)
+        {
+            _roomPickerRequest = null;
+            return;
+        }
+        // OnEnable runs before the tablet finishes opening its native window.
+        _appToClose = CustomiseWorkShopApp.Get();
+        _closeAppFrame = Time.frameCount + 1;
+    }
+
+    private void RequestRoomPicker(CalendarInteraction picker)
+    {
+        if (_decorating) return;
+        _roomPickerRequest = picker;
+        if (!BeginDecorating()) _roomPickerRequest = null;
+    }
+
+    private void UpdateRoomPicker()
+    {
+        var ctrl = GameController.Get();
+        if (_roomPickerRequest is { } picker && Handler.Decorator == _world.Local)
+        {
+            _roomPickerRequest = null;
+            if (picker != null && picker.isActiveAndEnabled && ctrl?.GetCurrentState()?.TryCast<WalkingState>() != null)
+            {
+                try { NativeProjection.Run(picker._GetInteractions_b__4_1); }
+                catch (Exception e) { Plugin.Logger.LogWarning("[workshop] opening the room colour picker failed: " + e.Message); }
+            }
+            _roomPickerOpen = ctrl?.GetCurrentState()?.TryCast<LookingAtMonitorState>()?.m_isColourPicker == true;
+            if (!_roomPickerOpen) AppClosed();
+        }
+        if (!_roomPickerOpen) return;
+        if (ctrl?.GetCurrentState()?.TryCast<LookingAtMonitorState>()?.m_isColourPicker == true)
+        {
+            if (!_decorating) ctrl.GoToPreviousState();
+            return;
+        }
+        _roomPickerOpen = false;
+        AppClosed();
+    }
+
+    private void UpdateAppClose()
+    {
+        var app = _appToClose;
+        if (app == null || Time.frameCount < _closeAppFrame) return;
+        _appToClose = null;
         try
         {
-            var app = CustomiseWorkShopApp.Get();
-            if (app != null && app.isActiveAndEnabled) app.OnClickCloseApp(true);
+            if (app.isActiveAndEnabled) app.OnClickCloseApp(true);
         }
         catch (Exception e) { Plugin.Logger.LogWarning("[workshop] closing the Customise Workshop app failed: " + e.Message); }
     }
@@ -172,6 +236,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         SendDecor();
         if (!_closing) return;
         _decorating = _closing = false;
+        if (_localRoomChanged) RefreshRoomSoon();
         if (Epoch is { } epoch && _world.Submit(CommandTypes.Workshop, WorkshopWorld.Decorate(epoch, false), out _))
             Plugin.Logger.LogInfo("[workshop] decorating finished.");
     }
@@ -194,6 +259,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
                 { _coop.Notice("Decorating not shared: not connected to the host's world."); return; }
             }
             _baseline = Keyed(now); _baselineLight = light;
+            _localRoomChanged |= changed.Count > 0;
             Plugin.Logger.LogInfo($"[workshop] {changed.Count} decoration(s){(lightChanged ? " and the light colour" : "")} sent.");
         }
         catch (Exception e) { Plugin.Logger.LogError("[workshop] sending the decorations failed: " + e); }
@@ -204,7 +270,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         if (ctx.FromLocalPlayer) return;
         Plugin.Logger.LogInfo($"[workshop] the other player {(on ? "started" : "finished")} decorating.");
         // This player's app may have opened while the claim was on its way: the host gave decorating to the other player.
-        if (on && _decorating && !_closing) { _decorating = false; _coop.Notice(WorkshopWorld.Busy); CloseApp(); }
+        if (on && _decorating && !_closing) { _decorating = false; _coop.Notice(WorkshopWorld.Busy); DeferAppClose(); }
     }
 
     public void Decorated(in MutationContext ctx, IReadOnlyList<DecorItem> items, RoomLight? light)
@@ -215,20 +281,52 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
             if (items.Count > 0)
             {
                 ApplyDecor(items);
+                if (_refreshPicks != null)
+                    foreach (var item in items) _refreshPicks[item.Key] = item;
+                RefreshRoomSoon();
                 _decorTarget = (_decorTarget ?? new List<DecorItem>()).Where(t => items.All(i => i.Key != t.Key)).Concat(items).ToList();
                 _verifyAt = Time.realtimeSinceStartup + DecorVerify; _verifyLeft = 2;
             }
             if (light is { } l) ApplyLight(l);
-            Plugin.Logger.LogInfo($"[workshop] the other player's decorating: {items.Count} decoration(s){(light != null ? " and the light colour" : "")} applied" +
-                                  (items.Count > 0 ? " (the room shows new decorations the next time the workshop loads, as on their game)." : "."));
+            Plugin.Logger.LogInfo($"[workshop] the other player's decorating: {items.Count} decoration(s){(light != null ? " and the light colour" : "")} applied.");
         }
         catch (Exception e) { _coop.ProjectionFailed("The other player's decorating could not be shown on this game", e); }
     }
 
-    /// <summary>Give this game's objects the other player's picks, as the game's own restore does before it loads
-    /// anything (<c>RestoreFromSaveList</c>: every object with that type and number takes the pick and theme). In Free
-    /// Build the Decorator app changes only its preview and these picks; the room itself shows them the next time the
-    /// workshop loads, on both games alike. Running the game's restore mid-game loads the wrong pieces.</summary>
+    private void RefreshRoomSoon()
+    {
+        _refreshRoom = true;
+        _refreshAt = Time.realtimeSinceStartup + DecorPoll;
+    }
+
+    private void UpdateRoom()
+    {
+        if ((!_refreshRoom && _refreshPicks == null) || Decorator is not { Loading: false } dec) return;
+        try
+        {
+            if (_refreshPicks != null)
+            {
+                // The renderer normalizes some saved names to the surrounding theme while it loads a prefab.
+                // Keep the chosen values for later saves and admission, including the unchanged surfaces.
+                var picks = _refreshPicks.Values.ToArray();
+                _refreshPicks = null;
+                ApplyDecor(picks);
+                if (Handler.LightsOn is { } on) SetLights(on, animate: false);
+            }
+            if (!_refreshRoom || _decorating || Time.realtimeSinceStartup < _refreshAt) return;
+            _refreshRoom = false;
+            _refreshPicks = Keyed(ReadDecor());
+            NativeProjection.Run(dec.UpdateOnlyMainRoom);
+        }
+        catch (Exception e)
+        {
+            _refreshRoom = false;
+            _refreshPicks = null;
+            _coop.ProjectionFailed("The shared decorations could not refresh the workshop", e);
+        }
+    }
+
+    /// <summary>Set the native picks before refreshing the main room. The full save restore also changes the AR room.</summary>
     private static void ApplyDecor(IReadOnlyList<DecorItem> items)
     {
         var tm = Theme ?? throw new InvalidDataException("The workshop decorations aren't loaded.");
@@ -257,18 +355,22 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         var tm = Theme ?? throw new InvalidDataException("The workshop lights aren't loaded.");
         NativeProjection.Run(() =>
         {
-            // The game keeps the colour (and saves it) only while the app's colour wheel is attached; set it as the wheel does.
             var colour = new Color(light.R, light.G, light.B, light.A);
+            // The theme reads its attached wheel's selection every frame.
+            var wheel = tm.m_attachedColourWheel;
+            if (wheel != null) wheel.SetColour(colour, true, false);
             tm.m_currentColour = colour;
             tm.SetLightColor(colour);
-            if (tm.GetPulse() != light.Pulse) tm.SetSavedPulse(light.Pulse);
+            if (tm.GetPulse() == light.Pulse) return;
+            if (tm.m_Lights is { Count: > 0 } lights && lights[0] != null) tm.OnPulse();
+            else tm.SetSavedPulse(light.Pulse);
         });
     }
 
     /// <summary>Check the picks took (something of the game's own may still be changing them): compare once the decorator is idle.</summary>
     private void VerifyDecor()
     {
-        if (_decorTarget == null || _verifyLeft <= 0 || Time.realtimeSinceStartup < _verifyAt || Decorator?.Loading != false) return;
+        if (_decorTarget == null || _verifyLeft <= 0 || Time.realtimeSinceStartup < _verifyAt || !Settled) return;
         _verifyAt = Time.realtimeSinceStartup + DecorVerify;
         try
         {
@@ -281,6 +383,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
             }
             Plugin.Logger.LogInfo($"[workshop] {wrong.Count} decoration(s) differ from the other player's; setting them again.");
             ApplyDecor(wrong);
+            RefreshRoomSoon();
         }
         catch (Exception e) { Plugin.Logger.LogWarning("[workshop] checking the decorations failed: " + e.Message); _decorTarget = null; }
     }
@@ -383,14 +486,28 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
 
     public void Update()
     {
+        UpdateAppClose();
         if (!Active) return;
         UpdateState();
+        if (_roomPickerRequest is not null || _roomPickerOpen) UpdateRoomPicker();
         UpdateDecorating();
+        UpdateRoom();
         VerifyDecor();
         UpdateContent();
     }
 
     // ---------------- hooks ----------------
+
+    [HarmonyPatch(typeof(CalendarInteraction), nameof(CalendarInteraction._GetInteractions_b__4_1))]
+    internal static class RoomPickerHook
+    {
+        private static bool Prefix(CalendarInteraction __instance)
+        {
+            if (Bypass || NativeProjection.Active) return true;
+            Current?.RequestRoomPicker(__instance);
+            return false;
+        }
+    }
 
     [HarmonyPatch(typeof(CustomiseWorkShopApp), "OnEnable")]
     internal static class AppOpenHook
@@ -435,17 +552,29 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         }
     }
 
-    private static bool s_tableLights;
+    private static bool s_tableLights, s_lightSwitchClick;
+
+    [HarmonyPatch(typeof(LightSwitch), nameof(LightSwitch._GetInteractions_b__20_0))]
+    internal static class LightSwitchClickScope
+    {
+        private static void Prefix(out bool __state) { __state = s_lightSwitchClick; s_lightSwitchClick = true; }
+        private static Exception Finalizer(Exception __exception, bool __state) { s_lightSwitchClick = __state; return __exception; }
+    }
 
     /// <summary>The switch's click and the lights key both end here (so do the switch's start and the water-cooling
     /// table's dimming, which stay this game's own).</summary>
     [HarmonyPatch(typeof(LightSwitch), nameof(LightSwitch.SetOn))]
     internal static class LightSwitchHook
     {
-        private static void Prefix(bool on)
+        private static void Prefix(ref bool on)
         {
             if (Bypass || NativeProjection.Active || s_tableLights) return;
-            try { Current?.LocalLightSwitch(on); }
+            try
+            {
+                if (Current is not { Active: true } me) return;
+                if (s_lightSwitchClick || PCBSInput.m_toggleLights?.IsDown() == true) me.LocalLightSwitch(on);
+                else if (me.Handler.LightsOn is { } saved) on = saved;
+            }
             catch (Exception e) { Plugin.Logger.LogError("[workshop] light switch hook failed: " + e); }
         }
     }

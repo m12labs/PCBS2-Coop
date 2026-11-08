@@ -99,6 +99,22 @@ Every run was stopped by `Stop-Phase6Probe.ps1`; all 21 owner save files were un
 - Whether the game saves Fan Control curves in solo Free Build (decision 5 keeps solo behaviour either way).
 - Cinebench and 3DMark result agreement (phase 6 already keeps the host's record).
 
+## November 5, 2026 follow-up (0.27)
+
+Run `acceptance-c` passed GPU Tuner Apply and Reset from either player through the actual app. Both games showed the changed and default values, with no restart. The same run passed real Fan Control presets, changes to a custom Max RPM curve, and Defaults from both sides. A fresh guest joined the running host and displayed the 11-point curve. [Run record](acceptance-2026-11-04.md#fan-control-and-custom-picture-follow-up-027)
+
+In 0.30, a native `GPU_HEAT` failure from the host reached both games. A shared case-button power cycle cleared the blue screen and both games reached the desktop. [Recovery run](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)
+
+In 0.34, powering a PC with an empty custom water loop let the native simulation reach `CPU_HEAT` at 184.6°C. The guest suppressed its matching local failure and showed the host's blue screen. Refilling the loop and rebooting returned both games to the desktop at 45.8°C. [Dry-loop run](acceptance-2026-11-04.md#guest-thermal-paste-player-visibility-and-a-dry-loop-heat-failure-in-034)
+
+In 0.43 the cooler-free startup reached a direct `VirtualComputer.BlueScreenOfDeath(CPU_HEAT)` on the host and the guest stayed in Boot. The 0.45 hook shares the startup result. Both games displayed the same failure text with the CPU cooler slot empty. [Run record](acceptance-2026-11-04.md#missing-cpu-cooler-at-boot-in-043-and-045)
+
+An empty-loop boot in 0.45 could publish the startup and simulation reports for the same reason. In 0.46 the same reason is sent once per boot. Two successive dry-loop boots each produced one host publication and one guest application. [Run record](acceptance-2026-11-04.md#one-heat-result-per-boot-in-046)
+
+The 0.46 host then removed the complete AIO from PC 213 and booted it. Both native graphs had zero AIO references and zero pipes. The host published `CPU_HEAT` once and the guest applied it once. [Run record](acceptance-2026-11-04.md#complete-cooler-removal-and-boot-in-046)
+
+On November 6, 2026, the 0.40 test build showed one matching `CPU_UNDER_VOLTAGE` failure on each game when the host started OCCT and again when the guest started it. Time Spy and Cinebench R20 also finished with matching scores on both games. [Run record](acceptance-2026-11-04.md#mirrored-bios-occt-failures-and-benchmarks-in-a-040-test-build)
+
 ## Owner decisions (November 1, 2026)
 
 The owner answered the seven audit questions; every answer matches what 0.20 implements.

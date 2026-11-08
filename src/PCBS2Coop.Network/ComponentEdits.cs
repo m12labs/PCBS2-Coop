@@ -353,7 +353,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         if (_activity.Get(requester) is not { } actor || actor.Epoch != c.Epoch) return "Actor presence changed.";
         pc = _objects.Pcs.SingleOrDefault(x => x.Id == c.Pc);
         if (pc == null || pc.Location.Place != PcPlace.Bench) return "That PC is no longer on a bench.";
-        if (actor.WorkingPc != pc.Id) return "You're not working on that PC.";
+        if (!actor.CanEdit(pc.Id, c.Gesture == EditGesture.Power)) return "You're not working on that PC.";
         if (pc.Resources.Count == 0) return "That PC's parts aren't ready in the shared world yet.";
         if (!Enum.IsDefined(c.Gesture)) return "Unknown edit.";
         if (actor.Pending != null || _edits.Any(e => e.Actor == requester)) return "Your previous change is still finishing.";
@@ -468,7 +468,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         if (edit == null || (requester != ActorSlot.Host && edit.Actor != requester)) return (null, "That change is no longer running.");
         if (stage != null && edit.Stage != stage) return (null, "That change already finished.");
         if (requester == edit.Actor && c.Step != Step.Settle && (_activity.Get(requester)?.Epoch != c.Epoch ||
-            !_activity.Owns(requester, edit.Epoch, edit.Token, edit.Pc, ActivityOperation.Edit, edit.Targets.ToArray())))
+            !_activity.Owns(requester, edit.Epoch, edit.Token, edit.Pc, ActivityOperation.Edit, edit.Gesture == EditGesture.Power, edit.Targets.ToArray())))
             return (null, "That change no longer owns its parts.");
         return (edit, null);
     }
@@ -577,7 +577,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 if (c.Stamp != _activity.EditStamp(pc!, targets)) throw new InvalidDataException("Component edit binding differs from the host's.");
                 var edit = new ComponentEdit(ctx.Op, ctx.Op.Actor, c.Epoch, pc!.Id, slot?.Id ?? default, c.Gesture, c.Part, c.Component,
                     Array.AsReadOnly(targets));
-                _activity.SetEditClaim(ctx.Op, ctx.Op.Actor, pc, targets);
+                _activity.SetEditClaim(ctx.Op, ctx.Op.Actor, pc, targets, c.Gesture == EditGesture.Power);
                 _edits.Add(edit);
                 _native.Began(ctx, pc, edit);
                 break;

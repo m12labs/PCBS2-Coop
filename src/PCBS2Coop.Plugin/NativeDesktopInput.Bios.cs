@@ -14,6 +14,7 @@ internal sealed partial class NativeDesktopInput
     private readonly Dictionary<NetObjectId, float> _biosWanted = new();
     private static NativeDesktopInput _instance;
     private static bool _forceBiosKey;
+    [ThreadStatic] private static int _coopBootDepth;
     private LookingAtMonitorState _standIn;
 
     internal void Bind() => _instance = this;
@@ -97,13 +98,40 @@ internal sealed partial class NativeDesktopInput
     [HarmonyPatch(typeof(VirtualComputer._StartupSequence_d__69), nameof(VirtualComputer._StartupSequence_d__69.MoveNext))]
     internal static class BootFollow
     {
-        private static void Prefix(VirtualComputer._StartupSequence_d__69 __instance, out State __state)
+        private static void Prefix(VirtualComputer._StartupSequence_d__69 __instance, out (State Restore, bool CoopBoot) __state)
         {
-            __state = null;
-            try { __state = BeginBoot(__instance.__4__this); }
+            __state = (null, CoopSaves.Current != CoopSaves.Mode.None);
+            if (__state.CoopBoot) _coopBootDepth++;
+            try { __state.Restore = BeginBoot(__instance.__4__this); }
             catch (Exception e) { Plugin.Logger.LogError("[desktop] boot follow failed: " + e); }
         }
 
-        private static void Postfix(State __state) => EndBoot(__state);
+        private static void Finalizer((State Restore, bool CoopBoot) __state)
+        {
+            if (__state.CoopBoot) _coopBootDepth--;
+            EndBoot(__state.Restore);
+        }
+    }
+
+    // These two cosmetic calls dereference the last active controller, which can be absent during a cold co-op load.
+    private static bool BootPromptFailed(Exception error) => _coopBootDepth > 0 &&
+        error is Il2CppException && error.Message.StartsWith("System.NullReferenceException:", StringComparison.Ordinal);
+
+    [HarmonyPatch(typeof(JobTutorialHintUi), nameof(JobTutorialHintUi.SetSpriteAssetForText))]
+    internal static class BootPromptAtlas
+    {
+        private static Exception Finalizer(Exception __exception) => BootPromptFailed(__exception) ? null : __exception;
+    }
+
+    [HarmonyPatch(typeof(JobTutorialHintUi), nameof(JobTutorialHintUi.InsertActionIconsIntoText), typeof(string), typeof(bool),
+        typeof(Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<InputBase>))]
+    internal static class BootPromptText
+    {
+        private static Exception Finalizer(Exception __exception, ref string __result)
+        {
+            if (!BootPromptFailed(__exception)) return __exception;
+            __result = "";
+            return null;
+        }
     }
 }

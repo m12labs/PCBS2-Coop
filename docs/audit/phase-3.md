@@ -602,3 +602,7 @@ The final build (all fixes, including the settle step) is deployed: plugin, netw
 
 - Installing a USB drive (or any part) is a component edit and is not shared. A host save records it as a host-only part outside the change stream. Phase 4.
 - A physical-note fixture (3g) remains untested; Free Build can't create one, and a world with one is refused.
+
+### Catalog case regression in 0.36 and 0.37
+
+The 0.35 catalog could not spawn the white Kolink Stronghold because its Addressables entry wraps the case prefab in `MaterialSwap`. Version 0.36 follows that reference and both players spawned the variant. Version 0.37 also copies the prefab's default PCI-cover states and automatic fan flips into the remote carrier record. The real host spawn then passed both native profile checks while still in the host's hands, and the case reached the guest's cupboard when the host stored it. [Run record](acceptance-2026-11-04.md#stock-case-carrier-profile-in-037)

@@ -544,6 +544,51 @@ internal sealed partial class NativeDesktopInput : IDesktopInputNative
     /// <summary>Null for a destroyed Unity object (a restart or closed window replaces the screen's objects).</summary>
     private static GameObject Live(GameObject go) => go == null ? null : go;
 
+    // The native desktop icon checks for a monitor state before it runs the double click.
+    [HarmonyPatch(typeof(ProgramIcon), nameof(ProgramIcon.OnClick))]
+    internal static class ReplayedProgramIcon
+    {
+        private static void Prefix(out (GameController Controller, State Previous) __state)
+        {
+            __state = default;
+            if (!Injecting || _instance == null || GameController.Get() is not { } controller) return;
+            var previous = controller.m_currentState;
+            if (previous?.TryCast<LookingAtMonitorState>() != null) return;
+            controller.m_currentState = _instance.StandIn();
+            __state = (controller, previous);
+        }
+
+        private static Exception Finalizer(Exception __exception, (GameController Controller, State Previous) __state)
+        {
+            if (__state.Controller != null) __state.Controller.m_currentState = __state.Previous;
+            return __exception;
+        }
+    }
+
+    // Start runs a frame after the mirrored click and reads the workstation even when this player is walking.
+    [HarmonyPatch(typeof(AddProgramApp), "Start")]
+    internal static class ProgramManagerWorkstation
+    {
+        private static void Prefix(AddProgramApp __instance, out WorkStation __state)
+        {
+            __state = NativeProjection.Workstation;
+            var self = _instance;
+            if (self?._world.Admitted != true || !self._coop.WorldReady) return;
+            var os = __instance.GetComponentInParent<OS>();
+            if (os == null) return;
+            foreach (var pc in self._coop.Objects.Model.Pcs.Where(x => x.Location.Place == PcPlace.Bench))
+            {
+                var station = self._coop.Objects.FindBench(pc.Id)?.m_workStation;
+                var computer = station?.m_virtualComputer;
+                if (computer?.m_os?.Pointer != os.Pointer || self._coop.Objects.IdOf(computer.ComputerSave) != pc.Id) continue;
+                NativeProjection.Workstation = station;
+                break;
+            }
+        }
+
+        private static void Finalizer(WorkStation __state) => NativeProjection.Workstation = __state;
+    }
+
     private static void Hover(Pointer p, GameObject over)
     {
         p.Hover = Live(p.Hover);

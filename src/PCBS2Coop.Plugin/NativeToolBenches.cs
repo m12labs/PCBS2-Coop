@@ -100,7 +100,7 @@ internal sealed partial class NativeToolBenches : IToolBenchNative
         var key = table == null ? null : Key(table);
         var why = key == null ? "That tool table isn't known." : !Ready ? "The shared world isn't ready on this game yet."
             : Handler.Busy(key, _world.Local) ?? (_session != null ? "Your last tool table session is still being shared." : null);
-        if (why != null) { Notice(why); StateExit.Leave(state); return; }
+        if (why != null) { Notice(why); StateExit.Leave(state, closeChildren: true); return; }
         _session = new Session
         {
             State = state, Table = table, Bench = key, Tool = tool,
@@ -114,7 +114,7 @@ internal sealed partial class NativeToolBenches : IToolBenchNative
             if (!_world.Submit(CommandTypes.ToolBench, ToolBenchWorld.Use(_coop.Activity.Get(_world.Local)!.Epoch, key, tool), out var op))
             {
                 Notice("Not connected to the host's world.");
-                _session = null; StateExit.Leave(state);
+                _session = null; StateExit.Leave(state, closeChildren: true);
                 return;
             }
             if (_session != null) _session.Use = op;
@@ -132,7 +132,7 @@ internal sealed partial class NativeToolBenches : IToolBenchNative
         {
             Notice(text);
             _session = null;
-            StateExit.Leave(s.State);
+            StateExit.Leave(s.State, closeChildren: true);
             Plugin.Logger.LogInfo($"[tools] table {s.Bench}: refused ({text}).");
             return;
         }
@@ -166,7 +166,7 @@ internal sealed partial class NativeToolBenches : IToolBenchNative
             _announce = false;
             if (_coop.Activity.Get(_world.Local) is { } a) _world.Submit(CommandTypes.ToolBench, ToolBenchWorld.Use(a.Epoch, s.Bench, s.Tool), out _);
         }
-        if (!s.Destroyed && InStack(s.State)) return;
+        if (!s.Destroyed && StateExit.InStack(GameController.Get(), s.State.Pointer)) return;
         if (s.GoneAt == 0) { s.GoneAt = now; return; }
         if (now - s.GoneAt < Quiet) return;
         // A guest's Use may still be on its way: the leave has to come after it.
@@ -195,16 +195,6 @@ internal sealed partial class NativeToolBenches : IToolBenchNative
         }
         _world.Submit(CommandTypes.ToolBench, ToolBenchWorld.Leave(actor.Epoch, s.Bench, s.Tool, result), out _);
         Plugin.Logger.LogInfo($"[tools] {ToolBenchWorld.ToolName(s.Tool)} table {s.Bench}: session over; {(result == null ? "nothing changed" : $"result {result.Length} bytes")}.");
-    }
-
-    private static bool InStack(State state)
-    {
-        var ctrl = GameController.Get();
-        if (ctrl == null || state == null) return false;
-        if (ctrl.GetCurrentState()?.Pointer == state.Pointer) return true;
-        if (ctrl.m_previousState != null)
-            foreach (var s in ctrl.m_previousState) if (s != null && s.Pointer == state.Pointer) return true;
-        return false;
     }
 
     // ---------------- the inventory result ----------------
@@ -420,11 +410,22 @@ internal static class PartVariants
 /// <summary>Closes a game state this player just opened, on the next frame (not from inside <c>SetCurrentState</c>).</summary>
 internal static class StateExit
 {
-    private static readonly List<(long State, float At)> s_leave = new();
+    private static readonly List<(IntPtr State, float At, bool CloseChildren)> s_leave = new();
 
-    internal static void Leave(State state)
+    internal static void Leave(State state, bool closeChildren = false)
     {
-        if (state != null && s_leave.All(x => x.State != state.Pointer.ToInt64())) s_leave.Add((state.Pointer.ToInt64(), Time.realtimeSinceStartup));
+        if (state != null && s_leave.All(x => x.State != state.Pointer))
+            s_leave.Add((state.Pointer, Time.realtimeSinceStartup, closeChildren));
+    }
+
+    internal static bool InStack(GameController ctrl, IntPtr state)
+    {
+        if (ctrl == null) return false;
+        if (ctrl.GetCurrentState()?.Pointer == state) return true;
+        if (ctrl.m_previousState != null)
+            foreach (var previous in ctrl.m_previousState)
+                if (previous != null && previous.Pointer == state) return true;
+        return false;
     }
 
     internal static void Update()
@@ -433,11 +434,19 @@ internal static class StateExit
         var ctrl = GameController.Get();
         foreach (var item in s_leave.ToArray())
         {
-            if (ctrl?.GetCurrentState()?.Pointer.ToInt64() == item.State)
+            var current = ctrl?.GetCurrentState();
+            var atTool = current?.Pointer == item.State;
+            if (atTool || (item.CloseChildren && current != null && InStack(ctrl, item.State)))
             {
-                s_leave.Remove(item);
+                // Delidding opens its CPU inventory before the host can answer. Close each child through the native
+                // state stack until the refused tool itself exits. Other active tools are left alone.
+                if (atTool) s_leave.Remove(item);
                 try { ctrl.GoToPreviousState(); }
-                catch (Exception e) { Plugin.Logger.LogError("[tools] leaving a refused tool failed: " + e); }
+                catch (Exception e)
+                {
+                    s_leave.Remove(item);
+                    Plugin.Logger.LogError("[tools] leaving a refused tool failed: " + e);
+                }
             }
             else if (Time.realtimeSinceStartup - item.At > 3f) s_leave.Remove(item);
         }

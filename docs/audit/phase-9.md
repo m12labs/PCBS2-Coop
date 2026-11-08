@@ -179,7 +179,7 @@ Version **0.22** (network messages only; 0.22 reads 0.21 saves, `CoopSavePair.Sa
 
 **Model evidence:** **654/654** checks (paste begin/refusal/commit/settle, variants, tool tables: claim, prompt, one table per player, chunks/hash, departure, mid-session join). Release build 0 warnings, 0 errors; deployed and hash-checked. **Nothing ran in game.**
 
-### Not checked in game yet
+### Runtime gaps at 0.22
 
 - Everything above. In particular:
   - whether `SetDefaultPaste` shows a normal paste on the other game;
@@ -198,3 +198,29 @@ Version **0.22** (network messages only; 0.22 reads 0.21 saves, `CoopSavePair.Sa
 5. Water-cool a GPU at the water-cooling table (pads, paste, block). The other player gets the prompt. The finished card is in both inventories and installs on both games.
 6. Case modding shows the refusal notice.
 7. Esc halfway through each tool, then join, save/Continue and `/sync`: both games agree afterwards.
+
+### Owned paste and cleaning checks in 0.33
+
+On November 5, 2026, the host completed the Q-tip wipe and syringe application on a workbench CPU using the real tools. Both native games showed the same off and on flags after the respective edits. The guest was refused on the same PC while the host held the paste claim. Selecting Compressed Air displayed the cleaning refusal. Guest paste gestures, the visible label and cooling under load still needed checks at the end of the run. [Run record](acceptance-2026-11-04.md#host-thermal-paste-and-cleaning-in-033)
+
+The same day's 0.34 run verified the guest's completed Q-tip and paste syringe gestures. Both native games agreed on the live and saved paste flag after each gesture. The host saw “Applying thermal paste” under the guest's avatar while the tool was open. The shared pose uses the standing position kept by work mode while the native first-person controller is below the floor. Running this same PC after applying the paste still needs a test. [Run record](acceptance-2026-11-04.md#guest-thermal-paste-player-visibility-and-a-dry-loop-heat-failure-in-034)
+
+In 0.35 the guest completed the real eight-step GTX 1070 water-cooling procedure. The host's real interaction was refused while the guest held the table. After the guest closed it, both inventories held the same EKWB RGB variant. [Run record](acceptance-2026-11-04.md#finished-gpu-and-table-contention-in-035)
+
+On November 7, 2026, both players selected and installed that variant from their real inventories in 0.49. The opt-in probe called the game's commit callback for the actual preview. Both games showed the converted card and its water fittings. Version 0.49 loads attached part prefabs before replay construction. RAM, motherboard and radiator conversions still need their own checks. [Run record](acceptance-2026-11-04.md#installing-the-converted-gtx-1070-in-048-and-049)
+
+On November 6, 2026, both 0.39 games ran the previously pasted CPU in PC 213 with its cooler fitted. The actual OCCT automatic test finished on both without overheating or throttling. [Run record](acceptance-2026-11-04.md#occt-after-applying-paste-in-039)
+
+### Owned CPU delid checks in 0.49 and 0.50
+
+On November 7, 2026, both games received the host's delidded i3-8350K and the guest's delidded i5-8600K after the native procedures. The host's halfway Escape published no item, and its later finished i3-8350K survived cold Continue and a fresh guest join. The 0.50 retest of simultaneous table entry showed the refused guest returning to walking while the host kept the table. [Contention and cancellation record](acceptance-2026-11-04.md#tool-table-pickup-delid-contention-and-halfway-escape-in-049) · [Race and guest completion record](acceptance-2026-11-04.md#simultaneous-delid-table-entry-and-guest-completion-in-050)
+
+Both players selected their finished delidded processors from the actual inventory and installed them in PC 213 in 0.50. Both native sockets showed the delidded variant after each installation. [Installation record](acceptance-2026-11-04.md#installing-delidded-cpus-in-050)
+
+The resident PC pickup case is inapplicable to Delidding in game 1.17.02. With the table claimed and again after release, a carried case could not be placed in its native slot. The separate occupied Case Modding pickup check passed. [Delid applicability check](acceptance-2026-11-04.md#delidding-bench-pc-pickup-applicability-in-051)
+
+In 0.51 the guest used Escape after three of six native RAM water-cooling steps. Both inventories stayed unchanged and the claim cleared. [Halfway Escape record](acceptance-2026-11-04.md#halfway-escape-from-the-ram-water-cooling-tool-in-051)
+
+In 0.51 both inventories received the guest's finished two-stick RAM assembly, X570 with its CPU and VRM monoblock, and Alphacool radiator with its custom Silent Wings fan. The guest installed the X570 and radiator. Both games restored their attached parts on cold Continue and fresh admission. [Conversion and installation record](acceptance-2026-11-04.md#ram-x570-and-radiator-table-results-in-051)
+
+On November 8 both players installed each finished variant from the native inventory and the other game replayed it. The guest also removed both modules of the host-installed RAM assembly, with clean native checks on both games before reinstalling it. [Two-way installation record](acceptance-2026-11-04.md#ram-x570-and-radiator-table-results-in-051)

@@ -79,15 +79,17 @@ internal sealed class NativeEditReplay
         public InstallingPartState State;
         public Il2CppSystem.Collections.IEnumerator Iterator;
         public CustomYieldInstruction Waiting;
-        public bool Exited, Loaded, Moved;
+        public bool Exited, Moved;
+        public PartDesc[] InstallAssets;
+        public int AssetsPending;
         /// <summary>The orientation angle held while waiting for the editor's choice.</summary>
         public float? WaitDegrees;
         public WorkingOnComputerState StandIn;
-        public float Started;
+        public float Started, WaitingForEditorAt;
     }
 
     public const float Timeout = 60f;
-    /// <summary>A replay waiting for the editor gives up after the editor's own limit plus a margin.</summary>
+    /// <summary>Allow time for asset loading and unplugging before the replay can wait for the editor.</summary>
     public const float WaitTimeout = NativeComponentEdits.EditTimeout + 30f;
     private readonly List<Run> _runs = new();
     private readonly List<Plan> _queued = new();
@@ -139,12 +141,17 @@ internal sealed class NativeEditReplay
             if (plan.Part != null)
             {
                 run.Phase = Phase.Loading;
-                var desc = plan.Part.GetPart() ?? throw new InvalidDataException($"part {plan.Part.GetPartId()} is unknown");
-                if (PartsDatabase.s_instance.HasLoadedPart(desc, out _)) run.Loaded = true;
-                else
+                var database = PartsDatabase.s_instance;
+                run.InstallAssets = InstallAssets(plan.Part, database);
+                run.AssetsPending = run.InstallAssets.Length;
+                foreach (var desc in run.InstallAssets)
                 {
-                    PartsDatabase.TestDelegate loaded = (System.Action<PartsDatabase.LoadedPart, Transform>)((asset, parent) => run.Loaded = true);
-                    PartsDatabase.s_instance.InitPartLoading(desc, loaded, null);
+                    if (database.HasLoadedPart(desc, out _)) run.AssetsPending--;
+                    else
+                    {
+                        PartsDatabase.TestDelegate loaded = (System.Action<PartsDatabase.LoadedPart, Transform>)((asset, parent) => run.AssetsPending--);
+                        database.InitPartLoading(desc, loaded, null);
+                    }
                 }
             }
             else if (plan.Direct)
@@ -172,6 +179,37 @@ internal sealed class NativeEditReplay
         catch (Exception e) { Fail(run, e.ToString()); }
     }
 
+    private static PartDesc[] InstallAssets(PartInstance part, PartsDatabase database)
+    {
+        var assets = new List<PartDesc>();
+        void AddPart(PartInstance instance)
+        {
+            if (instance != null)
+                assets.Add(instance.GetPart() ?? throw new InvalidDataException($"part {instance.GetPartId()} is unknown"));
+        }
+
+        // ItemDisplay.InstallButtonClicked requests the attached prefabs before placing a preview.
+        // A detached replay has no inventory preview, so request those assets before constructing the install state.
+        AddPart(part);
+        AddPart(part.TryCast<GpuPartInstance>()?.WaterCoolBlock);
+        if (part.TryCast<RamPartInstance>() is { WaterCoolBlock: { } ramBlock } ram)
+        {
+            AddPart(ramBlock);
+            if (ram.m_RamHeatsinks != null)
+                foreach (var sku in ram.m_RamHeatsinks)
+                    if (!string.IsNullOrEmpty(sku))
+                        assets.Add(database.GetDesc(sku, null) ?? throw new InvalidDataException($"RAM heatsink {sku} is unknown"));
+        }
+        if (part.TryCast<MotherboardPartInstance>() is { } board)
+        {
+            AddPart(board.WaterCoolBlock);
+            AddPart(board.CPUInstance);
+        }
+        if (part.TryCast<RadiatorPartInstance>()?.FanId is { } fans)
+            foreach (var fan in fans) AddPart(fan);
+        return assets.DistinctBy(asset => asset.m_id).ToArray();
+    }
+
     /// <summary>Per frame, main thread.</summary>
     public void Update()
     {
@@ -180,13 +218,18 @@ internal sealed class NativeEditReplay
             try
             {
                 var known = run.Plan.Known;
-                if (Time.realtimeSinceStartup - (known ? Math.Max(run.Started, run.Plan.KnownAt) : run.Started) > (known ? Timeout : WaitTimeout))
+                var now = Time.realtimeSinceStartup;
+                // The editor owns the running operation. They can spend as long as they need on screws or orientation.
+                if (!known && (run.Phase == Phase.Animating || (run.Plan.Held && run.Moved && run.Waiting == null)))
+                    run.WaitingForEditorAt = now;
+                var since = Math.Max(run.Started, known ? run.Plan.KnownAt : run.WaitingForEditorAt);
+                if (now - since > (known ? Timeout : WaitTimeout))
                     throw new TimeoutException(known ? $"still running after {Timeout} s" : $"the other player's edit didn't finish within {WaitTimeout} s");
                 if (run.Plan.Case == null || run.Plan.Slot == null) throw new InvalidDataException("the PC or slot was destroyed");
                 switch (run.Phase)
                 {
                     case Phase.Loading:
-                        if (run.Loaded && !run.Plan.Held) Construct(run);
+                        if (run.AssetsPending == 0 && !run.Plan.Held) Construct(run);
                         break;
                     case Phase.Unplugging:
                         Unplug(run);
@@ -203,7 +246,9 @@ internal sealed class NativeEditReplay
     private void Construct(Run run)
     {
         var p = run.Plan;
-        if (!PartsDatabase.s_instance.HasLoadedPart(p.Part.GetPart(), out _)) throw new InvalidDataException("the part asset did not load");
+        foreach (var desc in run.InstallAssets)
+            if (!PartsDatabase.s_instance.HasLoadedPart(desc, out _))
+                throw new InvalidDataException($"the asset for {desc.m_id} did not load");
         // This player's previews are put away when the other player's edit begins; the game removes them a frame later.
         if (p.Slot.GetComponent() is { } held && NativeAssembly.IsPreview(held)) return;
         if (p.Slot.GetComponent() != null) throw new InvalidDataException("the slot is not empty on this game");
@@ -337,7 +382,9 @@ internal sealed class NativeEditReplay
                 if (!string.IsNullOrEmpty(c.Connector)) gc.m_cableConnectorType = PartsDatabase.s_instance.GetDesc(c.Connector, null);
                 if (c.Pins != null) gc.m_pinMaterialIndices = c.Pins;
             }
-            return NativeProjection.Run(call);
+            // A USB slot refreshes the edited PC's apps via the game's active-workstation getter.
+            var station = run.Plan.Slot?.m_slotType == Slot.SlotType.USB ? run.Plan.Bench?.m_workStation : null;
+            return NativeProjection.Run(call, station);
         }
         finally
         {
@@ -448,7 +495,9 @@ internal sealed class NativeEditReplay
         private static bool Prefix(InputButton __instance, System.Reflection.MethodBase __originalMethod, ref bool __result)
         {
             // Phase 6: a boot this game follows into BIOS sees the BIOS key held (NativeDesktopInput.BootFollow).
-            if (NativeDesktopInput.ForceHeld(__instance) && __originalMethod.Name == nameof(InputButton.IsHeld))
+            if (__originalMethod.Name == nameof(InputButton.IsHeld) &&
+                (NativeDesktopInput.ForceHeld(__instance) || Phase6Probe.BiosKeyHeld(__instance) ||
+                    (_step == null && Phase6Probe.DelidActionHeld(__instance))))
             { __result = true; return false; }
             if (_step == null) return true;
             __result = false;
@@ -473,9 +522,16 @@ internal sealed class NativeEditReplay
     [HarmonyPatch(typeof(InstallingPartState), nameof(InstallingPartState.DoOrientation))]
     internal static class OrientationGuard
     {
-        private static void Prefix(InstallingPartState __instance)
+        private static void Prefix(InstallingPartState __instance, bool __0)
         {
-            if (_step?.State == null || __instance == null || __instance.Pointer != _step.State.Pointer) return;
+            if (__instance == null) return;
+            if (_step == null)
+            {
+                // The native orientation step waits for player input without a time limit.
+                if (!__0 && !__instance.m_accept) NativeComponentEdits.WaitingForEditInput(__instance);
+                return;
+            }
+            if (_step.State == null || __instance.Pointer != _step.State.Pointer) return;
             if (!_step.Plan.Known)
             {
                 // Before the editor's commit the step waits, not accepted: the part sits there until they choose. Keep its

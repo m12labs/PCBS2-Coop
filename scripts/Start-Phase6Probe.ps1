@@ -3,7 +3,7 @@ param(
     [ValidateSet('host', 'join')][string]$Role = 'host',
     [string]$GameDir,
     [switch]$Deploy,
-    # Relaunch a host on this run's own disposable saves (fresh-process Continue).
+    # Relaunch this run. A host Continues; a guest joins from a fresh host snapshot.
     [switch]$Resume
 )
 $ErrorActionPreference = 'Stop'

@@ -35,30 +35,37 @@ internal sealed partial class NativePcLifecycle
         var wc = Workshop;
         if (wc.IsCaseLoading || Saves.SpawningPC) { Refuse("Import", "Objects are still loading."); return; }
         if (!wc.CarryingEmpty()) { Refuse("Import", "Your hands are not empty."); return; }
+        var staged = record != null && _filePcs.ContainsKey(record.Pointer);
         byte[] content;
-        try { content = Pack(record); }
+        CustomCaseSaveContainer design;
+        try
+        {
+            design = staged ? _filePcs[record.Pointer].Design : NativeToolBenches.DesignOf(record);
+            content = Pack(record, design);
+        }
         catch (Exception e) { Refuse("Import", "That PC file can't be read: " + e.Message); return; }
         if (content.Length > MaxImportBytes) { Refuse("Import", $"That PC is too large to share ({content.Length / 1024 / 1024} MB, the limit is 8 MB)."); return; }
         var hash = SHA256.HashData(content);
         var state = GameController.Get()?.GetCurrentState()?.Pointer ?? IntPtr.Zero;
         var workshop = _coop.Workshop ?? throw new InvalidDataException("The workshop sync isn't running.");
         var length = content.Length;
+        var request = new Request { What = "Import", State = state, FileRecord = staged ? record.Pointer : IntPtr.Zero };
         if (workshop.SendContent(content, "the imported PC", epoch =>
             {
                 if (_coop.Activity.Get(_world.Local)?.Epoch != epoch) return;
-                Submit(PcLifecycle.Import(epoch, hash, length), new Request { What = "Import", State = state });
+                Submit(PcLifecycle.Import(epoch, hash, length), request);
             }))
-            Plugin.Logger.LogInfo($"[objects] importing a PC file ({length / 1024} KB{(NativeToolBenches.DesignOf(record) != null ? ", with its case design" : "")}).");
+            Plugin.Logger.LogInfo($"[objects] importing a PC file ({length / 1024} KB{(design != null ? ", with its case design" : "")}).");
     }
 
     /// <summary>The PC record and its case design, compressed.</summary>
-    private static byte[] Pack(ComputerSave record)
+    private static byte[] Pack(ComputerSave record, CustomCaseSaveContainer design)
     {
         if (record == null) throw new InvalidDataException("no PC");
         var pc = NativePcCodec.Write(record);
-        var design = NativeToolBenches.DesignOf(record) is { } d ? NativeToolBenches.WriteDesign(d) : Array.Empty<byte>();
+        var paint = design != null ? NativeToolBenches.WriteDesign(design) : Array.Empty<byte>();
         var w = new NetDataWriter();
-        w.Put(pc.Length); w.Put(pc); w.Put(design.Length); w.Put(design);
+        w.Put(pc.Length); w.Put(pc); w.Put(paint.Length); w.Put(paint);
         return NativeToolBenches.Deflate(w.Data, w.Length);
     }
 
@@ -102,7 +109,12 @@ internal sealed partial class NativePcLifecycle
                 manager.CustomisationList.Add(design);
                 record.CustomisationID = number; record.isCustomised = true;
             });
-            if (ctx.FromLocalPlayer) CreateHere(pc, record, null, LocalRequest(ctx));
+            if (ctx.FromLocalPlayer)
+            {
+                var request = LocalRequest(ctx);
+                CreateHere(pc, record, null, request);
+                if (request != null) _filePcs.Remove(request.FileRecord);
+            }
             else Objects.SetRemoteCarrier(pc, record);
             Plugin.Logger.LogInfo($"[objects] imported PC {pc.Id} for {pc.Location.Actor} by {ctx.Op}{(design != null ? $", case design {number}" : "")}" +
                                   (ctx.FromLocalPlayer ? ", into this player's hands." : ", remote carrier."));

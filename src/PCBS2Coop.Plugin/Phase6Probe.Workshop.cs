@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using HarmonyLib;
 using PCBS2Coop.Network;
 using UnityEngine;
 using Object = UnityEngine.Object;
@@ -10,6 +11,9 @@ namespace PCBS2Coop;
 /// pickup), so the co-op hooks run as they would for a player.</summary>
 internal sealed partial class Phase6Probe
 {
+    [ThreadStatic] private static bool s_wheelActionHeld;
+    private bool _wheelInputPatched;
+
     private bool WorkshopCommand(string command)
     {
         var coop = CoopRunner.Instance?.Coop;
@@ -20,13 +24,60 @@ internal sealed partial class Phase6Probe
             switch (bits[0])
             {
                 case "room-report": Event("room-report", RoomReport(coop)); return true;
+                case "wheel-report":
+                    Event("wheel-report", Object.FindObjectsOfType<ColourWheel>().Where(wheel => wheel.isActiveAndEnabled && wheel.Disc != null).Select(wheel =>
+                    {
+                        var local = wheel.GetLocalMousePosForImage(wheel.Disc);
+                        var cursor = InputModule.GetLocalCursorPos();
+                        var raw = InputModule.GetMousePosition();
+                        var halfWidth = wheel.Disc.rectTransform.rect.width * 0.5f;
+                        var colour = wheel.ColourSelection_Disc;
+                        return new
+                        {
+                            path = DesktopPath(wheel.transform, null), wheel.forTheme, wheel.IsDisabled,
+                            wheel.toggleWheel, edit = wheel.EditState.ToString(), discVisible = wheel.Disc.gameObject.activeInHierarchy,
+                            discCursor = wheel.DiscCursor != null, square = wheel.Square != null, squareCursor = wheel.SquareCursor != null,
+                            selected = wheel.m_colourWheelSelectable?.IsSelected, cursor = new { cursor.x, cursor.y }, local = new { local.x, local.y },
+                            raw = new { raw.x, raw.y }, radius = local.magnitude, inner = wheel.InnerRadius * halfWidth, outer = wheel.OuterRadius * halfWidth,
+                            colour = new { colour.r, colour.g, colour.b },
+                        };
+                    }).ToArray());
+                    return true;
+                case "wheel-step": StepLightingWheel(); return true;
+                case "lighting-report":
+                {
+                    var pc = RequirePc(bits[1]);
+                    var ws = coop.Objects.FindBench(pc.Id)?.m_workStation;
+                    var vc = ws?.m_virtualComputer;
+                    var record = vc?.ComputerSave ?? coop.Objects.RecordFor(pc.Id);
+                    var sim = vc?.GetComputerSim();
+                    Event("lighting-report", new
+                    {
+                        pc = pc.Id.Value, generation = coop.Session.World.Generation, revision = coop.Session.World.Revision,
+                        state = GameController.Get()?.GetCurrentState()?.GetIl2CppType()?.Name,
+                        hudActive = Object.FindObjectsOfType<LightingApp>().Any(app => app != null && app.isActiveAndEnabled &&
+                            ws != null && app.m_workStation?.Pointer == ws.Pointer),
+                        running = sim?.IsRunning(), time = sim?.m_LEDDriver?.m_time,
+                        sets = NativeCustomization.Sets(record, ws).Select(set => new { target = set.Target.ToString(), set.Preset, set.Slot, set.Lights }).ToArray(),
+                    });
+                    return true;
+                }
+                case "room-flags":
+                    Event("room-flags", Object.FindObjectsOfType<AddressableFlag>(true).Select(flag => new
+                    {
+                        path = DesktopPath(flag.transform, null), type = flag.m_decorationType.ToString(),
+                        active = flag.isActiveAndEnabled, wheel = flag.m_colourWheel != null,
+                    }).ToArray());
+                    return true;
+                case "export-pc-fixture":
+                    if (bits.Length != 2) throw new ArgumentException("export-pc-fixture:<pc>");
+                    ExportPcFixture(coop, RequirePc(bits[1]));
+                    return true;
                 case "lights":
                 {
-                    // As the switch's click: the game's own SetOn with the opposite of the current state.
                     var sw = Object.FindObjectsOfType<LightSwitch>().FirstOrDefault();
-                    var on = !GameController.Get().IsLightsOn;
-                    sw.SetOn(on, true, true);
-                    Event("room-command", $"lights {(on ? "on" : "off")}");
+                    sw._GetInteractions_b__20_0();
+                    Event("room-command", $"lights {(GameController.Get().IsLightsOn ? "on" : "off")}");
                     return true;
                 }
                 case "season-switch":
@@ -98,6 +149,67 @@ internal sealed partial class Phase6Probe
         return false;
     }
 
+    private void StepLightingWheel()
+    {
+        if (!Safe || GameController.Get()?.GetCurrentState()?.TryCast<LightingAppState>() == null)
+            throw new InvalidOperationException("Open the native Lighting app in an isolated co-op game first.");
+        var wheel = Object.FindObjectsOfType<ColourWheel>().Single(wheel =>
+            wheel.isActiveAndEnabled && !wheel.forTheme && !wheel.IsDisabled && wheel.toggleWheel &&
+            wheel.Disc != null && wheel.Disc.gameObject.activeInHierarchy);
+        var local = wheel.GetLocalMousePosForImage(wheel.Disc);
+        var radius = local.magnitude;
+        var halfWidth = wheel.Disc.rectTransform.rect.width * 0.5f;
+        if (radius <= wheel.InnerRadius * halfWidth || radius >= wheel.OuterRadius * halfWidth)
+            throw new InvalidOperationException("Move the real pointer onto the hue ring first.");
+        if (!_wheelInputPatched)
+        {
+            var harmony = new Harmony(Plugin.Guid + ".phase6-wheel-input");
+            harmony.Patch(AccessTools.Method(typeof(InputButton), nameof(InputButton.Get)),
+                prefix: new HarmonyMethod(AccessTools.Method(typeof(Phase6Probe), nameof(WheelActionInput))));
+            _wheelInputPatched = true;
+        }
+        var before = wheel.ColourSelection_Disc;
+        try
+        {
+            s_wheelActionHeld = true;
+            // The native Update enters DiscSelecting on the first action and samples hue on the second.
+            wheel.Update();
+            var edit = wheel.EditState.ToString();
+            wheel.Update();
+            var after = wheel.ColourSelection_Disc;
+            Event("wheel-step", new { radius, edit, before = new { before.r, before.g, before.b },
+                after = new { after.r, after.g, after.b }, bypasses = "physical action hold only" });
+        }
+        finally { s_wheelActionHeld = false; }
+    }
+
+    private static bool WheelActionInput(InputButton __instance, ref float __result)
+    {
+        if (!s_wheelActionHeld || __instance.Pointer != PCBSInput.m_action?.Pointer) return true;
+        __result = 1f;
+        return false;
+    }
+
+    private void ExportPcFixture(CoopController coop, PcFact pc)
+    {
+        var source = coop.Objects.CaptureRecord(pc.Id) ?? throw new InvalidOperationException("The test PC has no native record.");
+        var design = NativeToolBenches.DesignOf(source) ?? throw new InvalidOperationException("The test PC has no case design to export.");
+        var record = NativePcCodec.Read(NativePcCodec.Write(source));
+        // The import browser reads its thumbnail from this JSON. Use a one-pixel PNG without running the game's photo capture.
+        const string thumbnail = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/rS8AAAAASUVORK5CYII=";
+        record.screenshotBytes = null;
+        var name = $"Acceptance PC {pc.Id.Value}";
+        var components = NativeObjectState.Parts(record).Values.Select(part => part.GetPart()?.m_uiName ?? part.GetPartId()).ToArray();
+        var metadata = new PCSharingJsonData(name, components, thumbnail);
+        var file = new PcSharingSaveFile(record, design, $"<pcbs>{JsonUtility.ToJson(metadata)}</pcbs>");
+        var folder = Path.Combine(AutoTest.IsolatedSaveDir, "PCs");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, $"acceptance-pc-{pc.Id.Value}.pcbs");
+        if (File.Exists(path)) throw new IOException("The test PC file already exists in this role's isolated PC folder.");
+        PCFileSharing.ExportPcXorMethod(file, path);
+        Event("export-pc-fixture", new { pc = pc.Id.Value, path, bytes = new FileInfo(path).Length, design = design.CustomisationID });
+    }
+
     private static OS OsOf(CoopController coop, NetObjectId pc)
     {
         var bench = coop.Objects.FindBench(pc);
@@ -116,8 +228,12 @@ internal sealed partial class Phase6Probe
             foreach (var l in list) items.Add($"{(int)l.DecType}|{l.ID}|{l.SelectionIndex}|{l.CurrentIndex}|{(int)l.Theme}");
         }
         var tm = Object.FindObjectOfType<ThemeManager>();
+        var wheel = tm?.m_attachedColourWheel;
         var ctrl = GameController.Get();
         var w = coop.Workshop?.Handler;
+        var ceilingFans = Object.FindObjectsOfType<CeilingFan>().Where(fan => fan?.animator != null)
+            .Select(fan => new { name = fan.name, ignoresSwitch = fan.ignoresLightSwitch, speed = fan.animator.GetFloat("Speed") })
+            .ToArray();
         var pictures = new List<object>();
         foreach (var pc in coop.Objects.Model.Pcs)
         {
@@ -137,11 +253,21 @@ internal sealed partial class Phase6Probe
         {
             role = coop.Session.Role.ToString(),
             lightsOn = ctrl?.IsLightsOn, worldLights = w?.LightsOn, season = ctrl?.m_season.ToString(), worldSeason = w?.Season,
+            ceilingFans,
             activeDecoration = Object.FindObjectsOfType<DecorationSwitch>(true).Where(s => s.IsDecorationActive()).Select(s => s.m_id.ToString()).ToArray(),
             worldDecoration = w?.ActiveDecoration, decorator = w?.Decorator?.ToString(), loading = dec?.Loading,
+            viewingRoomWheel = ctrl?.GetCurrentState()?.TryCast<LookingAtMonitorState>()?.m_isColourPicker == true,
             decorations = items.Count, decorHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", items))))[..16],
             decorList = items.ToArray(),
             colour = tm == null ? null : $"{tm.m_currentColour.r:0.00},{tm.m_currentColour.g:0.00},{tm.m_currentColour.b:0.00}", pulse = tm?.GetPulse(),
+            colourWheelActive = wheel?.isActiveAndEnabled,
+            roomWheel = wheel == null ? null : new { path = DesktopPath(wheel.transform, null), wheel.forTheme, wheel.ForTablet,
+                selected = wheel.m_colourWheelSelectable?.IsSelected, pulseVisible = wheel.pulseButton?.gameObject.activeInHierarchy,
+                staticVisible = wheel.staticButton?.gameObject.activeInHierarchy },
+            themeLights = tm?.m_Lights?.ToArray().Where(light => light != null && light.isActiveAndEnabled).Select(light => new
+            {
+                path = DesktopPath(light.transform, null), light.intensity, light.color.r, light.color.g, light.color.b
+            }).ToArray(),
             pictures,
             pcs = coop.Objects.Model.Pcs.Count, imported = coop.Objects.Model.Pcs.Count(p => p.Provenance.Origin == InstanceOrigin.Imported),
         };

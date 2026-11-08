@@ -32,6 +32,8 @@ internal sealed partial class Phase6Probe
     private string _lastDesktopWindows = "";
     private float _nextSample;
     private bool _wasReady;
+    private NetObjectId _biosKeyPc;
+    private float _biosKeyUntil;
     private static Phase6Probe _current;
 
     public Phase6Probe()
@@ -211,12 +213,14 @@ internal sealed partial class Phase6Probe
     }
 
     private int _commandsRead;
+    private bool _skipCommandHistory = Environment.GetEnvironmentVariable("PCBS2COOP_PROBE_RESUME") == "1";
 
     public void Update()
     {
         try { Commands(); } catch (Exception e) { Event("command-error", e.ToString()); }
         if (!Safe || Time.realtimeSinceStartup < _nextSample) return;
         _nextSample = Time.realtimeSinceStartup + 0.25f;
+        try { UpdateStressFixture(); } catch (Exception e) { Event("stress-fixture-failed", new { stage = "update", error = e.ToString() }); _stress = null; }
         try
         {
             var ready = CoopRunner.Instance?.Coop.WorldReady == true;
@@ -440,18 +444,34 @@ internal sealed partial class Phase6Probe
         var file = Path.Combine(Path.GetDirectoryName(_file)!, "commands.txt");
         if (!File.Exists(file)) { Directory.CreateDirectory(Path.GetDirectoryName(file)!); File.WriteAllText(file, ""); return; }
         var lines = File.ReadAllLines(file);
+        if (_skipCommandHistory)
+        {
+            // This file is an append-only operator journal. A fresh process must not run the earlier process's
+            // save, exit or edit commands again while the menu is being initialized.
+            _commandsRead = lines.Length;
+            _skipCommandHistory = false;
+            Event("commands-resumed", new { skipped = _commandsRead });
+            return;
+        }
         while (_commandsRead < lines.Length)
         {
             var command = lines[_commandsRead++].Trim();
             if (command.Length == 0) continue;
             Event("operator-command", command);
             if (command.StartsWith("aim:", StringComparison.Ordinal)) Aim(command);
+            else if (command == "look-remote") LookAtRemote();
+            else if (command == "look-up" && LocalPlayer.Root is { } root && Camera.main is { } camera)
+                LookAt(root, camera.transform.position + Vector3.up);
             else if (command == "desktop-report") Event("desktop-report", DesktopReport());
+            else if (command.StartsWith("hold-bios-key:", StringComparison.Ordinal)) HoldBiosKey(command[14..]);
             else if (command.StartsWith("screen-dump:", StringComparison.Ordinal)) Event("screen-dump", ScreenDump(command[12..]));
             else if (command.StartsWith("repair:", StringComparison.Ordinal) && uint.TryParse(command[7..], out var repairPc))
                 CoopRunner.Instance?.Coop.Repair?.Failed(new NetObjectId(repairPc), "probe: pretend this game couldn't show a change", new InvalidDataException("probe"));
             else if (SavesCommand(command)) { }
             else if (WorkshopCommand(command)) { }
+            else if (StressCommand(command)) { }
+            else if (ToolsCommand(command)) { }
+            else if (GesturesCommand(command)) { }
             else if (command == "sim-report") Event("sim-report", SimReport());
             else if (command.StartsWith("sim-", StringComparison.Ordinal) || command.StartsWith("tuner", StringComparison.Ordinal) ||
                      command.StartsWith("fans", StringComparison.Ordinal) || command.StartsWith("programs:", StringComparison.Ordinal) ||
@@ -465,6 +485,29 @@ internal sealed partial class Phase6Probe
     }
 
     // ---------------- phase 7: simulation, GPU Tuner and Fan Control ----------------
+
+    private void HoldBiosKey(string arg)
+    {
+        var coop = CoopRunner.Instance?.Coop;
+        var monitor = coop == null ? default : NativeDesktopInput.LocalMonitor(coop);
+        if (!ulong.TryParse(arg, out var pc) || pc == 0 || monitor.Pc.Value != pc)
+        {
+            Event("hold-bios-key", "Look at the specified PC's monitor first.");
+            return;
+        }
+        _biosKeyPc = monitor.Pc;
+        _biosKeyUntil = Time.unscaledTime + 8f;
+        Event("hold-bios-key", new { pc, seconds = 8, bypasses = "physical key hold only" });
+    }
+
+    internal static bool BiosKeyHeld(InputButton button)
+    {
+        var probe = _current;
+        if (probe == null || probe._biosKeyUntil <= 0 || Time.unscaledTime >= probe._biosKeyUntil || button == null ||
+            (button.Pointer != PCBSInput.m_enterBios?.Pointer && button.Pointer != PCBSInput.m_enterBiosAlt?.Pointer)) return false;
+        var coop = CoopRunner.Instance?.Coop;
+        return probe.Safe && coop != null && NativeDesktopInput.LocalMonitor(coop).Pc == probe._biosKeyPc;
+    }
 
     private static VirtualComputer ProbeComputer(string arg)
     {
@@ -605,25 +648,56 @@ internal sealed partial class Phase6Probe
     private static void Aim(string command)
     {
         var bits = command.Split(':');
-        if (bits.Length != 3 || !int.TryParse(bits[2], out var index) || index < 0) throw new ArgumentException("aim:<bench|peripheral>:<index>");
+        if (bits.Length is < 3 or > 4 || !int.TryParse(bits[2], out var index) || index < 0)
+            throw new ArgumentException("aim:<bench|cupboard|peripheral|light-switch|room-wheel>:<index>[:height-offset]");
+        var offset = 0f;
+        if (bits.Length == 4 && (!float.TryParse(bits[3], System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out offset) || !float.IsFinite(offset) || Math.Abs(offset) > 1))
+            throw new ArgumentException("Aim height offset must be within one metre.");
         var root = LocalPlayer.Root;
         if (Camera.main == null || root == null) throw new InvalidOperationException("No workshop player.");
+        var roomWheel = bits[1] == "room-wheel";
         Component target = bits[1] switch
         {
             "bench" => Object.FindObjectOfType<SaveLoadSystem>().benchSlots[index],
+            "cupboard" => Object.FindObjectsOfType<Cupboard>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             "peripheral" => Object.FindObjectsOfType<PeripheralSlot>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
+            "light-switch" => Object.FindObjectsOfType<LightSwitch>().OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
+            "room-wheel" when index <= 1 => Object.FindObjectsOfType<AddressableFlag>().Single(flag =>
+                flag.m_decorationType == DecorationType.COLOURWHEEL && flag.m_colourWheel != null &&
+                DesktopPath(flag.transform, null).StartsWith("Workshop/", StringComparison.Ordinal)).m_colourWheel,
             _ => throw new ArgumentException("Unknown aim target.")
         };
         var col = target is BenchSlot bench ? bench.m_caseCol : target.GetComponentInChildren<Collider>();
-        var point = col != null ? col.bounds.center : target.transform.position + Vector3.up;
+        var point = roomWheel ? target.transform.position : col != null ? col.bounds.center : target.transform.position + Vector3.up;
+        point.y += offset;
         var reset = (target as BenchSlot)?.PlayerResetPosition;
-        var pos = reset != null ? reset.transform.position : point + target.transform.forward * 1.3f;
+        var pos = reset != null ? reset.transform.position : point + target.transform.forward * (roomWheel && index == 1 ? -1.3f : 1.3f);
         pos.y = root.position.y;
         var cc = LocalPlayer.Controller;
         var wasEnabled = cc != null && cc.enabled;
         if (wasEnabled) cc.enabled = false;
         try { root.position = pos; }
         finally { if (wasEnabled) cc.enabled = true; }
+        LookAt(root, point);
+        _current?.Event("camera-setup", new { target = target.name, path = DesktopPath(target.transform, null), position = pos.ToString(), aim = point.ToString() });
+    }
+
+    private void LookAtRemote()
+    {
+        var coop = CoopRunner.Instance?.Coop;
+        var root = LocalPlayer.Root;
+        if (coop?.RemoteViewPosition is not { } remote || root == null || Camera.main == null)
+        {
+            Event("look-remote", new { available = false });
+            return;
+        }
+        LookAt(root, remote + Vector3.up * 1.4f);
+        Event("look-remote", new { available = true, view = coop.RemoteViewReport, activity = coop.RemoteActivity });
+    }
+
+    private static void LookAt(Transform root, Vector3 point)
+    {
         var cam = Camera.main;
         var dir = point - cam.transform.position;
         var yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
@@ -635,6 +709,5 @@ internal sealed partial class Phase6Probe
             look.rotationY = -pitch;
         }
         cam.transform.rotation = Quaternion.Euler(pitch, yaw, 0);
-        _current?.Event("camera-setup", new { target = target.name, path = DesktopPath(target.transform, null), position = pos.ToString(), aim = point.ToString() });
     }
 }

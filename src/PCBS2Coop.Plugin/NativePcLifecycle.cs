@@ -15,7 +15,12 @@ namespace PCBS2Coop;
 /// </summary>
 internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
 {
-    private static readonly Dictionary<string, string[]> DefaultFanLayouts = new(StringComparer.Ordinal);
+    private sealed class CatalogCaseLayout((string Sku, bool Flipped)[] fans, bool[] pciCovers)
+    {
+        public readonly (string Sku, bool Flipped)[] Fans = fans;
+        public readonly bool[] PciCovers = pciCovers;
+    }
+    private static readonly Dictionary<string, CatalogCaseLayout> DefaultCaseLayouts = new(StringComparer.Ordinal);
     private const float ObserveInterval = .25f;
     private const float RejectedObserveBackoff = 5f;
     /// <summary>Native calls made by an accepted change. Interception and movement guards let them through.</summary>
@@ -25,6 +30,7 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
         public string What;
         public StoredPC Storage;
         public IntPtr State;
+        public IntPtr FileRecord;
     }
     private readonly CoopController _coop;
     private readonly WorldSync _world;
@@ -41,7 +47,7 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
         Handler = new PcLifecycle(coop.Objects.Model, coop.Activity, this, world.IsAuthority);
         world.Accepted += (OperationId op, ulong revision) => _pending.Remove(op);
         world.Rejected += OnRejected;
-        world.GenerationStarted += (uint generation, string reason) => _pending.Clear();
+        world.GenerationStarted += (uint generation, string reason) => { _pending.Clear(); _filePcs.Clear(); };
     }
 
     /// <summary>A co-op world is loaded here, whether or not this peer is admitted yet.</summary>
@@ -77,6 +83,7 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
 
     internal void RequestStoredDelete(StoredPC ui)
     {
+        if (ui?.m_computer != null && _filePcs.Remove(ui.m_computer.Pointer)) { PopulateStorage(); return; }
         var request = new Request { What = "PC delete", Storage = ui };
         if (!Ready("PC delete")) { Restore(request); return; }
         var id = Objects.IdOf(ui.m_computer);
@@ -228,7 +235,8 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
     {
         try
         {
-            var record = NewFromCatalog(CatalogItem(template) ?? throw new InvalidDataException("Catalog case is gone."));
+            var record = NewFromCatalog(CatalogItem(template) ?? throw new InvalidDataException("Catalog case is gone."),
+                remoteCarrier: !ctx.FromLocalPlayer);
             NativeObjectState.CheckParts(pc, record);
             if (ctx.FromLocalPlayer) CreateHere(pc, record, replaced, LocalRequest(ctx));
             else
@@ -303,6 +311,11 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
             for (var i = 0; i < custom.Count; i++)
                 if (custom[i] != null && custom[i].CustomisationID == record.CustomisationID) { custom.RemoveAt(i); break; }
         save.computersInStorage.Remove(record);
+        PopulateStorage();
+    }
+
+    private static void PopulateStorage()
+    {
         foreach (var storage in Object.FindObjectsOfType<Storage>()) storage.Populate(true, true, false);
     }
 
@@ -328,50 +341,61 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
     /// <summary>The native case branch, with the prefab's automatic fans made explicit before identity allocation.
     /// Otherwise a guest can store a newly loaded case before the host ever sees its default fans, leaving the
     /// host's held record incomplete. Read the game's actual slot defaults; never guess from the catalog flag.</summary>
-    internal static ComputerSave NewFromCatalog(PartInstance item)
+    internal static ComputerSave NewFromCatalog(PartInstance item, bool remoteCarrier = false)
     {
         var pc = new ComputerSave { caseID = item };
         var database = PartsDatabase.s_instance ?? throw new InvalidDataException("Parts database unavailable.");
-        var defaults = DefaultFans(database, item.GetPart());
-        var count = Math.Max(defaults.Length, item.m_caseFanSlots?.Length ?? 0);
+        var layout = DefaultLayout(database, item.GetPart());
+        // A local spawn applies the prefab defaults as it loads. A remote carrier has no mesh to do that work.
+        if (remoteCarrier) pc.casePciCovers = layout.PciCovers.ToArray();
+        var count = Math.Max(layout.Fans.Length, item.m_caseFanSlots?.Length ?? 0);
         if (count > 0)
         {
             var fans = new PartInstance[count];
             for (var i = 0; i < count; i++)
             {
                 if (i < (item.m_caseFanSlots?.Length ?? 0)) fans[i] = item.m_caseFanSlots[i];
-                var sku = i < defaults.Length ? defaults[i] : null;
+                var (sku, flipped) = i < layout.Fans.Length ? layout.Fans[i] : default;
                 if (fans[i] != null || string.IsNullOrEmpty(sku)) continue;
                 // Slot.DoAutoInstantiation uses this factory and SetNew before installing the default part.
                 fans[i] = PartInstance.NewPartInstance(sku, AutoInstantiated: 1, seededRandom: null);
                 fans[i].SetNew();
+                if (remoteCarrier) fans[i].SetFlipped(flipped);
             }
             pc.caseFanSlots = fans;
         }
         return pc;
     }
 
-    private static string[] DefaultFans(PartsDatabase database, PartDesc desc)
+    private static CatalogCaseLayout DefaultLayout(PartsDatabase database, PartDesc desc)
     {
-        if (DefaultFanLayouts.TryGetValue(desc.m_id, out var known)) return known;
+        if (DefaultCaseLayouts.TryGetValue(desc.m_id, out var known)) return known;
         // GetPrefab can return a placeholder until the first native spawn. Load only the asset for metadata;
         // do not instantiate a case, touch the carry singleton, or depend on a prior spawn on this peer.
         var handle = UnityEngine.AddressableAssets.Addressables.LoadAssetAsync<GameObject>((Il2CppSystem.String)desc.m_address);
         try
         {
             var prefab = handle.WaitForCompletion() ?? throw new InvalidDataException("The case prefab is unavailable.");
+            // Like PartsDatabase.GetPrefab, resolve a color variant's MaterialSwap before reading its case slots.
+            var swap = prefab.GetComponent<MaterialSwap>();
+            if (swap != null && swap.m_prefab != null) prefab = swap.m_prefab;
             var candidates = prefab.GetComponentsInChildren<Case>(true).ToArray();
             var mesh = candidates.SingleOrDefault(c => c.GetComponent<ComponentPC>()?.Type == desc.m_subPart) ?? (candidates.Length == 1 ? candidates[0] : null);
             if (mesh == null) throw new InvalidDataException("The case component cannot be identified in its prefab.");
             var slots = mesh.caseFanSlots;
-            var result = new string[slots?.Length ?? 0];
-            for (var i = 0; i < result.Length; i++)
+            var fans = new (string Sku, bool Flipped)[slots?.Length ?? 0];
+            for (var i = 0; i < fans.Length; i++)
             {
                 var slot = slots[i];
                 if (slot == null || slot.initiallyUninstalled || string.IsNullOrEmpty(slot.m_autoInstantiatePartID)) continue;
-                result[i] = (database.GetDesc(slot.m_autoInstantiatePartID, null) ?? throw new InvalidDataException("A default case fan is unavailable.")).m_id;
+                var fan = database.GetDesc(slot.m_autoInstantiatePartID, null) ?? throw new InvalidDataException("A default case fan is unavailable.");
+                fans[i] = (fan.m_id, slot.installFlipped);
             }
-            DefaultFanLayouts.Add(desc.m_id, result);
+            // InstallPciCovers removes initially-uninstalled covers on a new case. SaveComputer records the remaining blockers.
+            var covers = mesh.pciCoverSlots?.Select(slot => slot != null && !slot.initiallyUninstalled &&
+                slot.IsBlocking(null, desc, FirstLoad: true)).ToArray() ?? Array.Empty<bool>();
+            var result = new CatalogCaseLayout(fans, covers);
+            DefaultCaseLayouts.Add(desc.m_id, result);
             return result;
         }
         finally { if (handle.IsValid()) handle.Release(); }

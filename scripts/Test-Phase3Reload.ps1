@@ -3,10 +3,11 @@ param(
     [Parameter(Mandatory)][string]$Fixture
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'ProbeProcessIdentity.ps1')
 $probeWorkspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $probeRecord = Get-Content -LiteralPath (Join-Path $probeWorkspace ".local/phase3-$RunId/host-process.json") -Raw | ConvertFrom-Json
 $probeProcess = Get-Process -Id $probeRecord.id -ErrorAction Stop
-if ($probeProcess.StartTime.ToUniversalTime().ToString('O') -ne $probeRecord.startedUtc -or $probeProcess.Path -ne (Join-Path $probeRecord.game 'PCBS2.exe')) { throw 'Recorded probe process does not match; left alone.' }
+if (-not (Test-ProbeProcessIdentity -Process $probeProcess -Record $probeRecord -ExpectedName 'PCBS2' -ExpectedPath (Join-Path $probeRecord.game 'PCBS2.exe'))) { throw 'Recorded probe process does not match; left alone.' }
 $probeRoot = [IO.Path]::GetFullPath((Join-Path $probeRecord.game "BepInEx/PCBS2Coop-diag/phase3/$RunId"))
 $probeTarget = [IO.Path]::GetFullPath((Join-Path $probeRoot 'saves-host/ReloadFixture/autofreebuild.binary.zip'))
 if (-not $probeTarget.StartsWith($probeRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Fixture target escaped the disposable run.' }

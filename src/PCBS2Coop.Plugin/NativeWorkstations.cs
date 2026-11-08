@@ -27,6 +27,7 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
     private readonly Dictionary<OperationId, Request> _pending = new();
     private readonly Dictionary<(int Bench, int Slot), (string Path, float Until)> _loading = new();
     private readonly Dictionary<(int Bench, int Slot), (string Part, string Path, Request Request)> _waiting = new();
+    private readonly Dictionary<IntPtr, (PeripheralSlot Slot, string Path, LEDDriverConfig Config, float Until)> _savedLighting = new();
     private Request _submitting;
     public WorkstationWorld Model { get; }
     public string Name => Model.Name;
@@ -42,6 +43,7 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
 
     private bool Active => _world.Admitted && _world.Divergence == null && Model.Bound && _coop.Activity.Get(_world.Local) != null;
     internal bool HasPending => _pending.Count > 0;
+    internal bool RestoringLighting => _savedLighting.Count > 0;
     private static SaveLoadSystem Saves => Object.FindObjectOfType<SaveLoadSystem>() ?? throw new InvalidDataException("Save system unavailable.");
 
     // ---------------- native slot table ----------------
@@ -85,7 +87,7 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
     {
         get
         {
-            if (_waiting.Count > 0) return false;
+            if (_waiting.Count > 0 || RestoringLighting) return false;
             foreach (var key in _loading.Keys.ToArray())
                 if (SlotAt(key.Bench, key.Slot) is { } slot && Loading(key, slot)) return false;
                 else _loading.Remove(key);
@@ -114,7 +116,7 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
     {
         if (!Model.Bound) return;
         var facts = Read(out var loading);
-        if (loading != null || _waiting.Count > 0) throw new InvalidOperationException("A peripheral is still loading; wait before saving.");
+        if (loading != null || _waiting.Count > 0 || RestoringLighting) throw new InvalidOperationException("A peripheral is still loading; wait before saving.");
         if (Difference(facts) is { } diff) throw new InvalidDataException("The game's peripherals differ from the shared world: " + diff);
     }
 
@@ -259,6 +261,7 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
     /// <summary>Per frame: run a swap that was waiting for its slot to finish loading.</summary>
     public void Update()
     {
+        if (RestoringLighting) RestoreSavedLighting();
         if (_waiting.Count == 0) return;
         foreach (var key in _waiting.Keys.ToArray())
         {
@@ -268,6 +271,30 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
             var (part, path, request) = _waiting[key]; _waiting.Remove(key);
             try { Project(key, slot, part, path, request); Plugin.Logger.LogInfo($"[workstations] {Describe(slot)} → {part} (after waiting)."); }
             catch (Exception e) { _coop.ProjectionFailed($"The waiting peripheral swap of {Describe(slot)} to {part} could not be shown", e); }
+        }
+    }
+
+    private void RestoreSavedLighting()
+    {
+        foreach (var (key, saved) in _savedLighting.ToArray())
+        {
+            var slot = saved.Slot;
+            if (slot == null) { _savedLighting.Remove(key); continue; }
+            if (slot.m_loadingPerif || slot.Forced || PathOf(slot) != saved.Path)
+            {
+                if (Time.realtimeSinceStartup < saved.Until) continue;
+                _savedLighting.Remove(key);
+                Plugin.Logger.LogWarning($"[workstations] {Describe(slot)} did not finish loading '{saved.Path}' for its saved lighting.");
+                continue;
+            }
+            _savedLighting.Remove(key);
+            try
+            {
+                var (applied, missing) = NativeCustomization.RestoreSavedPeripheralLights(slot.GetPeripheral(), saved.Config);
+                if (applied > 0 || missing > 0)
+                    Plugin.Logger.LogInfo($"[workstations] {Describe(slot)}: {applied} saved light(s) restored, {missing} unavailable.");
+            }
+            catch (Exception e) { _coop.ProjectionFailed($"Saved lighting could not be restored for {Describe(slot)}", e); }
         }
     }
 
@@ -296,6 +323,20 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
     // ---------------- interception ----------------
 
     private static NativeWorkstations Current => CoopController.Instance?.Workstations;
+
+    // The game's forced asynchronous load recreates the peripheral but drops PerifSaveData.m_LEDConfig.
+    [HarmonyPatch(typeof(PeripheralSlot), nameof(PeripheralSlot.LoadPeripheral))]
+    internal static class SavedLightingHook
+    {
+        private static void Prefix(PeripheralSlot __instance, PerifSaveData data)
+        {
+            if (CoopSaves.Current == CoopSaves.Mode.None || Current is not { } workstations) return;
+            var key = __instance.Pointer;
+            workstations._savedLighting.Remove(key);
+            if (string.IsNullOrEmpty(data.m_perifPath) || data.m_LEDConfig?.m_config?.Count is not > 0) return;
+            workstations._savedLighting[key] = (__instance, data.m_perifPath, data.m_LEDConfig, Time.realtimeSinceStartup + ProjectionTimeout);
+        }
+    }
 
     /// <summary>Every peripheral swap: the base slot (microphone and any other plain slot) and each override. The
     /// headset, keyboard, mouse pad and mouse overrides are one native function, hooked once; <c>__instance</c> is then

@@ -30,6 +30,7 @@ internal sealed partial class NativeComponentEdits
 
     private readonly List<Reload> _reloads = new();
     private const float ReloadTimeout = 30f;
+    private const string PipeRoute = "pipe";
 
     private static readonly HashSet<Slot.SlotType> WaterSlots = new()
         { Slot.SlotType.RESERVOIR, Slot.SlotType.VRM, Slot.SlotType.HEAT_SINK, Slot.SlotType.GPU_COOLER };
@@ -119,6 +120,13 @@ internal sealed partial class NativeComponentEdits
         if (busy) { l.QuietSince = 0; return; }
         if (l.QuietSince == 0) { l.QuietSince = now; return; }
         if (now - l.QuietSince < QuietSeconds) return;
+        // Merely opening the pipe tool can change the serialized PC record. Only Accept keeps a routed pipe.
+        if (l.Request.Sku == PipeRoute && !l.PipeAccepted)
+        {
+            Plugin.Logger.LogInfo($"[water] edit {l.Token}: the pipe tool closed without accepting a route; cancelling.");
+            _local = null; _cancel.Add(l.Token);
+            return;
+        }
         byte[] record;
         try
         {
@@ -212,9 +220,21 @@ internal sealed partial class NativeComponentEdits
             {
                 if (Current == null) return NotReady();
                 var closure = __instance;
-                return Current.RequestWater(closure.__4__this?.m_case, "pipe", () => closure._PipingTick_b__0());
+                return Current.RequestWater(closure.__4__this?.m_case, PipeRoute, () => closure._PipingTick_b__0());
             }
             catch (Exception e) { Plugin.Logger.LogError("[water] pipe request failed: " + e); return false; }
+        }
+    }
+
+    [HarmonyPatch(typeof(RoutePipeState), "OnAccept")]
+    internal static class PipeAcceptTrace
+    {
+        private static void Postfix(RoutePipeState __instance)
+        {
+            var local = Current?._local;
+            if (local?.Request.Gesture == EditGesture.Water && local.Request.Sku == PipeRoute &&
+                local.Request.Mesh.Pointer == __instance.m_case?.Pointer)
+                local.PipeAccepted = true;
         }
     }
 

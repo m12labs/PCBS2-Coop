@@ -1,6 +1,6 @@
 # Phase 8 audit: durable Free Build saves and complete core rejoin
 
-**Status (November 2, 2026): owner decisions recorded; 8b–8f implemented in 0.21 and run in game in owned two-game runs p8a–p8l (results and fixes below, 624/624 model checks). Open: a world over 35 PCs, Steam rejoin, and the owner's own pass of 4f/5d/10b/7e.** The audit itself was done without starting the game (owner request). Evidence comes from the 0.20/0.21 source, the same game dump as phases 6–7 (Unity `6000.2.6f2`, build GUID `92d05e5a20c14d41aacbb9c6a804d5a3`), the network/model suite and owned runs' disposable saves under `<GameDir>\BepInEx\PCBS2Coop-diag`. Lines marked **(decompile)** were read from the dump and have not been checked in a running game.
+**Status reviewed November 5, 2026.** Runs p8a–p8m provided substantial owned two-game coverage in 0.21. The 39-PC stress case passed in 0.25, the unsavable-Exit notice passed in 0.27, and the interrupted-write recovery notice passed in 0.32. All 722 automated checks pass. The owner confirmed Steam testing is complete. The combined build, cable, water and simulation cases and some in-flight save cases remain open. The original audit used the 0.20/0.21 source, the game dump (Unity `6000.2.6f2`, build GUID `92d05e5a20c14d41aacbb9c6a804d5a3`), the network/model suite and disposable game saves under `<GameDir>\BepInEx\PCBS2Coop-diag`. [Acceptance record](acceptance-2026-11-04.md)
 
 ## Scope (plan.md section 8)
 
@@ -221,13 +221,22 @@ Bugs found and fixed in these runs (eight):
 
 Found and left for the owner:
 
-- A game that loads a world before any real keyboard or mouse input (the test harness's relaunched host) keeps a PC that was on stuck on its boot screen: `JobTutorialHintUi` looks up Rewired's last active controller and throws. Players always click first, so only test setups need one real click before Continue.
+- A game that loads a powered world before any real keyboard or mouse input can get stuck at Boot when `JobTutorialHintUi` looks up Rewired's last active controller. Version 0.27 fixed this and passed fresh-process Continue and a fresh guest join in the same powered world. [Cold boot follow-up](acceptance-2026-11-04.md#cold-continue-and-late-join-027)
 - The pause menu's save card shows "coopworld" (the snapshot file name) until the host's next save.
 
 ### Not checked in game yet
 
-- The Rejoin button over Steam (needs two Steam accounts).
-- A world with more than 35 built PCs (acceptance case 5); covered by model tests only.
-- The Exit message when the world couldn't be saved (needs an out-of-sync or busy host at Exit).
+- Steam testing, including Rejoin, was subsequently confirmed complete by the owner on November 4, 2026; it is no longer an outstanding case.
+- Acceptance case 5 subsequently passed on November 4, 2026 in 0.25: 39 built PCs through save, late join, `/sync`, fresh-process Continue and another join, with matching hashes and native checks. The initial 0.24 run exposed duplicate admission snapshots; `de2bee3` fixes it. See [the follow-up](acceptance-2026-11-04.md).
+- The Exit message subsequently passed on November 5, 2026 in 0.27. The guest held a live HDMI edit, the host waited and showed the warning, and the previous paired save's hashes were unchanged. [Cable and Exit follow-up](acceptance-2026-11-04.md#cable-edits-claim-refusal-and-unsavable-exit-027)
+- The recovery notice after a real interrupted native write passed on November 5, 2026 in 0.32. The 39-PC pair stayed byte-identical, both games recovered the same world, and the host saw which save had been loaded. [Interrupted-save follow-up](acceptance-2026-11-04.md#interrupted-native-save-in-031-and-032)
 - A dropped connection during an install's animation (the faster-install power-up finished the GPU removal before the drop); during a BIOS session or a running OCCT test.
 - The owner's own pass of the deferred tests 4f, 5d, 10b and 7e (cables, water cooling, full builds in both directions).
+
+### Save boundaries in 0.49
+
+On November 7, 2026 the host's save waited for a real System Info install's software transfer. A retry succeeded. The native BIOS kept its x39 draft separate from the x40 committed record and accepted a save with the draft open. The save requested during the subsequent Apply restart wrote the committed x39 setting. Cold Continue and a fresh guest restored x39 and the installed program from that pair. [Run record](acceptance-2026-11-04.md#save-during-a-software-transfer-and-a-bios-restart-in-049)
+
+### Unapplied BIOS draft through cold Continue in 0.51
+
+On November 8, 2026 the host used the real BIOS ratio control to change PC 213 from x43 to x42, then saved with the editor still open. Its native committed record reported x43. Fresh Continue and a fresh guest restored the exact pair and both native records reported x43. Apply commits the settings in the host's command before it starts the reboot. The two game runs cover saving on either side of that commit. [Run record](acceptance-2026-11-04.md#unapplied-bios-draft-through-cold-continue-in-051)

@@ -47,6 +47,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         public WireState Before;
         /// <summary>Water-cooling edits: the PC record before the edit, then the finished one (both compressed).</summary>
         public byte[] RecordBefore, Record;
+        public bool PipeAccepted;
         public float Started, QuietSince;
     }
 
@@ -403,7 +404,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         var known = pc.Parts.ToDictionary(p => p.Id);
         var byPath = new Dictionary<string, NetObjectId>(StringComparer.Ordinal); var used = new HashSet<NetObjectId>();
         foreach (var link in pc.Links) byPath[link.Path] = link.Part;
-        foreach (var (path, part) in NativeObjectState.Parts(record))
+        foreach (var (path, part) in NativeObjectState.BindingParts(record, pc))
         {
             var pointer = part.Pointer.ToInt64();
             if (!aliases.TryGetValue(pointer, out var id))
@@ -435,7 +436,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         try { NativeObjectState.CheckParts(pc, record); }
         catch (Exception) { record = _coop.Objects.CaptureRecord(pc.Id); NativeObjectState.CheckParts(pc, record); }
         var result = new Dictionary<long, NetObjectId>();
-        foreach (var (path, part) in NativeObjectState.Parts(record)) result[part.Pointer.ToInt64()] = pc.Links.Single(l => l.Path == path).Part;
+        foreach (var (path, part) in NativeObjectState.BindingParts(record, pc)) result[part.Pointer.ToInt64()] = pc.Links.Single(l => l.Path == path).Part;
         return result;
     }
 
@@ -682,6 +683,13 @@ internal sealed partial class NativeComponentEdits : IEditNative
 
     // ---------------- following this player's own edit ----------------
 
+    internal static void WaitingForEditInput(InstallingPartState state)
+    {
+        var local = Current?._local;
+        if (local?.State?.Pointer == state.Pointer && CurrentState?.Pointer == state.Pointer)
+            local.Since = Time.realtimeSinceStartup;
+    }
+
     private void Entered(InstallingPartState state)
     {
         if (_local == null || _local.Entered || state == null || ComponentEditWorld.IsWholePc(_local.Request.Gesture)) return;
@@ -728,6 +736,17 @@ internal sealed partial class NativeComponentEdits : IEditNative
 
     private static bool Ours => !NativeEditReplay.Active && Current?._local != null;
 
+    [HarmonyPatch(typeof(InstallingPartState), "DoScrewsStep")]
+    internal static class ManualScrewTrace
+    {
+        private static void Prefix(InstallingPartState __instance, Il2CppSystem.Collections.Generic.List<Screw> __0)
+        {
+            if (!Ours || __0 == null || __0.Count == 0) return;
+            var standoffs = __instance.m_standOffs?.Pointer == __0.Pointer;
+            if (!(standoffs ? __instance.m_autoStandoff : __instance.m_auto)) WaitingForEditInput(__instance);
+        }
+    }
+
     [HarmonyPatch(typeof(GameController), nameof(GameController.SetCurrentState))]
     internal static class EnterTrace
     {
@@ -747,8 +766,9 @@ internal sealed partial class NativeComponentEdits : IEditNative
     [HarmonyPatch(typeof(InstallingPartState), nameof(InstallingPartState.OnStateDestroy))]
     internal static class SettleTrace
     {
-        private static void Prefix(InstallingPartState __instance)
+        private static void Prefix(InstallingPartState __instance, out IntPtr __state)
         {
+            __state = NativeCaseAccess.BeginRefitSettle(__instance);
             if (!Ours) return;
             try { Current.Settling(__instance); }
             catch (Exception e) { Plugin.Logger.LogError("[edits] settle trace failed: " + e); }
@@ -759,6 +779,8 @@ internal sealed partial class NativeComponentEdits : IEditNative
             try { Current.Settled(__instance); }
             catch (Exception e) { Plugin.Logger.LogError("[edits] settle trace failed: " + e); }
         }
+
+        private static void Finalizer(IntPtr __state) => NativeCaseAccess.EndRefitSettle(__state);
     }
 
     [HarmonyPatch(typeof(WorkingOnComputerState._Uninstall_d__72), nameof(WorkingOnComputerState._Uninstall_d__72.MoveNext))]
