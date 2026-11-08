@@ -145,6 +145,8 @@ In 0.27, the guest unplugged and reconnected 24-pin, GPU and case-fan leads thro
 
 In 0.29, overlapping CPU 8-pin and SATA data edits passed in both directions after a fix to wait for the local wiring replay before rebinding assembly. Front-panel and SATA power removal and reconnection also passed with the native callbacks. The native automatic splitter checks `Gpu6PinBoth`, `Gpu8PinBoth` and `HDDPower`, so the written fan-header scenario needs a PSU-power fixture instead. [Concurrency follow-up](acceptance-2026-11-04.md#overlapping-cable-edits-on-separate-pcs-028--029)
 
+On November 8, 2026 a two-GPU fixture exhausted all five compatible PSU leads in 0.51. The native chooser displayed “No More Power Slots!” with QuickCable enabled. A manually fitted `PSU_SPLITTER_3X8PIN` and two GPU leads matched on both games. The native automatic insertion remains open. [Run record](acceptance-2026-11-04.md#exhausted-psu-leads-and-a-manual-splitter-in-051)
+
 In 0.43 the P shortcut while walking and aiming at a monitor started only the local game. Those two `InteractableComputer.GetInteractions` callbacks are distinct from the bench's P callbacks. The 0.44 hooks share both through the existing Power edit. The host switched off and the guest switched on from that prompt. Both games reached the desktop after the guest press. [Run record](acceptance-2026-11-04.md#walking-monitor-power-in-044)
 
 In 0.30 the host unplugged and reconnected the keyboard at a case USB port. The guest resolved the workstation's `KEYBOARD_SRC` endpoint and replayed both changes without repair. This completes the listed standard cable types. [USB retest](acceptance-2026-11-04.md#usb-replay-pipe-cancellation-and-blue-screen-recovery-in-030)

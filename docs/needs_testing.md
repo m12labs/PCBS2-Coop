@@ -22,7 +22,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 ## Workbench: cables and power ([phase 5](audit/phase-5.md), 5d)
 
 - [x] Plug in and unplug each cable type (24-pin, CPU 8-pin, GPU, SATA, fans, front panel/USB). Run acceptance-c checked 24-pin, GPU and fan in 0.27, CPU 8-pin, SATA data and power, and front panel in 0.29, and USB replay in 0.30 on November 5, 2026.
-- [ ] Fan header with no free connector: automatic splitter shows on both games. Native auto-splitter branches are for GPU power and SATA power in this build. A fixture that exhausts eligible PSU connections is still needed.
+- [ ] Fan header with no free connector: automatic splitter shows on both games. The game has automatic splitter branches for GPU and SATA power. In 0.51 the sixth GPU lead hit the native No More Power Slots dialog with QuickCable active and all five direct leads occupied. A manually fitted 3×8 splitter and its two GPU leads matched on both games. Automatic insertion still needs an eligible native fixture.
 - [x] Custom-colour cable: same colours on both games (0.36, November 6, 2026. Both ATX installs kept the same alternating violet and gold pin colours on both games.)
 - [x] Esc in the cable tool with nothing connected: no change (0.27, November 5, 2026: real Escape in the guest's HDMI connector choice)
 - [x] The other player is refused on that PC while a cable is being placed (0.27, November 5, 2026: host refused on PC 213 and could power PC 26)
