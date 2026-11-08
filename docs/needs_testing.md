@@ -15,7 +15,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Both players go for the same slot at once: one wins, one gets a refusal (0.30, November 5, 2026)
 - [x] Try a part that doesn't fit, or a blocked removal: refused, nothing changes (0.31, November 5, 2026: the installed cooler blocked CPU removal and both PCs kept the CPU)
 - [x] Latches, CPU levers, RAM clips, case panels both ways (0.35 and 0.47, November 5 and 7, 2026. Both players removed and refitted the front panel. Each opened the PCI latch, operated the AM4 lever and opened both RAM clips. Both games agreed on the results.)
-- [ ] Esc halfway through an install and a removal (phase 4 native checks found that Esc after install starts normally leaves it running. In 0.30 Esc at fan orientation also left the editor open. Removal retest remains.)
+- [x] Esc halfway through an install and a removal (In 0.30, real Escape during fan orientation left the native editor open and the eventual install matched on both games. In 0.52 on November 8, 2026, real Escape while three GPU cables were animating out kept the GPU installed and unplugged the same leads on both games.)
 - [x] Guest joins while the host is building (0.31, November 5, 2026: fresh guest waited through the host's fan install, then loaded the completed PC)
 - [x] Save, Exit, Continue after a build (0.47–0.48, November 7, 2026. Cold Continue initially refused the motherboard standoffs. Both fresh 0.48 games loaded the same pair with both completed builds and the saved empty RAM clip.)
 
