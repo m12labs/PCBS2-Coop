@@ -2,38 +2,23 @@
 
 Build PCs together in **PC Building Simulator 2**. PCBS2 Co-op is an unofficial two-player mod that puts you and a friend in the same Free Build workshop over LAN or Steamworks when available.
 
-Built for BepInEx 6 IL2CPP. **Current version: 0.24** (in development). Both players need the same mod version; a different version is refused when joining. 0.24 loads co-op saves made by 0.16 or later; older co-op saves are refused, so start a fresh co-op world if yours is older.
+Built for BepInEx 6 IL2CPP. **Current version 0.57.** Both players need the same mod version. This build loads co-op saves written by versions 0.16 through 0.57. For an older save, start a fresh co-op world.
 
-> **In development.** Most of Free Build is shared: building a PC part by part, cables and power, water cooling, the PC's screens, BIOS and benchmarks, thermal paste and the tool tables, case modding and lighting, and the workshop's decorations, lights and wallpapers. Saves, backups and rejoining after a dropped connection work too. Some of these have only been checked in short test runs and still need a full two-player test ([what's left to test](docs/needs_testing.md)). Career mode isn't started. See [what works](#sync-progress).
+All 90 applicable Free Build gameplay checks have passed. The latest two-game runs verified automatic PSU splitters during installation, cold Continue and guest join. Phase 13 covers presentation polish and phase 14 covers release validation. Career starts at phase 15. [Gameplay checklist](docs/needs_testing.md) · [Roadmap](plan.md)
 
 > **Unofficial fan project.** PCBS2 Co-op is not affiliated with the developers or publishers of PC Building Simulator 2. This repository contains no game code or game assets.
 
 ## Sync progress
 
-A quick look at what's ready and what's next, as of version 0.24. See the [full sync checklist](docs/sync-progress.md) for individual features, the [roadmap](plan.md) for the order of work and [needs testing](docs/needs_testing.md) for the two-player tests still to run.
+The full tracker lists partial features, game-build limits and open validation. [Sync tracker](docs/sync-progress.md)
 
-| Feature | Planned | Implemented, not tested | Partially synced | Synced | Comments |
-| --- | :---: | :---: | :---: | :---: | --- |
-| LAN Host / Join | | | | ✅ | Direct IP and port from the main menu. |
-| Steam Invite / Join | | | | ✅ | Private Steam lobby invites (overlay or in-game friends list) and play over Steam relay. LAN stays available. |
-| Join check | | | | ✅ | A different mod version or game build is refused with the reason; DLC or part catalog differences join with a warning. |
-| Shared Free Build world | | | | ✅ | Host picks a new or saved co-op world; both players load the same workshop. |
-| Joining an active session | | | | ✅ | Join any time; you get the host's current world, including changes made while you load. |
-| Co-op saves and rejoin | | | | ✅ | Named co-op worlds kept apart from solo saves, with a host autosave and hidden backups of the last good save. The host's pause-menu Load and Reset reload both games; the guest can't save. A guest who drops gets a Rejoin button and comes back where it stood. Checked in test runs; the owner's full pass is next. |
-| Leaving and pause | | | | ✅ | Host leaving sends the guest back to the menu with the reason; guest leaving lets the host keep playing. Either player's pause menu is personal; the session keeps running. |
-| Seeing each other | | | ✅ | | An animated character (a capsule if the model can't load) with a name tag and what you're doing under it; a carried PC shows as a cardboard box. Detailed animations and sounds come later (phase 13). |
-| Chat and /sync | | | | ✅ | Press Enter to chat. If a game shows "out of sync", `/sync` saves and reloads both games. |
-| PCs, carrying, benches and storage | | | | ✅ | Creating, deleting, picking up, dropping, storing and retrieving PCs, and importing a PC file from the cupboard. If both players grab the same PC or bench, one wins and the other sees a short notice. A world with packages or notes can't be hosted yet. |
-| Installing and removing parts | | | | ✅ | Both players can work on the same PC; each sees the other's installs with the game's animations. Latches, clips and case panels too. |
-| Cables, power and peripherals | | | | ✅ | Plugging and unplugging cables (splitters and custom colours too), power buttons and workbench monitor/keyboard/mouse swaps. |
-| Water cooling | | | | ✅ | Pipes, coolant fill and drain, water blocks, pumps and reservoirs. |
-| Booting, BIOS and screens | | | ✅ | | Both games run the same desktop and apps from both players' clicks; BIOS changes are shared. Window positions, files and installed programs aren't shared yet. |
-| Benchmarks, temperatures and tuning | | ✅ | | | Benchmarks run on both games, blue screens follow the host, GPU Tuner and Fan Control curves are shared. |
-| Thermal paste and tool tables | | ✅ | | | Paste on and off, and the delidding and water-cooling tables (one player at a time; the result is shared). Cleaning is refused in co-op until career mode. |
-| Case modding and lighting | | ✅ | | | The case-modding table shares its finished design; Lighting app settings, presets and effects are shared; Cable app purchases reach both inventories. The LED strip tool can't be opened in this game build. |
-| Workshop and wallpapers | | | ✅ | | Decorating (one player at a time), the light switch, the season and its decorations, and custom and Windows wallpapers. Checked in test runs. |
-| Remaining Free Build details | ✅ | | | | Phases 13–14: detailed player animations, sounds, remaining apps, faults and performance. |
-| Career mode | ✅ | | | | Phases 15–18, after Free Build is complete. |
+| Area | Shared in the current build |
+| --- | --- |
+| Sessions and saves | LAN, Steam invites, late join, Rejoin, named worlds, host autosaves and backups |
+| Building | PC transfers and storage, native part animations, latches, case panels, cables, splitters, power and water cooling |
+| PC software | BIOS, shared desktop input, installed programs, benchmarks, GPU Tuner, Fan Control and blue screens |
+| Tools and workshop | Thermal paste, finished tool-table results, Lighting, Cable app purchases, Decorator, wallpapers and PC imports |
+| Players | Animated avatars, activity labels, carried PC markers, chat and `/sync` |
 
 ## Installation
 
@@ -59,18 +44,17 @@ Copy `Directory.Build.local.props.example` to `Directory.Build.local.props` and 
 
 ### Build and install
 
+In your repository checkout, install the pinned BepInEx loader. The script verifies the archive and preserves an existing install.
+
 ```powershell
 Set-Location '<RepoDir>'
-
-# Once: install the pinned BepInEx build (checks the archive hash; refuses to replace an existing BepInEx).
 .\scripts\Install-Loader.ps1
+```
 
-# Launch the game once and quit, so BepInEx generates BepInEx\interop.
+Launch the game once and quit so BepInEx generates `BepInEx\interop`. Fetch and verify the pinned Steamworks dependency, then build and deploy the plugin to `<GameDir>\BepInEx\plugins\PCBS2Coop`.
 
-# Fetch and verify the pinned Steamworks Win64 dependency into the ignored local cache.
+```powershell
 .\scripts\Get-Steamworks.ps1
-
-# Build; the plugin is copied into <GameDir>\BepInEx\plugins\PCBS2Coop.
 dotnet build PCBS2Coop.sln -c Release
 ```
 
@@ -85,7 +69,7 @@ To remove the loader again, run `.\scripts\Uninstall-Loader.ps1`. It restores or
 Start the game, then open `<GameDir>\BepInEx\LogOutput.log` and look for:
 
 ```text
-[Info   :PCBS2 Coop] PCBS2 Coop 0.24 loaded.
+[Info   :PCBS2 Coop] PCBS2 Coop 0.57 loaded.
 ```
 
 The main menu also gains a **Co-op** entry above Options, and a GitHub icon with the mod version in the bottom row.
@@ -122,7 +106,7 @@ An opt-in two-instance self test plays a full session on one PC (new world, late
 
 Source layout: `src/PCBS2Coop.Network` contains the Unity-free session, handshake, host-ordered world changes and snapshot transfer over LiteNetLib; `src/PCBS2Coop.Plugin` contains the BepInEx/Unity side; `tests/PCBS2Coop.Network.Tests` contains executable network scenarios. Keep Unity calls on Unity's main thread.
 
-Start with the [roadmap](plan.md), the [sync checklist](docs/sync-progress.md), the [two-game tests still to run](docs/needs_testing.md), the [player model plan](docs/playermodel.md), the [audit reports](docs/audit/README.md) and the [contributor notes](AGENTS.md). The [decompile workflow](il2cpp-decompile.md) describes how the research workspace is produced from your own installation; its output is never committed.
+See the [roadmap](plan.md), [sync tracker](docs/sync-progress.md), [gameplay acceptance](docs/needs_testing.md), [player model plan](docs/playermodel.md), [audit reports](docs/audit/README.md) and [contributor notes](AGENTS.md). The [decompile workflow](il2cpp-decompile.md) describes how to produce the local research workspace from your installation.
 
 ## License and disclaimer
 

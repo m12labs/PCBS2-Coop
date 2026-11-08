@@ -1,12 +1,14 @@
-# Needs testing
+# Free Build gameplay acceptance
 
-What still needs a two-game test, by area. Each line is one thing to try with both players. Unless a line says otherwise, both games should show the same result afterwards. Details and expected results are in the phase audits linked in each heading.
+Two-game results for the supported Free Build gameplay scope. Each checked row has recorded evidence. The phase audits give the expected outcomes and the boundaries of each check.
 
-Current build: **0.51**. Tick a line when it passes, and note the date if it fails.
+Current build **0.57**. All **90 applicable gameplay checks** have passed. One Delidding table case is inapplicable in game 1.17.02. The roadmap separately tracks Free Build presentation and release acceptance. [Roadmap](../plan.md)
 
-Evidence review and current owned runs: [November 4 acceptance record](audit/acceptance-2026-11-04.md). Older passes below name their build and date; a partial earlier result does not pass a combined checklist case.
+The November acceptance record identifies which cases used normal controls, native probes or automated checks. [Run record](audit/acceptance-2026-11-04.md)
 
 ## Workbench: building a PC ([phase 4](audit/phase-4.md), 4f)
+
+The owner passed the two-instance component-edit checklist and built a PC from start to finish. The follow-up runs cover the combined cases below.
 
 - [x] Build a full PC from an empty case (board, CPU, cooler, RAM, GPU, drives, PSU, fans), host and guest each (0.47, November 7, 2026. The host built PC 1000 and the guest built PC 1115. Both native part graphs matched for each build.)
 - [x] Take a full PC apart again, host and guest each (0.48–0.49, November 7, 2026. Both stripped their builds to the case and two stock fans. Both games agreed on the remaining parts and zero internal cables.)
@@ -22,7 +24,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 ## Workbench: cables and power ([phase 5](audit/phase-5.md), 5d)
 
 - [x] Plug in and unplug each cable type (24-pin, CPU 8-pin, GPU, SATA, fans, front panel/USB). Run acceptance-c checked 24-pin, GPU and fan in 0.27, CPU 8-pin, SATA data and power, and front panel in 0.29, and USB replay in 0.30 on November 5, 2026.
-- [ ] Fan header with no free connector: automatic splitter shows on both games. The native automatic branches are for GPU and SATA power. In 0.51 the sixth GPU lead hit No More Power Slots. A manually fitted 3×8 splitter and two GPU leads matched. In 0.55 the native catalog refused the second RTX 3090 because the fixture's B550 Tomahawk lacks SLI support. Automatic insertion still needs an eligible native GPU or SATA power fixture.
+- [x] Automatic PSU splitter when the second GPU needs more leads than the PSU has available (0.56–0.57, November 8, 2026). Host and guest each installed the second GPU. Both games showed the automatically fitted 3×8-pin splitter and all six leads. Cold Continue and a guest join restored the same native wiring. [Run record](audit/acceptance-2026-11-04.md#automatic-psu-splitter-during-gpu-assembly)
 - [x] Custom-colour cable: same colours on both games (0.36, November 6, 2026. Both ATX installs kept the same alternating violet and gold pin colours on both games.)
 - [x] Esc in the cable tool with nothing connected: no change (0.27, November 5, 2026: real Escape in the guest's HDMI connector choice)
 - [x] The other player is refused on that PC while a cable is being placed (0.27, November 5, 2026: host refused on PC 213 and could power PC 26)
@@ -55,7 +57,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Delid a CPU, host and guest each: the delidded CPU is in both inventories (0.49–0.50, November 7, 2026. The host finished an i3-8350K and the guest finished an i5-8600K. Both native inventories showed one of each delidded variant.)
 - [x] Install the delidded CPU from each side: both games show it delidded (0.50, November 7, 2026. The host installed the delidded i3-8350K and the guest replaced it with the delidded i5-8600K. Both native sockets showed the selected variant after each edit.)
 - [x] The other player gets "Someone is using the delidding table." and sees "Delidding" (0.49, November 7, 2026. The guest saw the refusal and the label over the host.)
-- [ ] The PC on a table in use can't be picked up by the other player (Inapplicable in game 1.17.02. The native Delidding bench only accepts loose CPUs. The guest tried to place a carried case while the host held the table and after release in 0.51. The table stayed empty. The occupied Case Modding table pickup refusal passed in 0.49.)
+- **Inapplicable in game 1.17.02.** The native Delidding bench accepts loose CPUs only. The guest tried to place a carried case while the host held the table and after release in 0.51. The table stayed empty. The occupied Case Modding table pickup refusal passed in 0.49.
 - [x] Esc halfway through: nothing shared, CPU back in the inventory (0.49, November 7, 2026. The host exited after removing the lid and cleaning the CPU. Both inventories stayed unchanged and the stock i3-8350K was back in the host's CPU list.)
 - [x] Save and Continue after a delid: the delidded CPU is still there, and the world loads (0.49, November 7, 2026. Cold Continue and a fresh guest both retained one delidded i3-8350K and the same world.)
 
@@ -128,7 +130,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Saves and rejoin ([phase 8](audit/phase-8.md), 8g)
 
-Substantial actual two-game evidence already exists in [phase 8's p8a–p8m runs](audit/phase-8.md#game-runs-november-2-2026). The >35-PC stress case passed in 0.25; the complete build/cable/water acceptance remains open.
+The initial p8a–p8m runs covered save and recovery. The follow-ups added the 39-PC case and the fresh build through cold Continue and rejoin. [Phase 8 evidence](audit/phase-8.md#game-runs-november-2-2026)
 
 - [x] New world: build, cable, power, BIOS, GPU Tuner, software; then Exit, Continue, guest joins: everything matches (November 8, 2026, 0.52–0.55. Fresh PC 392 restored with matching parts, paste, 11 cables, CPU x46.75, GPU 1684 MHz, power and installed apps in two cold games. Front USB replay and live app installation passed their follow-up checks.)
 - [x] Guest drops (pull the network) and uses Rejoin: comes back where it stood, no duplicates (0.21, November 2, 2026: owned LAN runs, 12-second process suspension; exact position/facing and matching worlds)
@@ -136,23 +138,12 @@ Substantial actual two-game evidence already exists in [phase 8's p8a–p8m runs
 - [x] Close the host's game during a save: next Continue loads the previous good save with a notice (0.32, November 5, 2026. The 39-PC pair stayed byte-identical, the host saw the notice, and the guest rejoined.)
 - [x] A world with more than 35 built PCs: save, join, `/sync`, Continue (0.25, November 4, 2026: 39 built PCs, matching native checks and object hashes after every step; fixed the 0.24 duplicate-snapshot failure, run acceptance-b)
 - [x] Host pause-menu Load and Reset reload both games; guest Save/Load/Reset are refused (0.21, November 2, 2026: owned two-game runs p8a–p8m)
-- [ ] Rejoin over Steam (needs two Steam accounts)
+- [x] Rejoin over Steam (owner confirmed Steam testing complete, November 4, 2026)
 - [x] Exit while the world can't be saved shows the message (0.27, November 5, 2026: guest held an HDMI edit open, host got the menu warning and the previous pair stayed byte-identical)
 
 ## Steam connection (version 0.9 onward)
 
-Needs two PCs with two different Steam accounts, preferably on separate networks, both running the same build with its complete `steam/` folder. Use fresh co-op worlds and back up paired saves first. The single-PC check (`scripts/Test-SteamLocal.ps1`, no game running) already passes: it starts Steam under App ID 480, hosts, opens the friends list and closes the lobby without sending invites.
-
-- [ ] Host picks Steam, starts a world, Esc → Invite Friends (friends list if the overlay doesn't open); guest accepts from the main menu, loads the world, both see each other
-- [ ] Move, create/delete a case, pick up/drop/store/retrieve a PC, pause and switch focus while the other player moves
-- [ ] Late join while the host makes changes; host save copy reaches the guest
-- [ ] Guest leaves carrying a PC: host stays, PC goes to the cupboard; guest accepts a fresh invite and rejoins
-- [ ] Host leaves: guest returns to the menu; host Continues and the guest joins again
-- [ ] Accept an invite while already in a world: notice, that world isn't replaced
-- [ ] Cancel create/join, accept twice, a stale/full/unrelated lobby, a different mod build: readable refusal, a new attempt still works
-- [ ] Steam offline or lost mid-session, missing `steam/` folder, Steam turned off: LAN still works afterwards
-- [ ] Friends list with no friends online; a failed invite reports a result
-- [ ] Both logs: `[net] Steam route:` shows a relayed route (a direct or LAN link doesn't count), with snapshot size and time
+**Complete:** the owner confirmed on November 4, 2026 that Steam testing is complete.
 
 ## Everyday basics (quick regression after each update)
 

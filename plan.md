@@ -7,8 +7,9 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 ## Current position
 
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
-- Current implementation: two-player LAN host/join with an identity/compatibility handshake, a host snapshot of one shared Free Build world, held/replayed changes during admission, host save copies, and remote capsule position/yaw/presence. Host-ordered changes now carry per-player work/claims (3d), PC creation/removal (3e) and atomic PC transfers between benches, hands and the cupboard (3f); component edits and later families are not synchronized yet.
-- Phase 1 is **Complete** (closed October 25, 2026 on the owner's go-ahead; the visual capsule check moved to phase 2's first in-game run). Phase 2 is **Complete** (one shared Free Build world with drop-in join; see below). Phase 3 is **Complete** (3a–3h, October 26, 2026), started at the owner's request on October 25, 2026. Phase 4 is **Implementing**, started at the owner's request on October 26, 2026; 4a–4e are complete (4e in 0.14, owner-tested in game); 4f is not started. Phase 5 is **Implementing**, started at the owner's request on October 27, 2026 (5a audit complete; 5b–5c implemented in 0.15, owner game test next). Phase 10 is **Implementing**, pulled forward at the owner's request on October 29, 2026 (10a–10b in 0.16; the owner tests everything once complete). Version 0.17 (October 30, 2026) animates part edits on both games at once and replaces the game's autosaves in co-op with a host interval; the owner built a PC from start to finish in game and marked cables, power and water cooling as synced, with their full test (4f, 5d, 10b) still to come. Phase 11's LED strip tool is unreachable in this build (owner-confirmed). Phase 6 is **Complete** (0.19, closed November 1, 2026 after the owner's two-game test). Phase 7 is **Implemented, not tested in game** (0.20, November 1, 2026): all of 7a–7d are coded with model tests and short owned runs; the owner's full two-game test is deferred to a later day. Phase 8 is **Implementing** (started November 1, 2026 at the owner's request; [audit](docs/audit/phase-8.md) and owner decisions done; 8b–8f in 0.21, run in game in owned two-game runs on November 2 with eight fixes; 8g's owner pass is next). Phase 9 is **Implemented, not tested in game** (0.22, November 2, 2026; [audit](docs/audit/phase-9.md)): thermal paste, the delidding and water-cooling tables (result only, one player per table) and refusals for cleaning and case modding. Phase 11 is **Implemented, not tested in game** (0.23, November 2, 2026; [audit](docs/audit/phase-11.md)): the case-modding table (result only, host-given design numbers), table switching, Lighting settings with the host's effect clock, and Cable app purchases. Phase 12 is **Implemented, checked in owned runs** (0.24, November 2, 2026; [audit](docs/audit/phase-12.md)): decorating one player at a time, the light switch, the host's season, shared custom and Windows wallpapers, and PC import; the owner's two-game test is next. Phases 13–18 are **Not started**.
+- Two players share the supported Free Build workshop over LAN or Steam. In 0.57, the automatic PSU splitter passed live and after cold Continue and guest admission, closing all 90 applicable gameplay checks. One Delidding table case is inapplicable. [Sync tracker](docs/sync-progress.md) · [Gameplay checklist](docs/needs_testing.md)
+- The gameplay pass covers standard building, cabling and power, tuning, save/rejoin, specialist tools, water cooling, customization and the workshop. The remaining Free Build work belongs to phases 13 and 14.
+- Phase 13 tracks remote presentation. Phase 14 tracks release acceptance, including faults, performance and a two-machine pass. Phase 15 is the first Career phase. Career development awaits phase 14 closure.
 - Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
 
 ## Required workflow for every phase
@@ -319,7 +320,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** HW component/slot/screw/latch/blocker factors; PW target/tool activity; SS transaction/callback risks.
 
-**Status: Implementing (4a–4c complete; 4d implemented in 0.13 and owner-checked; 4e complete in 0.14 and owner-tested in game).** Focused audit: [docs/audit/phase-4.md](docs/audit/phase-4.md). Existing owner decisions apply: conflicting resources are exclusive and an actively used PC cannot move. Since 4e (owner decision, October 27, 2026), while one player's component edit runs on a PC the other player waits on that whole PC. Work starts with the current default Free Build workshop; the phase 3 deferrals for specialist tool benches, DLC layouts and career locations retain their assigned phases. No new UI or interaction flow is selected here.
+**Status: Gameplay validation recorded.** The owner completed a build and the component-edit checklist. Later owned runs built and stripped PCs in both directions and checked contention, mechanical state, interrupted edits, joining during a build and cold restore. The phase-wide fault and presentation checks retain their roadmap scope. [Phase 4 audit](docs/audit/phase-4.md) · [Gameplay evidence](docs/needs_testing.md)
 
 #### 4a. Focused evidence and component transaction boundaries
 
@@ -383,13 +384,13 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 4f. Combined phase 4 acceptance
 
-- **Status:** Not started.
+- **Status:** Supported gameplay cases passed in owned two-game runs. Phase-wide fault coverage is tracked in phase 14.
 - **Outcome and audit IDs:** prove the phase exit criteria across all selected factors and cross-domain dependencies.
 - **Dependencies and decisions:** 4a–4e; unresolved standard-category evidence keeps the phase in validation.
 - **Scope and evidence:** repeatable disposable-save fixtures and owned host/guest instances; source/model results and runtime results recorded separately in the focused audit.
 - **Work:** combine same-PC disjoint/contested work with movement denial, delayed assets, departure, save/Continue, fresh-process restore, rejoin and changes held during admission. Compare logical part IDs, aliases, slot/parent topology, mechanical state, inventory outcomes and what both games visibly show. Run relevant network regressions and a Release build against real interop, choosing deployment deliberately.
 - **Acceptance:** every standard category and conflict/interruption/restore case has evidence; no silent host-capture adoption or stale callback can overwrite a confirmed edit; phase 3 PC transfers/peripherals and `/sync` still work; owner's saves remain unchanged. Update sync-progress only for implemented and verified coverage.
-- **Completion evidence:** pending; phase 4 remains open until the exit criteria pass.
+- **Completion evidence:** host and guest full builds and teardowns, slot contention, Escape, join during an edit, and cold restore. The 0.55 manual-screw retest released both games and saved after the guest finished. [Run record](docs/audit/acceptance-2026-11-04.md)
 
 ### 5. Electrical cables, peripherals and physical power
 
@@ -401,7 +402,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** HW cables/peripherals/power; PW workstation assignment; SW display association and power animation.
 
-**Status: Implementing** (started at the owner's request on October 27, 2026, after 4e passed the owner's game test; 4f stays open). Focused audit: [docs/audit/phase-5.md](docs/audit/phase-5.md). Owner decisions (October 27, 2026): the other game shows the game's own plug/unplug animation; power on/off is shared and each game runs its own boot screen until phase 6; custom-colour cables are included (the colour app stays phase 11). The 4e waiting rule, inventory mirroring and host-published record apply.
+**Status: Supported gameplay acceptance complete in 0.57.** Owned two-game runs cover standard cable types, custom colours, manual and automatic splitters, power controls and save/rejoin. The owner chose native cable animations, shared power and the whole-PC edit claim. Hand routing has no reachable native caller in this game build. [Phase 5 audit](docs/audit/phase-5.md)
 
 #### 5a. Focused audit and owner decisions
 
@@ -415,33 +416,33 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 5b. Shared cable plugging and unplugging, with splitters and adapters
 
-- **Status:** Validating (0.15; owner game test next).
+- **Status:** Supported gameplay checks passed through 0.57.
 - **Outcome and audit IDs:** plugging in and unplugging a cable, including automatic splitters and custom-colour cables, is host-ordered and replayed with the game's own animation (HW-022–029, HW-054).
 - **Dependencies and decisions:** 5a; the 4e pipeline (command 9), waiting rule and settle capture.
 - **Scope and evidence:** gestures `Connect` and `Unplug` in `ComponentEditWorld`, with a whole-PC edit claim. The commit carries the cable change (removed keys, added `CableSave` data, splitter/adapter slot changes, inventory change). The plugin hooks `<CablingTick>b__0` and `<RemoveCableTick>b__0`; the replay uses `Plug.Unplug`, the splitter sequence and `Case.CreateCableAsync`. `POWER_SPLITTER`/`POWER_ADAPTER` join the 4e shared slots.
 - **Work:** network gestures and checks; the cable change format and limits; whole-PC claims in `ActivityWorld`; plugin request, follow, commit, replay and host settle; model tests.
 - **Acceptance:** phase 5 audit cases 1–5 and 10 in both directions; duplicate commits applied once; malformed and oversized changes refused; a commit with no change cancelled.
-- **Completion evidence:** implemented in 0.15 (code and model tests): `ComponentEditWorld` gestures and the `Wiring` change, whole-PC claims in `ActivityWorld`, `NativeComponentEdits.Wiring.cs` (hooks, following, replay). **504/504** model/network checks, Release 0/0. Pending: the owner's game test (5d).
+- **Completion evidence:** implemented in 0.15. Standard and custom cable edits passed in owned runs. The automatic splitter passed live and through cold Continue and guest admission in 0.56–0.57. [Run record](docs/audit/acceptance-2026-11-04.md#automatic-psu-splitter-during-gpu-assembly)
 
 #### 5c. Shared physical power
 
-- **Status:** Validating (0.15; owner game test next).
+- **Status:** Supported gameplay checks passed.
 - **Outcome and audit IDs:** case and HUD power buttons are host-ordered, both games power the PC together, and the powered state survives late join and save/Continue (HW-042, HW-046, HW-050).
 - **Dependencies and decisions:** 5b; owner decision on boot screens (own per game until phase 6).
 - **Scope and evidence:** gesture `Power` in command 9; `PcFact.Powered` (bench only, cleared when the PC leaves its bench); plugin hooks on `PowerButton.Press` and `WorkingOnComputerStateBase.PowerClicked`; replay by the same press; after a load, the power state is restored from the shared world.
 - **Work:** model field, codec and checks; transfer/lifecycle clearing; plugin request, follow, replay, capture and restore; model tests.
 - **Acceptance:** phase 5 audit cases 6–9.
-- **Completion evidence:** implemented in 0.15 (code and model tests): `PcFact.Powered`/`At`, power hooks and replay, capture of the host's power state at every settle, power restore after a load. Pending: the owner's game test (5d).
+- **Completion evidence:** implemented in 0.15. The case, HUD and walking bench controls, powered pickup, and powered Continue and guest admission passed in 0.26–0.27. [Gameplay checks](docs/needs_testing.md#workbench-cables-and-power-phase-5-5d)
 
 #### 5d. Combined phase 5 acceptance
 
-- **Status:** Not started.
-- **Outcome and audit IDs:** the phase exit criteria with the owner's two-instance test.
+- **Status:** Supported gameplay acceptance complete in 0.57. Release-wide validation stays in phase 14.
+- **Outcome and audit IDs:** matching wiring and power in the applicable two-game gameplay checks.
 - **Dependencies and decisions:** 5b–5c.
 - **Scope and evidence:** the phase 5 audit's acceptance list, the 4e regression list and `/sync`.
 - **Work:** fix issues from the owner's report and the `[edits]`/`[replay]`/`[cables]` log lines.
 - **Acceptance:** all cases pass in both directions; owner saves unchanged.
-- **Completion evidence:** pending.
+- **Completion evidence:** the gameplay checklist and native runs document each exercised path and its input method. All 21 owner save files remained byte-identical. [Gameplay checks](docs/needs_testing.md) · [Phase 5 audit](docs/audit/phase-5.md)
 
 ### 6. Boot, BIOS, OS and visible computer screens
 
@@ -493,7 +494,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** SW benchmark/OCCT/tuning/telemetry/failure/app factors; HW condition/fan control; SS clocks and callback suppression.
 
-**Status: implemented, not tested in game (0.20, November 1, 2026).** The owner's full two-game test is deferred to a later day; the phase closes after it. [Phase 7 audit](docs/audit/phase-7.md) complete from the decompile; 7b–7d implemented and checked in short owned two-game runs sim-1 to sim-4. The owner answered the audit's seven questions (November 1, 2026; all match 0.20: host decides failures, fan curves shared on Apply, reading noise accepted, late join leaves a running test idle on the guest, fan curves unsaved like solo, GPU Tuner waits for the host, career tuning later). The owner's full two-game test is pending.
+**Status: Gameplay checks passed.** The owner chose host-ordered failures and live GPU Tuner Apply/Reset, with live Fan Control curves shared on Apply and rejoin. Two-game runs verified CPU under-voltage and heat failures, power recovery, Fan Control, GPU Tuner and matching benchmark results. Fan curves follow the game's save behavior and late guests join ongoing tests idle. [Phase 7 audit](docs/audit/phase-7.md) · [Gameplay evidence](docs/needs_testing.md)
 
 #### 7a. Focused audit
 
@@ -524,7 +525,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 7e. Two-game checks and phase close
 
-- **Status:** Deferred: owned basic runs done (sim-1 to sim-4) and owner decisions recorded; the owner's full test is deferred to a later day.
+- **Status:** The gameplay checklist passed in owned runs through 0.46. [Results](docs/needs_testing.md#tests-tuning-and-failures-phase-7-7e)
 - **Scope:** run the [acceptance cases](docs/audit/phase-7.md#acceptance-cases-two-games) with two owned instances and disposable saves; record results (owner decisions are recorded).
 
 ### 8. Durable Free Build saves and complete core rejoin
@@ -537,7 +538,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** SS snapshot/persistence/recovery; CP codec/save/load; every earlier phase's state inventory.
 
-**Status: Implementing (started at the owner's request, November 1, 2026).** [Phase 8 audit](docs/audit/phase-8.md) complete from code, decompile and disposable test saves. The owner answered the nine questions the same day (all recommended options except question 1: the host's pause-menu Load and Reset are allowed and reload both games). 8b–8f are implemented in 0.21. On November 2, owned two-game runs p8a–p8m (the owner away, asking for full testing) passed every phase 8 path tried, after eight fixes (624/624 checks); see the audit's "Game runs". Open: a world over 35 PCs, Steam rejoin, and the owner's pass of 4f/5d/10b/7e.
+**Status: Gameplay checks passed.** The host's pause-menu Load and Reset are supported. Two-game runs covered a dropped guest, interrupted saves, backup recovery, a 39-PC world and a fresh build through cold Continue and rejoin. Steam rejoin is owner-confirmed. [Phase 8 audit](docs/audit/phase-8.md) · [Gameplay evidence](docs/needs_testing.md)
 
 #### 8a. Focused audit
 
@@ -579,7 +580,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 8g. Two-game acceptance and phase close
 
-- **Status:** Owned runs done (November 2, 2026; audit "Game runs"). Next: the owner's pass, which also covers the deferred tests 4f, 5d, 10b and 7e (owner decision 9).
+- **Status:** The gameplay checklist passed through 0.55, including the 39-PC case and fresh build through Exit, cold Continue and rejoin. Steam rejoin is owner-confirmed. [Results](docs/needs_testing.md#saves-and-rejoin-phase-8-8g)
 - **Acceptance:** [acceptance cases](docs/audit/phase-8.md#acceptance-cases-two-games) 1–7.
 
 ### 9. Cleaning, paste, pads and specialist bench tools
@@ -592,7 +593,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** HW paste/dust/delid/pad/tool factors; PW animation callback/particle/audio factors; SW thermal consequences.
 
-**Status: Implemented, not tested in game** (0.22, November 2, 2026; started at the owner's request after phase 8's owned runs). Focused audit and owner decisions: [docs/audit/phase-9.md](docs/audit/phase-9.md). Owner decisions: paste is set in place on the other game; cleaning waits for career co-op; delid and water-cooling tables share their result only, one player per table, with a prompt and a label under the user's name; case modding is refused until phase 11. Phase 8's owner pass (8g) is still to come.
+**Status: Gameplay checks passed for the supported tools.** Paste is set in place on both games. Delidding and water-cooling tables are exclusive and share finished inventory items. The Delidding table takes loose CPUs. Cleaning is deferred to Career and case modding follows phase 11. [Phase 9 audit](docs/audit/phase-9.md) · [Gameplay evidence](docs/needs_testing.md)
 
 #### 9a. Focused audit and owner decisions
 
@@ -635,7 +636,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 9i. Two-game acceptance
 
-- **Status:** Not started: the owner's test (audit "Owner test (0.22)").
+- **Status:** The supported paste and specialist-table checklist passed in owned runs. The Delidding table only takes loose CPUs, so the occupied-PC pickup case is inapplicable. [Results](docs/needs_testing.md)
 
 ### 10. Custom water cooling and pipe routing
 
@@ -647,7 +648,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** HW water graph/save/bench-tool factors; SW thermal/flow input consumers; SS reconstruction order.
 
-**Status: Implementing** (pulled forward at the owner's request on October 29, 2026; phases 6–9 stay open). Focused audit: [docs/audit/phase-10.md](docs/audit/phase-10.md). Owner decisions (October 29, 2026): the other game reloads the finished PC instead of replaying the animation; blocks, pumps, reservoirs, pipes and coolant are shared; the water-cooling workbench is not; the other player waits on that PC with a water-cooling message.
+**Status: Gameplay checks passed for the supported loop edits.** Both players share pipes, coolant and water-cooling parts. The other game reloads the finished PC under the whole-PC claim. Finished specialist table items are covered in phase 9. [Phase 10 audit](docs/audit/phase-10.md) · [Gameplay evidence](docs/needs_testing.md)
 
 #### 10a. Focused audit and owner decisions
 
@@ -657,12 +658,12 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 10b. Shared water-cooling edits by PC reload
 
-- **Status:** Validating (0.16; owner game test later).
+- **Status:** The supported gameplay cases passed in owned runs through 0.51. [Results](docs/needs_testing.md)
 - **Outcome and audit IDs:** every in-PC custom water-cooling change is host-ordered and shown on the other game by reloading the finished PC (HW-030–035, HW-074).
 - **Dependencies and decisions:** 4e/5 command 9 pipeline; the owner decisions above.
 - **Scope and evidence:** gesture `Water`, record `Chunk` steps, `Rebuild` commit; `NativeComponentEdits.Water.cs`, `NativeObjectState.ReloadOnBench`, path-based settle identity.
 - **Acceptance:** the phase 10 audit's acceptance list, in both directions.
-- **Completion evidence:** implemented in 0.16 (code and model tests, **513/513**, Release 0/0). Pending: the owner's game test.
+- **Completion evidence:** native pipe routes and undo, fill and drain, blocks and pump/reservoir, RAM heatsinks, power effects and cold restore. [Run record](docs/audit/acceptance-2026-11-04.md)
 
 ### 11. PC customization, RGB and visual hardware configuration
 
@@ -676,7 +677,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Note (October 29, 2026):** the owner asked for LED strips (strips only) with phase 10. The strip tool (`LEDStripState`) has no creator in this build, and the owner confirmed it can't be opened in game. Strips in loaded PC records are preserved; there is nothing to share yet ([phase 10 audit](docs/audit/phase-10.md#led-strips-phase-11-finding)).
 
-**Status: Implemented, not tested in game** (0.23, November 2, 2026; started at the owner's request). Focused audit and owner decisions: [docs/audit/phase-11.md](docs/audit/phase-11.md). Owner decisions: the case-modding table shares its finished design (one player per table, prompt and label; live co-op painting may come later); Lighting changes are shared after a short pause, last change wins; effects follow the host's clock; Cable app purchases are shared; switching a table's tool is shared; DLC stickers and themes are allowed; code first, the owner tests in game. Main findings: case designs live in a world-level list keyed by a per-game ID (clashes possible); Lighting changes don't reach the other game properly (colour wheel not mirrored, the phase 6 software record swap doesn't re-light, and opening the app may take over the other player's view); custom cable kinds bought mid-session are unknown on the other game. Proposed tasks 11b–11j and seven owner questions are in the audit.
+**Status: Gameplay checks passed for the supported controls.** Both players tested finished case designs, table switches, Lighting controls and Cable app purchases. Design editing is exclusive and shares the finished design. Lighting follows the host's effect clock. The LED strip tool is unreachable in this game build. [Phase 11 audit](docs/audit/phase-11.md) · [Gameplay evidence](docs/needs_testing.md)
 
 #### 11a. Focused audit and owner decisions
 
@@ -711,7 +712,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 11j. Two-game acceptance
 
-- **Status:** Not started: the owner's test (audit "Owner test (0.23)").
+- **Status:** Supported case modding, Lighting and Cable app cases passed in owned runs through 0.51. [Results](docs/needs_testing.md)
 
 ### 12. Workshop environment, remaining Free Build apps and content
 
@@ -723,7 +724,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** PW room/environment factors; SW remaining app/capture/content factors; HW catalog/peripheral variants; CP local theme/sharing boundaries.
 
-**Status: Implemented, checked in owned runs** (0.24, November 2, 2026; started at the owner's request). Focused audit, owner decisions, implementation and run results: [docs/audit/phase-12.md](docs/audit/phase-12.md).
+**Status: Gameplay checks passed in the default workshop.** Two-game runs covered the Decorator claim and live room updates, lights, MSI wall colour and pulse, wallpapers, and real PC imports. The audit records the remaining content and presentation boundaries. [Phase 12 audit](docs/audit/phase-12.md) · [Gameplay evidence](docs/needs_testing.md)
 - Owner decisions:
   - decorating shared, one decorator at a time;
   - light switch and ceiling fans shared;
@@ -737,9 +738,11 @@ Order follows data integrity and dependencies first, usable standard Free Build 
   - 12b decorating, 12c lights and season, 12d wallpapers, 12e import: implemented in 0.24 (command 17 `WorkshopWorld`, `PcLifecycle` `Import`).
   - 12f music: not needed (music stays personal).
   - 12g: **706/706**, Release 0/0, deployed; 0.24 loads 0.23 saves.
-- 12h: owned runs p12a–p12e passed for lights, the Decorator app's claim and picks, light colour, wallpapers (custom, Windows, oversized refusal, rejoin without the picture) and import (through a probe). The Free Build workshop has no seasonal switches. The owner's test ("Owner test (0.24)" in the audit) is next.
+- 12h: the initial owned runs covered lights, Decorator, wallpapers and import. Follow-up runs used the actual cupboard browser, confirmed restored room changes and exercised the MSI wall picker in both directions. The Free Build workshop has no seasonal switches. [Run record](docs/audit/acceptance-2026-11-04.md)
 
 ### 13. Remote player detail, animations, screens and audio parity
+
+**Status: Planned.** The current avatar and activity labels provide a baseline for this phase. [Player model](docs/playermodel.md)
 
 **Purpose:** finish the small visible and audible details across supported Free Build actions.
 
@@ -751,6 +754,8 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 ### 14. Free Build completeness, faults and performance acceptance
 
+**Status: Planned.** The gameplay checklist and the 39-PC run are inputs to phase-wide validation. Release acceptance still includes the applicable audit dispositions, fault and performance checks, and a two-machine pass. [Gameplay evidence](docs/needs_testing.md)
+
 **Purpose:** finish and prove Free Build before starting career.
 
 **Scope:** reconcile every Free Build-relevant audit entry against implemented/tested/partial/intentionally-local/deferred disposition; exercise independent and same-PC work, late join, save/restart, content mismatches, failed loads, packet faults and disconnect at commit. Measure busy-world bandwidth/frame time/snapshot size and investigate observed bottlenecks. Complete the relevant V-01–V-19 cases with repeatable evidence, including a two-machine pass.
@@ -760,6 +765,8 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 **Audit starting points:** all Free Build dispositions, source/asset coverage gaps and the verification backlog.
 
 ### 15. Shared career model, progression and mode initialization
+
+**Status: Planned after Free Build release acceptance.**
 
 **Purpose:** add career to the proven Free Build synchronization foundation.
 
