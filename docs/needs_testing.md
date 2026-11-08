@@ -84,7 +84,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 ## Lighting ([phase 11](audit/phase-11.md))
 
-- [ ] Change colours (wheel and swatches), effects, speed and direction on a running PC, host and guest each: the other game's lights change without a restart (0.40–0.41, November 6, 2026. Both shared real swatches, advanced sliders and GPU effect controls. The hue-ring drag remains open.)
+- [x] Change colours (wheel and swatches), effects, speed and direction on a running PC, host and guest each: the other game's lights change without a restart (Both shared real swatches, advanced sliders and GPU effect controls in 0.40–0.41. In 0.51 on November 8, 2026, the native hue ring changed the selected RAM from cyan to red on the host and to yellow-green on the guest. Both running PCs matched after each change. The isolated probe supplied the held action while the game read the real pointer.)
 - [x] Save and load a preset from each side (0.40–0.41, November 6, 2026. Host Preset 1 and guest Preset 2 each restored distinct native Rainbow speed and direction on both games.)
 - [x] Keyboard and mouse lighting from each side (0.40–0.41, November 6, 2026. The host's magenta and guest's blue reached both native peripherals during play.)
 - [x] Opening Lighting doesn't change the other player's view (0.41, November 6, 2026. Both real launches kept the other player's HUD hidden and left their view alone.)
