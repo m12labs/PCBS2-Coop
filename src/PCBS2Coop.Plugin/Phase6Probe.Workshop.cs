@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using HarmonyLib;
 using PCBS2Coop.Network;
 using UnityEngine;
 using Object = UnityEngine.Object;
@@ -10,6 +11,9 @@ namespace PCBS2Coop;
 /// pickup), so the co-op hooks run as they would for a player.</summary>
 internal sealed partial class Phase6Probe
 {
+    [ThreadStatic] private static bool s_wheelActionHeld;
+    private bool _wheelInputPatched;
+
     private bool WorkshopCommand(string command)
     {
         var coop = CoopRunner.Instance?.Coop;
@@ -32,12 +36,14 @@ internal sealed partial class Phase6Probe
                         {
                             path = DesktopPath(wheel.transform, null), wheel.forTheme, wheel.IsDisabled,
                             wheel.toggleWheel, edit = wheel.EditState.ToString(), discVisible = wheel.Disc.gameObject.activeInHierarchy,
+                            discCursor = wheel.DiscCursor != null, square = wheel.Square != null, squareCursor = wheel.SquareCursor != null,
                             selected = wheel.m_colourWheelSelectable?.IsSelected, cursor = new { cursor.x, cursor.y }, local = new { local.x, local.y },
                             raw = new { raw.x, raw.y }, radius = local.magnitude, inner = wheel.InnerRadius * halfWidth, outer = wheel.OuterRadius * halfWidth,
                             colour = new { colour.r, colour.g, colour.b },
                         };
                     }).ToArray());
                     return true;
+                case "wheel-step": StepLightingWheel(); return true;
                 case "lighting-report":
                 {
                     var pc = RequirePc(bits[1]);
@@ -140,6 +146,47 @@ internal sealed partial class Phase6Probe
             }
         }
         catch (Exception e) { Event("room-command", $"{command} failed: {e.Message}"); return true; }
+        return false;
+    }
+
+    private void StepLightingWheel()
+    {
+        if (!Safe || GameController.Get()?.GetCurrentState()?.TryCast<LightingAppState>() == null)
+            throw new InvalidOperationException("Open the native Lighting app in an isolated co-op game first.");
+        var wheel = Object.FindObjectsOfType<ColourWheel>().Single(wheel =>
+            wheel.isActiveAndEnabled && !wheel.forTheme && !wheel.IsDisabled && wheel.toggleWheel &&
+            wheel.Disc != null && wheel.Disc.gameObject.activeInHierarchy);
+        var local = wheel.GetLocalMousePosForImage(wheel.Disc);
+        var radius = local.magnitude;
+        var halfWidth = wheel.Disc.rectTransform.rect.width * 0.5f;
+        if (radius <= wheel.InnerRadius * halfWidth || radius >= wheel.OuterRadius * halfWidth)
+            throw new InvalidOperationException("Move the real pointer onto the hue ring first.");
+        if (!_wheelInputPatched)
+        {
+            var harmony = new Harmony(Plugin.Guid + ".phase6-wheel-input");
+            harmony.Patch(AccessTools.Method(typeof(InputButton), nameof(InputButton.Get)),
+                prefix: new HarmonyMethod(AccessTools.Method(typeof(Phase6Probe), nameof(WheelActionInput))));
+            _wheelInputPatched = true;
+        }
+        var before = wheel.ColourSelection_Disc;
+        try
+        {
+            s_wheelActionHeld = true;
+            // The native Update enters DiscSelecting on the first action and samples hue on the second.
+            wheel.Update();
+            var edit = wheel.EditState.ToString();
+            wheel.Update();
+            var after = wheel.ColourSelection_Disc;
+            Event("wheel-step", new { radius, edit, before = new { before.r, before.g, before.b },
+                after = new { after.r, after.g, after.b }, bypasses = "physical action hold only" });
+        }
+        finally { s_wheelActionHeld = false; }
+    }
+
+    private static bool WheelActionInput(InputButton __instance, ref float __result)
+    {
+        if (!s_wheelActionHeld || __instance.Pointer != PCBSInput.m_action?.Pointer) return true;
+        __result = 1f;
         return false;
     }
 
