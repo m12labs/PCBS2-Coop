@@ -481,6 +481,20 @@ internal sealed class NativeEditReplay
         }
     }
 
+    /// <summary>The front USB slot refreshes the edited PC's apps through the game's active-workstation getter.</summary>
+    [HarmonyPatch(typeof(WorkStation), nameof(WorkStation.GetGetActiveWorkStation))]
+    internal static class UsbWorkstationGuard
+    {
+        private static bool Prefix(ref WorkStation __result)
+        {
+            if (_step?.Plan.Slot?.m_slotType != Slot.SlotType.USB) return true;
+            var station = _step.Plan.Bench?.m_workStation;
+            if (station == null) return true;
+            __result = station;
+            return false;
+        }
+    }
+
     [HarmonyPatch]
     internal static class InputGuard
     {

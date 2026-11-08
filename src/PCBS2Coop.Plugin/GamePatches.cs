@@ -59,6 +59,7 @@ internal static class GamePatches
             replay.PatchAll(typeof(NativeEditReplay.LastDifferentGuard));
             replay.PatchAll(typeof(NativeEditReplay.EnterGuard));
             replay.PatchAll(typeof(NativeEditReplay.PreviousStateGuard));
+            replay.PatchAll(typeof(NativeEditReplay.UsbWorkstationGuard));
             replay.PatchAll(typeof(NativeEditReplay.InputGuard));
             replay.PatchAll(typeof(NativeEditReplay.OrientationGuard));
             replay.PatchAll(typeof(NativeEditReplay.SelectableGuard));
