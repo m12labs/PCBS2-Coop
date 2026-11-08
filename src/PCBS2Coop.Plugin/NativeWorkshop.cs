@@ -35,6 +35,8 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
     private float _closingSince, _nextDecorPoll;
     private CustomiseWorkShopApp _appToClose;
     private int _closeAppFrame;
+    private CalendarInteraction _roomPickerRequest;
+    private bool _roomPickerOpen;
     private Dictionary<(int, int, int), DecorItem> _baseline;
     private RoomLight? _baselineLight;
     private bool _localRoomChanged, _refreshRoom;
@@ -60,6 +62,8 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
     {
         _decorating = _closing = false; _baseline = null; _baselineLight = null; _decorTarget = null; _verifyLeft = 0;
         _appToClose = null;
+        _roomPickerRequest = null;
+        _roomPickerOpen = false;
         _localRoomChanged = _refreshRoom = false;
         _refreshPicks = null;
         ResetContent();
@@ -135,14 +139,18 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
     internal void AppOpened()
     {
         if (!Active || _decorating) return;
+        if (!BeginDecorating()) DeferAppClose();
+    }
+
+    private bool BeginDecorating()
+    {
+        if (!Active) return false;
         if (Handler.DecorBusy(_world.Local) is { } busy)
         {
             _coop.Notice(busy);
-            Plugin.Logger.LogInfo("[workshop] the other player is decorating; the Customise Workshop app closes here.");
-            DeferAppClose();
-            return;
+            return false;
         }
-        if (Epoch is not { } epoch) return;
+        if (Epoch is not { } epoch) return false;
         _baseline = Keyed(ReadDecor()); _baselineLight = ReadLight();
         _decorating = true; _closing = false;
         _localRoomChanged = false;
@@ -150,24 +158,61 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         try
         {
             if (!_world.Submit(CommandTypes.Workshop, WorkshopWorld.Decorate(epoch, true), out _claimOp))
-            { _decorating = false; _coop.Notice("Decorating isn't shared: not connected to the host's world."); DeferAppClose(); return; }
+            { _decorating = false; _coop.Notice("Decorating isn't shared: not connected to the host's world."); return false; }
         }
         finally { _claiming = false; }
         if (_decorating) Plugin.Logger.LogInfo($"[workshop] decorating ({_baseline.Count} decoration(s) at the start).");
+        return _decorating;
     }
 
     /// <summary>The app closed: send the last change once it has loaded, then free decorating.</summary>
     internal void AppClosed()
     {
-        if (!_decorating || _closing) return;
+        if (!_decorating || _closing || _roomPickerRequest is not null || _roomPickerOpen) return;
         _closing = true; _closingSince = Time.realtimeSinceStartup;
     }
 
     private void DeferAppClose()
     {
+        if (_roomPickerRequest is not null || _roomPickerOpen)
+        {
+            _roomPickerRequest = null;
+            return;
+        }
         // OnEnable runs before the tablet finishes opening its native window.
         _appToClose = CustomiseWorkShopApp.Get();
         _closeAppFrame = Time.frameCount + 1;
+    }
+
+    private void RequestRoomPicker(CalendarInteraction picker)
+    {
+        if (_decorating) return;
+        _roomPickerRequest = picker;
+        if (!BeginDecorating()) _roomPickerRequest = null;
+    }
+
+    private void UpdateRoomPicker()
+    {
+        var ctrl = GameController.Get();
+        if (_roomPickerRequest is { } picker && Handler.Decorator == _world.Local)
+        {
+            _roomPickerRequest = null;
+            if (picker != null && picker.isActiveAndEnabled && ctrl?.GetCurrentState()?.TryCast<WalkingState>() != null)
+            {
+                try { NativeProjection.Run(picker._GetInteractions_b__4_1); }
+                catch (Exception e) { Plugin.Logger.LogWarning("[workshop] opening the room colour picker failed: " + e.Message); }
+            }
+            _roomPickerOpen = ctrl?.GetCurrentState()?.TryCast<LookingAtMonitorState>()?.m_isColourPicker == true;
+            if (!_roomPickerOpen) AppClosed();
+        }
+        if (!_roomPickerOpen) return;
+        if (ctrl?.GetCurrentState()?.TryCast<LookingAtMonitorState>()?.m_isColourPicker == true)
+        {
+            if (!_decorating) ctrl.GoToPreviousState();
+            return;
+        }
+        _roomPickerOpen = false;
+        AppClosed();
     }
 
     private void UpdateAppClose()
@@ -310,11 +355,15 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         var tm = Theme ?? throw new InvalidDataException("The workshop lights aren't loaded.");
         NativeProjection.Run(() =>
         {
-            // The game keeps the colour (and saves it) only while the app's colour wheel is attached; set it as the wheel does.
             var colour = new Color(light.R, light.G, light.B, light.A);
+            // The theme reads its attached wheel's selection every frame.
+            var wheel = tm.m_attachedColourWheel;
+            if (wheel != null) wheel.SetColour(colour, true, false);
             tm.m_currentColour = colour;
             tm.SetLightColor(colour);
-            if (tm.GetPulse() != light.Pulse) tm.SetSavedPulse(light.Pulse);
+            if (tm.GetPulse() == light.Pulse) return;
+            if (tm.m_Lights is { Count: > 0 } lights && lights[0] != null) tm.OnPulse();
+            else tm.SetSavedPulse(light.Pulse);
         });
     }
 
@@ -440,6 +489,7 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
         UpdateAppClose();
         if (!Active) return;
         UpdateState();
+        if (_roomPickerRequest is not null || _roomPickerOpen) UpdateRoomPicker();
         UpdateDecorating();
         UpdateRoom();
         VerifyDecor();
@@ -447,6 +497,17 @@ internal sealed partial class NativeWorkshop : IWorkshopNative
     }
 
     // ---------------- hooks ----------------
+
+    [HarmonyPatch(typeof(CalendarInteraction), nameof(CalendarInteraction._GetInteractions_b__4_1))]
+    internal static class RoomPickerHook
+    {
+        private static bool Prefix(CalendarInteraction __instance)
+        {
+            if (Bypass || NativeProjection.Active) return true;
+            Current?.RequestRoomPicker(__instance);
+            return false;
+        }
+    }
 
     [HarmonyPatch(typeof(CustomiseWorkShopApp), "OnEnable")]
     internal static class AppOpenHook

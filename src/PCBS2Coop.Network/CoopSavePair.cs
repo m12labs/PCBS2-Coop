@@ -42,8 +42,9 @@ public static class CoopSavePair
     /// 0.48 normalizes generated motherboard standoff bindings on load.
     /// 0.49 loads nested part prefabs for edit replay and 0.50 unwinds refused tool states.
     /// 0.51 keeps existing reservoir clone bindings when reading older saves.
+    /// 0.52 shares the workshop's native wall colour picker through the decorating command.
     /// The save layout is the same across those builds.</summary>
-    private static readonly string[] SameFormat = { "0.50", "0.49", "0.48", "0.47", "0.46", "0.45", "0.44", "0.43", "0.42", "0.41", "0.40", "0.39", "0.38", "0.37", "0.36", "0.35", "0.34", "0.33", "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
+    private static readonly string[] SameFormat = { "0.51", "0.50", "0.49", "0.48", "0.47", "0.46", "0.45", "0.44", "0.43", "0.42", "0.41", "0.40", "0.39", "0.38", "0.37", "0.36", "0.35", "0.34", "0.33", "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);

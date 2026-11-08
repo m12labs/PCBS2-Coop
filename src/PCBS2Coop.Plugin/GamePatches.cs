@@ -112,6 +112,7 @@ internal static class GamePatches
             var room = new Harmony(Plugin.Guid + ".workshop");
             room.PatchAll(typeof(NativeWorkshop.AppOpenHook));
             room.PatchAll(typeof(NativeWorkshop.AppCloseHook));
+            room.PatchAll(typeof(NativeWorkshop.RoomPickerHook));
             room.PatchAll(typeof(NativeWorkshop.DecorGuard));
             room.PatchAll(typeof(NativeWorkshop.LightSwitchClickScope));
             room.PatchAll(typeof(NativeWorkshop.LightSwitchHook));
