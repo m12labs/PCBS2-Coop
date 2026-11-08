@@ -173,6 +173,9 @@ internal sealed partial class Phase6Probe
         var powerConnectors = mesh.GetComponentsInChildren<PowerConnector>(true).Select(connector => new
         {
             connector.id,
+            type = connector.m_type.ToString(),
+            connected = connector.IsConnected(),
+            psuEligible = connector.CanConnectToPSU(),
             path = GesturePath(connector.transform, mesh.transform),
             part = connector.GetComponentInParent<ComponentPC>()?.GetPartInstance()?.GetPartId()
         }).OrderBy(x => x.path).ToArray();
@@ -216,7 +219,9 @@ internal sealed partial class Phase6Probe
             profile = pc.BuildProfile,
             parts = record == null ? null : NativeObjectState.Parts(record).Select(x => new
             {
-                path = x.Key, sku = x.Value.GetPartId(), variant = PartVariants.Of(x.Value), orientation = x.Value.GetSlotOrientation(), flipped = x.Value.m_flipped
+                path = x.Key, sku = x.Value.GetPartId(), variant = PartVariants.Of(x.Value),
+                orientation = x.Value.GetSlotOrientation(), flipped = x.Value.m_flipped,
+                ramHeatsinks = x.Value.TryCast<RamPartInstance>()?.m_RamHeatsinks?.ToArray()
             }).ToArray(),
             pciCovers = record?.casePciCovers?.ToArray(),
             bespokeSlots = record?.m_bespokeCaseSlots?.ToArray(),
@@ -246,9 +251,16 @@ internal sealed partial class Phase6Probe
         return new
         {
             pc = pc.Id.Value,
+            quickCable = CareerStatus.Get()?.IsUpgradeActive("QuickCable"),
+            auto = typeof(ConnectCableState).GetProperty("m_auto", _gesturePrivateInstance)?.GetValue(state),
             activeSourceConnector = (typeof(ConnectCableState).GetProperty("m_autoConnector", _gesturePrivateInstance)?.GetValue(state) as PowerConnector)?.id,
             sourceListFrom = state.m_listFrom?.ToArray().Where(x => x != null).Select(x => x.id).ToArray(),
             offeredPowerConnectors = state.PowerCons?.ToArray().Where(x => x != null).Select(x => x.id).ToArray(),
+            splitterSlots = mesh.psuSplitterSlots?.ToArray().Where(slot => slot != null).Select(slot => new
+            {
+                slot.name, slot.pathBlocked, sku = slot.part?.GetPartId(),
+                connector = slot.GetComponent<PowerConnector>()?.id
+            }).ToArray(),
             semantics = new { sourceListFrom = "native ConnectCableState.m_listFrom field", offeredPowerConnectors = "native ConnectCableState.PowerCons field; game-populated endpoint candidates" },
             editsBusy = coop.Edits.Busy,
             actorWorkingPc = coop.Activity.Get(coop.Session.World.Local)?.WorkingPc.Value ?? 0
@@ -350,9 +362,9 @@ internal sealed partial class Phase6Probe
         if (panel) sku = fact.IntegralHome;
         var slot = coop.Objects.Assembly.NativeFor(pc.Id, fact.Id)?.TryCast<Slot>();
         var component = slot?.GetComponent();
-        var part = component?.GetPartInstance();
-        if (slot?.GetCase()?.Pointer != mesh.Pointer || component == null || !NativeAssembly.IsPreview(component) ||
-            part?.GetPartId() != sku || PartVariants.Of(part) != variant)
+        var part = component != null && NativeAssembly.IsPreview(component) ? component.GetPartInstance() : null;
+        if (slot?.GetCase()?.Pointer != mesh.Pointer || part == null ||
+            part.GetPartId() != sku || PartVariants.Of(part) != variant)
             throw new InvalidOperationException("Select the exact part from the game's inventory and wait for its preview first.");
         Event("gesture-direct-call", new
         {
