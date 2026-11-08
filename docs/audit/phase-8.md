@@ -236,3 +236,7 @@ Found and left for the owner:
 ### Save boundaries in 0.49
 
 On November 7, 2026 the host's save waited for a real System Info install's software transfer. A retry succeeded. The native BIOS kept its x39 draft separate from the x40 committed record and accepted a save with the draft open. The save requested during the subsequent Apply restart wrote the committed x39 setting. Cold Continue and a fresh guest restored x39 and the installed program from that pair. [Run record](acceptance-2026-11-04.md#save-during-a-software-transfer-and-a-bios-restart-in-049)
+
+### Unapplied BIOS draft through cold Continue in 0.51
+
+On November 8, 2026 the host used the real BIOS ratio control to change PC 213 from x43 to x42, then saved with the editor still open. Its native committed record reported x43. Fresh Continue and a fresh guest restored the exact pair and both native records reported x43. Apply commits the settings in the host's command before it starts the reboot. The two game runs cover saving on either side of that commit. [Run record](acceptance-2026-11-04.md#unapplied-bios-draft-through-cold-continue-in-051)
