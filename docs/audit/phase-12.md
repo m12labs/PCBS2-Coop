@@ -259,7 +259,7 @@ November 5, 2026 follow-up in 0.28. The Windows picture tile had disappeared on 
 
 - A Steam-downloaded PC (its theme file isn't sent yet).
 - A GIF as a wallpaper.
-- Ceiling and poster picks in the Decorator, and the colour wheel and pulse by hand.
+- Poster picks in the Decorator. Actual MSI ceiling and wall choices, wall colour and pulse were subsequently checked in 0.51–0.52. [Run record](acceptance-2026-11-04.md#msi-workshop-colour-picker-in-051-and-052)
 - DLC decorations (none installed); the company plate.
 
 ### Owned real cupboard file checks in 0.38
