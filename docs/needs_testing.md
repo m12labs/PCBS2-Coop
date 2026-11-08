@@ -37,7 +37,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 - [x] Undo and Esc in the pipe tool: nothing shared (0.30 and 0.50, November 5 and 7, 2026. A real rigid bend added a sixth node. Undo restored all five original positions exactly. Escape discarded the preview and both games kept the same committed route.)
 - [x] Remove a pipe (0.29, November 5, 2026, run acceptance-c)
 - [x] Fill the loop with coolant, then drain it (0.29, November 5, 2026, PC powered off)
-- [ ] Install and remove a CPU block, GPU block, pump/reservoir, VRM or RAM heatsink (GPU in 0.49 and CPU block in 0.50. Pump removal passed in 0.50 and reinstall triggered a guest rebind loop. Both pump operations passed in 0.51 on November 7, 2026. VRM or RAM heatsink remains.)
+- [x] Install and remove a CPU block, GPU block, pump/reservoir, VRM or RAM heatsink (GPU in 0.49 and CPU block in 0.50. Both pump operations passed in 0.51 after the guest rebind fix. The exact Alphacool RAM heatsinks appeared in both native records after fitting the converted kit and after cold Continue and fresh join. Removing the heatsink-bearing DIMM removed both entries on both games in 0.51 on November 8, 2026.)
 - [x] The other player gets the water-cooling refusal on that PC; another PC still works (0.29, November 5, 2026)
 - [x] Water edits on a powered PC (0.30, November 5, 2026: real reservoir click shut down both PCs and drained both loops)
 - [x] Late join and Continue after water edits (0.30, November 5, 2026: cold Continue and fresh guest retained a removed pipe, then `/sync` retained the replacement and coolant)
