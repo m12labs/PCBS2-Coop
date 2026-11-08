@@ -130,9 +130,11 @@ internal sealed partial class NativeComponentEdits
         return new(removed, added, accessories, inventory, after.Powered);
     }
 
-    /// <summary>A cable is animating or loading on that PC, or its power button is moving.</summary>
+    /// <summary>A cable, automatic splitter or power button is still moving or loading on that PC.</summary>
     internal static bool CablesBusy(Case mesh)
     {
+        // The native splitter coroutine waits for its prefab before it creates any cable.
+        if (mesh?.m_splitterInstalling == true) return true;
         var db = PartsDatabase.s_instance;
         if ((db?.m_loadCableOperations?.Count ?? 0) + (db?.m_loadPlugOperations?.Count ?? 0) > 0) return true;
         foreach (var c in CablesOf(mesh)) if (c.Installing || c.Uninstalling) return true;
