@@ -130,7 +130,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 Substantial actual two-game evidence already exists in [phase 8's p8a–p8m runs](audit/phase-8.md#game-runs-november-2-2026). The >35-PC stress case passed in 0.25; the complete build/cable/water acceptance remains open.
 
-- [ ] New world: build, cable, power, BIOS, GPU Tuner, software; then Exit, Continue, guest joins: everything matches
+- [x] New world: build, cable, power, BIOS, GPU Tuner, software; then Exit, Continue, guest joins: everything matches (November 8, 2026, 0.52–0.55. Fresh PC 392 restored with matching parts, paste, 11 cables, CPU x46.75, GPU 1684 MHz, power and installed apps in two cold games. Front USB replay and live app installation passed their follow-up checks.)
 - [x] Guest drops (pull the network) and uses Rejoin: comes back where it stood, no duplicates (0.21, November 2, 2026: owned LAN runs, 12-second process suspension; exact position/facing and matching worlds)
 - [x] Save waits for active component, latch, cable, water and software changes. BIOS saves use the last applied settings (Cable and Exit in 0.27, coolant drain in 0.29, fan install in 0.30, a moving RAM latch in 0.47, and an active System Info transfer in 0.49. The retries succeeded. In 0.51, cold Continue and a fresh guest restored x43 from the save made with x42 still in the BIOS editor. In 0.49, a save during the Apply restart restored the newly committed x39 and System Info on both games.)
 - [x] Close the host's game during a save: next Continue loads the previous good save with a notice (0.32, November 5, 2026. The 39-PC pair stayed byte-identical, the host saw the notice, and the guest rejoined.)
