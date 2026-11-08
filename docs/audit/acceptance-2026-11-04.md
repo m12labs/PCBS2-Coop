@@ -408,3 +408,11 @@ The native `BenchToolSlot.PopulateToolActions` Delidding branch offers entry to 
 On November 7, 2026 the guest selected two Team Group T-Force DARK DDR4 sticks in the real Water Cooling inventory. Real clicks removed all 16 old pads and placed all 16 replacements. Three of six native objectives were complete when the guest pressed Escape at the heatsink choice. The guest returned to walking and the log reported “session over; nothing changed.”
 
 At revision 170 both native inventories had the same three variants as before, with no finished RAM item and no table claim. Both native object checks passed with hash `4F70879B2578665DCC063D8E08EC12409EFF59FE3BCBCD86972634B1D930BF8C`. The guest reopened the table and found the same stock DDR4 part in the catalog.
+
+### RAM, X570 and radiator table results in 0.51
+
+On November 7, 2026 the guest repeated the two-stick RAM procedure, selected the Alphacool DRAM heatsinks and X2 block, collected the assembly and closed the table. Both native inventories showed one `RAM_TeamGroup_28` with `ALPHACOOL_RAM_WC_BLOCK_1`. The host's first preview attempt on PC 26 lacked a valid placement with two DIMMs still installed. The case fit check remains open.
+
+The guest removed the VRM cover from a GIGABYTE X570 AORUS ELITE WIFI at the table, installed a Ryzen 3 3100, applied sufficient paste and fitted the EKWB CPU-and-VRM monoblock. Both inventories received `Motherboard_GIGABYTE_27` with `CPU_AMD_51`, `EKWB_MB_WC_BLOCK_1` and the VRM covers off. The guest also completed the game's radiator fan workflow. Both inventories received `ALPHACOOL_WC_RADIATOR_1` with the explicit custom fan `Case_Fan_bequiet_5`. The guest used real table controls for both procedures.
+
+The guest selected the exact converted board and radiator from the real inventory, then used the isolated commit callback for each preview on PC 1115. The host replayed both. The guest's other radiator previews were still present at the first readback. On November 8 a cold Continue and fresh guest join restored the X570, its Ryzen CPU and monoblock, and the top radiator with the actual Silent Wings fan in its native fan slot. Both games passed the native checks with object hash `CF51D7168A300237FCB74A8665094D22836ECC65F62148CEA4241846FAC89F57` at revision 3.

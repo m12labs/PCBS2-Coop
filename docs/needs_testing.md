@@ -63,7 +63,7 @@ Evidence review and current owned runs: [November 4 acceptance record](audit/acc
 
 - [x] Water-cool a GPU (pads, paste, block): the finished card is in both inventories (0.35, November 5, 2026. The guest completed the real GTX 1070 procedure with the EKWB RGB block.)
 - [x] Install that card from each side (0.49, November 7, 2026. Host and guest each selected the converted GTX 1070 in the real inventory. Both native installs and remote replays kept its EKWB block and fittings.)
-- [ ] Same with RAM, a motherboard and a radiator
+- [ ] Same with RAM, a motherboard and a radiator (0.51, November 7–8, 2026. All three finished variants reached both inventories. Both games installed and cold-loaded the guest's X570 and radiator. Case installation of the RAM variant and the other-side checks remain.)
 - [x] The other player gets "Someone is using the water-cooling table." (0.35, November 5, 2026. The host saw the refusal while the guest worked on the GPU.)
 - [x] Esc halfway through: nothing shared (0.51, November 7, 2026. The guest pressed Escape after removing and replacing all 16 RAM pads. Both native inventories stayed unchanged, the claim cleared, and the stock part remained available.)
 
