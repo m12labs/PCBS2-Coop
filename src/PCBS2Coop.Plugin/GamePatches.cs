@@ -66,6 +66,7 @@ internal static class GamePatches
             edits.PatchAll(typeof(NativeComponentEdits.EnterTrace));
             edits.PatchAll(typeof(NativeComponentEdits.SettleTrace));
             edits.PatchAll(typeof(NativeComponentEdits.RemovalTrace));
+            edits.PatchAll(typeof(NativeComponentEdits.ManualScrewTrace));
             var cables = new Harmony(Plugin.Guid + ".cables");
             cables.PatchAll(typeof(NativeComponentEdits.ConnectIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.UnplugIntercept));

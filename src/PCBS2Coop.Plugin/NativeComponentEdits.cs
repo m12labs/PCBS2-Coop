@@ -683,7 +683,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
 
     // ---------------- following this player's own edit ----------------
 
-    internal static void ChoosingOrientation(InstallingPartState state)
+    internal static void WaitingForEditInput(InstallingPartState state)
     {
         var local = Current?._local;
         if (local?.State?.Pointer == state.Pointer && CurrentState?.Pointer == state.Pointer)
@@ -735,6 +735,17 @@ internal sealed partial class NativeComponentEdits : IEditNative
     }
 
     private static bool Ours => !NativeEditReplay.Active && Current?._local != null;
+
+    [HarmonyPatch(typeof(InstallingPartState), "DoScrewsStep")]
+    internal static class ManualScrewTrace
+    {
+        private static void Prefix(InstallingPartState __instance, Il2CppSystem.Collections.Generic.List<Screw> __0)
+        {
+            if (!Ours || __0 == null || __0.Count == 0) return;
+            var standoffs = __instance.m_standOffs?.Pointer == __0.Pointer;
+            if (!(standoffs ? __instance.m_autoStandoff : __instance.m_auto)) WaitingForEditInput(__instance);
+        }
+    }
 
     [HarmonyPatch(typeof(GameController), nameof(GameController.SetCurrentState))]
     internal static class EnterTrace

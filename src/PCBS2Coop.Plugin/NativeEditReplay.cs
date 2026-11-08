@@ -85,11 +85,11 @@ internal sealed class NativeEditReplay
         /// <summary>The orientation angle held while waiting for the editor's choice.</summary>
         public float? WaitDegrees;
         public WorkingOnComputerState StandIn;
-        public float Started, WaitingForOrientationAt;
+        public float Started, WaitingForEditorAt;
     }
 
     public const float Timeout = 60f;
-    /// <summary>A replay times out without a commit or a running orientation step.</summary>
+    /// <summary>Allow time for asset loading and unplugging before the replay can wait for the editor.</summary>
     public const float WaitTimeout = NativeComponentEdits.EditTimeout + 30f;
     private readonly List<Run> _runs = new();
     private readonly List<Plan> _queued = new();
@@ -218,8 +218,12 @@ internal sealed class NativeEditReplay
             try
             {
                 var known = run.Plan.Known;
-                var since = Math.Max(run.Started, known ? run.Plan.KnownAt : run.WaitingForOrientationAt);
-                if (Time.realtimeSinceStartup - since > (known ? Timeout : WaitTimeout))
+                var now = Time.realtimeSinceStartup;
+                // The editor owns the running operation. They can spend as long as they need on screws or orientation.
+                if (!known && (run.Phase == Phase.Animating || (run.Plan.Held && run.Moved && run.Waiting == null)))
+                    run.WaitingForEditorAt = now;
+                var since = Math.Max(run.Started, known ? run.Plan.KnownAt : run.WaitingForEditorAt);
+                if (now - since > (known ? Timeout : WaitTimeout))
                     throw new TimeoutException(known ? $"still running after {Timeout} s" : $"the other player's edit didn't finish within {WaitTimeout} s");
                 if (run.Plan.Case == null || run.Plan.Slot == null) throw new InvalidDataException("the PC or slot was destroyed");
                 switch (run.Phase)
@@ -522,7 +526,7 @@ internal sealed class NativeEditReplay
             if (_step == null)
             {
                 // The native orientation step waits for player input without a time limit.
-                if (!__0 && !__instance.m_accept) NativeComponentEdits.ChoosingOrientation(__instance);
+                if (!__0 && !__instance.m_accept) NativeComponentEdits.WaitingForEditInput(__instance);
                 return;
             }
             if (_step.State == null || __instance.Pointer != _step.State.Pointer) return;
@@ -531,7 +535,6 @@ internal sealed class NativeEditReplay
                 // Before the editor's commit the step waits, not accepted: the part sits there until they choose. Keep its
                 // angle where it started, so this player's mouse wheel doesn't turn it.
                 _step.WaitDegrees ??= __instance.m_degrees;
-                _step.WaitingForOrientationAt = Time.realtimeSinceStartup;
                 __instance.m_degrees = _step.WaitDegrees.Value;
                 return;
             }
