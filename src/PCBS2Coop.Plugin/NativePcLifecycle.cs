@@ -70,7 +70,10 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
         var template = CatalogRefOf(item);
         if (template == null) { Refuse("Case spawn", "That case is not in the shared Free Build catalog."); return; }
         var state = GameController.Get()?.GetCurrentState();
-        Submit(PcLifecycle.Create(Epoch, template, replace), new Request { What = "Case spawn", State = state?.Pointer ?? IntPtr.Zero });
+        // Career (phase 15c): the case is an owned item; name the exact one so every game uses it up.
+        var owned = NativeCareer.InCareer ? _coop.Career?.IdOf(item) ?? 0 : 0;
+        if (NativeCareer.InCareer && owned == 0) { Refuse("Case spawn", "That case isn't in the shared inventory yet; try again in a moment."); return; }
+        Submit(PcLifecycle.Create(Epoch, template, replace, owned), new Request { What = "Case spawn", State = state?.Pointer ?? IntPtr.Zero });
     }
 
     internal void RequestCarriedDelete(Case carried)
@@ -270,7 +273,15 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
         if (request != null && request.State != IntPtr.Zero && ctrl?.GetCurrentState()?.Pointer == request.State) ctrl.GoToPreviousState();
     }
 
+    /// <summary>Career: the new PC's case came out of owned item <paramref name="item"/>; this game uses it up too.</summary>
+    public void UsedItem(in MutationContext ctx, PcFact pc, ulong item)
+    {
+        try { _coop.Career?.Consume(item, $"PC {pc.Id}'s case"); }
+        catch (Exception e) { Fault($"PC {pc.Id}'s case item could not be taken out of this inventory", e); }
+    }
+
     public void Deleted(in MutationContext ctx, PcFact pc, PcRemoval from)
+
     {
         try
         {

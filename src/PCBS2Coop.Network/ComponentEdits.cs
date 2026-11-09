@@ -119,6 +119,9 @@ public enum EditProgress : byte { Started = 1, PartStep = 2 }
 public sealed record EditStart(bool FromInventory, bool Flipped)
 {
     public string Variant { get; init; } = "";
+    /// <summary>Career (phase 15c): the shared owned item the install uses (<see cref="CareerWorld"/>); 0 in Free Build or
+    /// when the editor's game doesn't know it.</summary>
+    public ulong Item { get; init; }
 }
 public enum EditStage : byte { Running = 1, Committed = 2 }
 
@@ -143,6 +146,8 @@ public sealed record EditResult(EditOutcome Outcome, float Degrees, bool Flipped
     public IReadOnlyList<PasteFact>? Pastes { get; init; }
     /// <summary>An install: the installed item's variant (see <see cref="EditStart.Variant"/>).</summary>
     public string Variant { get; init; } = "";
+    /// <summary>An install in Career: the owned item it used (see <see cref="EditStart.Item"/>).</summary>
+    public ulong Item { get; init; }
 }
 
 /// <summary>One component edit in progress. <see cref="Part"/> is the installed SKU; <see cref="Component"/> the
@@ -220,6 +225,14 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     /// <summary>Gestures whose claim covers the whole PC: cables, power, water cooling and thermal paste.</summary>
     public static bool IsWholePc(EditGesture g) => IsWiring(g) || g is EditGesture.Water or EditGesture.Paste;
     public IReadOnlyList<ComponentEdit> Edits => _edits;
+    /// <summary>Career (phase 15c): checks an owned item an install names, given the items other edits hold
+    /// (<see cref="CareerWorld.CheckUse"/>). Null in Free Build.</summary>
+    public Func<ulong, IEnumerable<ulong>, string?>? ItemCheck { get; set; }
+    /// <summary>The owned items running installs use, except <paramref name="token"/>'s.</summary>
+    public IEnumerable<ulong> ItemsInUse(OperationId token) =>
+        _edits.Where(e => e.Token != token).Select(e => e.Result?.Item is > 0 ? e.Result.Item : e.Start?.Item ?? 0).Where(i => i != 0).ToList();
+    /// <summary>The owned item <paramref name="edit"/> uses, or 0.</summary>
+    public static ulong ItemOf(ComponentEdit edit) => edit.Result?.Item is > 0 ? edit.Result.Item : edit.Start?.Item ?? 0;
     public ComponentEdit? Find(OperationId token) => _edits.SingleOrDefault(e => e.Token == token);
     /// <summary>The edit running on that PC, if any (one per PC: the other player waits).</summary>
     public ComponentEdit? On(NetObjectId pc) => _edits.SingleOrDefault(e => e.Pc == pc);
@@ -242,6 +255,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         w.Put(result.Pastes != null);
         if (result.Pastes is { } pastes) { w.Put(pastes.Count); foreach (var p in pastes) { w.Put(p.Path); w.Put(p.Applied); } }
         w.Put(result.Variant ?? "");
+        w.Put(result.Item);
     });
     /// <summary>Editor, before a water-cooling commit: chunk <paramref name="index"/> of <paramref name="total"/> of its
     /// finished record.</summary>
@@ -254,7 +268,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     public static byte[] Progress(ulong epoch, OperationId token, EditProgress progress, EditStart? start = null) => Encode(w =>
     {
         w.Put((byte)Step.Progress); w.Put(epoch); Token(w, token); w.Put((byte)progress);
-        w.Put(start?.FromInventory ?? false); w.Put(start?.Flipped ?? false); w.Put(start?.Variant ?? "");
+        w.Put(start?.FromInventory ?? false); w.Put(start?.Flipped ?? false); w.Put(start?.Variant ?? ""); w.Put(start?.Item ?? 0UL);
     });
     public static byte[] Cancel(ulong epoch, OperationId token) => Encode(w => { w.Put((byte)Step.Cancel); w.Put(epoch); Token(w, token); });
     /// <summary>Host only: publish the PC as the host's game shows it after that edit.</summary>
@@ -311,8 +325,9 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                     for (var i = 0; i < count; i++) pastes[i] = new(r.GetString(PasteFact.MaxPath), r.GetBool());
                 }
                 var variant = r.GetString(1024);
+                var item = r.GetULong();
                 c = new(step, epoch, default, default, 0, default, "", default, token,
-                    new(outcome, degrees, flipped, mode, selected, inventory, type, connector, pins) { Wiring = wiring, Rebuild = rebuild, Pastes = pastes, Variant = variant });
+                    new(outcome, degrees, flipped, mode, selected, inventory, type, connector, pins) { Wiring = wiring, Rebuild = rebuild, Pastes = pastes, Variant = variant, Item = item });
                 break;
             }
             case Step.Cancel:
@@ -332,7 +347,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
             case Step.Progress:
             {
                 var epoch = r.GetULong(); var token = Token(r); var progress = (EditProgress)r.GetByte();
-                var start = new EditStart(r.GetBool(), r.GetBool()) { Variant = r.GetString(1024) };
+                var start = new EditStart(r.GetBool(), r.GetBool()) { Variant = r.GetString(1024), Item = r.GetULong() };
                 c = new(step, epoch, default, default, 0, default, "", default, token, null) { Progress = progress, Start = start };
                 break;
             }
@@ -437,6 +452,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     {
         if (edit.WholePc) return "Cable, power, water and paste edits don't report progress.";
         if (!Text(c.Start.Variant) || !edit.Install && c.Start.Variant != "") return "Invalid part variant.";
+        if (!edit.Install && c.Start.Item != 0) return "Only an install uses an owned item.";
         switch (c.Progress)
         {
             case EditProgress.Started:
@@ -491,6 +507,13 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
             {
                 var (edit, why) = Owned(ctx.Op.Actor, c, EditStage.Running);
                 error = why ?? (ctx.Op.Actor != edit!.Actor ? "Only the editor commits its change." : CheckResult(edit, c.Result!));
+                var item = c.Result!.Item;
+                if (error == null && item != 0)
+                {
+                    if (!edit!.Install) error = "Only an install uses an owned item.";
+                    else if (edit.Start?.Item is > 0 && edit.Start.Item != item) error = "The install changed which part it uses.";
+                    else if (edit.Start?.Item is not > 0) error = ItemCheck?.Invoke(item, ItemsInUse(edit.Token));
+                }
                 break;
             }
             case Step.Cancel:
@@ -510,8 +533,11 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
             {
                 var (edit, why) = Owned(ctx.Op.Actor, c, EditStage.Running);
                 error = why ?? (ctx.Op.Actor != edit!.Actor ? "Only the editor reports its progress." : CheckProgress(edit, c));
+                // Career: the part is the exact owned item, and nobody else is installing it.
+                if (error == null && c.Progress == EditProgress.Started && c.Start.Item != 0) error = ItemCheck?.Invoke(c.Start.Item, ItemsInUse(edit!.Token));
                 break;
             }
+
             case Step.Settle:
                 error = ctx.Op.Actor != ActorSlot.Host ? "Only the host settles component edits." : null;
                 if (error == null)

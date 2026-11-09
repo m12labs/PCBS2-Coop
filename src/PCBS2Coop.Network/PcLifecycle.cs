@@ -22,6 +22,8 @@ public sealed record PcCommand(PcAction Action, ulong Epoch, CatalogRef? Templat
     /// <summary>Import: the SHA-256 and length of the imported PC's content (sent with <see cref="WorkshopWorld"/> first).</summary>
     public byte[]? Content { get; init; }
     public int ContentLength { get; init; }
+    /// <summary>Create in Career (phase 15c): the shared owned case item the PC is made from; 0 in Free Build.</summary>
+    public ulong Item { get; init; }
 }
 
 /// <summary>Native side of PC creation/removal. Describe must be deterministic on both peers. CheckHost runs on the
@@ -32,6 +34,9 @@ public interface IPcNative
     string? CheckHost(in CommandContext ctx, PcCommand command, PcFact? target);
     void Created(in MutationContext ctx, PcFact pc, CatalogRef template, PcFact? replaced);
     void Deleted(in MutationContext ctx, PcFact pc, PcRemoval from);
+    /// <summary>Career (phase 15c), after <see cref="Created"/>: the case came out of the shared owned item
+    /// <paramref name="item"/>, which every game removes from its inventory.</summary>
+    void UsedItem(in MutationContext ctx, PcFact pc, ulong item) { }
 }
 
 /// <summary>Phase 12 (owner decision 6): a PC imported from a file. The importer's game sends the PC's content first
@@ -63,8 +68,12 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
     /// <summary>Guest only: IDs the host issued outside this guest's change stream (host save observation). They never resolve here.</summary>
     public ulong SkippedIds { get; private set; }
 
-    public static byte[] Create(ulong epoch, CatalogRef template, NetObjectId replace) => Encode(w =>
-    { w.Put((byte)PcAction.Create); w.Put(epoch); w.Put(template.Sku); w.Put(template.NativeType); w.Put(template.Ordinal); replace.Write(w); });
+    /// <param name="item">Career: the shared owned case item used (<see cref="CareerWorld"/>); 0 in Free Build.</param>
+    public static byte[] Create(ulong epoch, CatalogRef template, NetObjectId replace, ulong item = 0) => Encode(w =>
+    { w.Put((byte)PcAction.Create); w.Put(epoch); w.Put(template.Sku); w.Put(template.NativeType); w.Put(template.Ordinal); replace.Write(w); w.Put(item); });
+
+    /// <summary>Career (phase 15c): why the owned case item a creation names can't be used, or null. Null in Free Build.</summary>
+    public Func<ulong, string?>? ItemCheck { get; set; }
     /// <summary>Import the PC whose content (<see cref="WorkshopWorld.Send"/>) has that hash into the requester's hands.</summary>
     public static byte[] Import(ulong epoch, byte[] hash, int length) => Encode(w =>
     { w.Put((byte)PcAction.Import); w.Put(epoch); Protocol.WriteBlob(w, hash); w.Put(length); });
@@ -91,7 +100,8 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
         {
             case PcAction.Create:
                 var template = new CatalogRef(r.GetString(1024), r.GetString(1024), r.GetInt());
-                return new(action, epoch, template, NetObjectId.Read(r), default, Array.Empty<PcObservation>());
+                var replace = NetObjectId.Read(r);
+                return new(action, epoch, template, replace, default, Array.Empty<PcObservation>()) { Item = r.GetULong() };
             case PcAction.Import:
             {
                 var hash = Protocol.ReadBlob(r, WorkshopWorld.HashBytes, out var declared);
@@ -156,7 +166,7 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
                 target = occupant;
                 if (_objects.NextId + (ulong)template.Parts.Count + 1 > ObjectWorld.MaxObjects + 1UL) return "Object ID space exhausted.";
                 if (c.Pc.IsNone && _objects.Pcs.Count >= ObjectWorld.MaxPcs) return "Too many PCs.";
-                return null;
+                return c.Item != 0 ? ItemCheck?.Invoke(c.Item) : null;
             }
             case PcAction.Import:
             {
@@ -269,7 +279,12 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
         Publish(_objects.Pcs.Where(x => x.Id != c.Pc).Append(fact), retired, next);
         SkippedIds += (ulong)gap.Length;
         if (c.Action == PcAction.Import) ((IPcImportNative)_native).Imported(ctx, fact, c.Content!);
-        else _native.Created(ctx, fact, c.Template!, replaced);
+        else
+        {
+            _native.Created(ctx, fact, c.Template!, replaced);
+            if (c.Item != 0) _native.UsedItem(ctx, fact, c.Item);
+        }
+
     }
 
     /// <summary>The topology a creation mints IDs for: the catalog case's, or the imported PC's.</summary>

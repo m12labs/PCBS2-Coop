@@ -30,6 +30,7 @@ TransportTests.Run(t);
 SyncTests.Run(t);
 PersistenceTests.Run(t);
 CampaignTests.Run(t);
+CareerTests.Run(t);
 AcceptanceTests.Run(t);
 LoopbackTests.Run(t);
 return t.Finish();

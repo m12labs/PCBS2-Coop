@@ -17,6 +17,7 @@ internal static class GamePatches
             game.PatchAll(typeof(CoopController.PlusAutosaveGuard));
             game.PatchAll(typeof(CoopController.CurrentGameSaveGuard));
             game.PatchAll(typeof(CoopController.ShopRenovationGuard));
+            CareerGuards.Apply(new Harmony(Plugin.Guid + ".career"));
             game.PatchAll(typeof(CoopController.ExitSave));
             var menus = new Harmony(Plugin.Guid + ".save-menus");
             menus.PatchAll(typeof(CoopController.PauseLoad));

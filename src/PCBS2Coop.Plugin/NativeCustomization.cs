@@ -481,6 +481,8 @@ internal sealed class NativeCustomization : ICustomizationNative
             if (Bypass) return true;
             // The buyer's game shares the purchase; the mirrored click must not buy a second set here.
             if (NativeDesktopInput.Injecting) { Plugin.Logger.LogInfo("[cables] the other player's Buy click: their game shares the purchase."); return false; }
+            // Career (phase 15c): only the host buys for now; its cash and items reach the guest as a career update.
+            if (!CareerGuards.Allow("buy cables")) return false;
             try { __state = Current?.BeforeBuy(); }
             catch (Exception e) { Plugin.Logger.LogError("[cables] buy hook failed: " + e); }
             return true;

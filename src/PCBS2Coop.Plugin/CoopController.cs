@@ -402,7 +402,7 @@ internal sealed partial class CoopController
         Session.Stop(toPeer);
         SteamBootstrap.Service?.Cancel();
         Objects.Reset();
-        Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; Workstations = null; _notice = null; ResetAutosave();
+        Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; Workstations = null; Career = null; _notice = null; ResetAutosave(); ResetDayEnd();
         DestroyView();
         _pointers.Reset(); _localCursor = default;
         _lastRemoteAt = -1;
@@ -457,7 +457,7 @@ internal sealed partial class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Simulation?.Update(); ToolBenches?.Update(); Customization?.Update(); Workshop?.Update(); Replays.Update(); if (Session.Role == Role.Host) UpdateAutosave(); }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Simulation?.Update(); ToolBenches?.Update(); Customization?.Update(); Workshop?.Update(); Career?.Update(); Replays.Update(); if (Session.Role == Role.Host) { UpdateAutosave(); UpdateDayEnd(); } }
         else if (Replays.Busy) Replays.Reset();
 
         UpdateRejoinPosition(inWorkshop);
@@ -489,6 +489,7 @@ internal sealed partial class CoopController
                 }
                 Objects.CaptureHost(Session.LocalIdentity.Player);
                 Workstations.CaptureHost();
+                Career.BindHost();
                 // Saved work/reservations belong to the previous session. Preserve committed objects only.
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, default), out _);
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Host, Session.LocalIdentity.Player), out _);
@@ -528,6 +529,7 @@ internal sealed partial class CoopController
             if (Session.CompleteAdmission(out var error))
             {
                 Objects.FinishGuestRestore(); _loadingPair = null;
+                Career?.BindGuest();
                 Plugin.Logger.LogInfo($"[world] entered the host's world with {Objects.Model.Pcs.Count} bound PCs.");
                 OnGuestSyncAdmitted();
             }
@@ -580,6 +582,7 @@ internal sealed partial class CoopController
         try
         {
             Lifecycle?.ExtendHost(); Lifecycle?.ObserveHost(force: true);
+            Career?.FlushHost(); // the snapshot carries the current career
             Objects.Assembly.BindMissing();
             Objects.CaptureHost(Session.LocalIdentity.Player);
             Workstations?.CheckNative();
@@ -671,6 +674,7 @@ internal sealed partial class CoopController
                 (db?.m_loadCableOperations?.Count ?? 0) + (db?.m_loadPrefabOperations?.Count ?? 0) > 0)
                 throw new InvalidOperationException("Objects are still loading; wait before saving.");
             Lifecycle?.ExtendHost(); Lifecycle?.ObserveHost(force: true);
+            Career?.FlushHost(); // the save carries the current career
             if (_syncSaving)
                 foreach (var id in Objects.RecoverUnshown(Session.LocalIdentity.Player))
                     AddChat($"Sync: PC {id.Value} wasn't shown on your game; it's in the storage cupboard.");
@@ -838,6 +842,11 @@ internal sealed partial class CoopController
         ToolBenches = new NativeToolBenches(this, world);
         Customization = new NativeCustomization(this, world);
         Workshop = new NativeWorkshop(this, world);
+        Career = new NativeCareer(this, world);
+        // Career (phase 15c): an install names its exact owned item; the host refuses one that's gone or in use.
+        Edits.Handler.ItemCheck = CheckCareerItem;
+        Lifecycle.Handler.ItemCheck = CheckCareerCase;
+        ResetDayEnd();
         world.Register(CommandTypes.DiagnosticMarker, Markers);
         world.RegisterState(Markers);
         world.RegisterState(Objects);
@@ -858,6 +867,10 @@ internal sealed partial class CoopController
         world.Register(CommandTypes.ToolBench, ToolBenches.Handler);
         world.Register(CommandTypes.Customization, Customization.Handler);
         world.Register(CommandTypes.Workshop, Workshop.Handler);
+        world.Register(CommandTypes.Career, Career.Handler);
+        // Optional: Free Build worlds and 0.58 careers have no shared career state; the host binds it at generation start.
+        world.RegisterState(Career.Handler, optional: true);
+
         world.RegisterState(Software.Handler, optional: true);
         // Optional: saves from before 0.24 have no workshop state (lights, seasonal decoration, pictures).
         world.RegisterState(Workshop.Handler, optional: true);

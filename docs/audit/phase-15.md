@@ -61,3 +61,38 @@ Hooking `SpendCash`, `AddCash` or a generic inventory writer alone loses context
 5. Startup logs no `[hooks]` error for the `AutoSave`, `AutoSaveNGP`, `SaveCurrentGame` and `UpgradeShop` hooks (folded native functions).
 6. The co-op list fits with seven rows at 16:9, ultrawide and a small window. Both rows' sub-buttons respond to hover and click (C15-01).
 7. Free Build regression: New, Continue, Load, `/sync`, pause-menu Load/Reset and join still work, and 0.57 pairs load (C15-05).
+
+## 0.59 implementation: shared Career facts and owned items (15c)
+
+**Status:** coded with model tests on November 8, 2026. Release built with zero warnings or errors and all 769 automated checks passed. No game was launched. Nothing here is verified in the running game.
+
+Owner decisions for this step (also in the [plan](../../plan.md#career-decisions-confirmed-november-8-2026)): until phases 16–17, the host shops, takes jobs and ends the day while the guest takes the results; the host wins quietly on a mismatch; after the host's day finishes, the host saves and the guest reloads the host world.
+
+| Area | What 0.59 does |
+| --- | --- |
+| Native state | The career's saved fields live in `CareerStatus.State` (`CareerStatus.GetState()`): cash, kudos, rating, rent, utility, bank charges, shares, completed jobs, unlock flags, `m_inventory`, `m_peripheralInventory`, `m_transactions`. The day is `CareerStatus.GetCalendar().GetToday()`. |
+| Model | Command 18 `CareerWorld`, with optional world state `career`. It holds `CareerFacts` (the numbers above and the flags), an ID for every owned item (`OwnedItem`: list, ID and a key built from part, variant, job, condition, dirt, silicon lottery, PC Bay origin and decoration) and the ledger's length and running hash. The host binds it at every generation start and keeps a restored state's IDs where items still match. Free Build leaves it unbound. |
+| Host updates | When nothing is mid-change (no edit, replay, table session, pending carry move or save), the host compares its game with the model every 0.5 s. It sends numbers, items gone, items gained (serialized whole) and new ledger entries as one update, chunked to fit 16 KB commands. Only the host may send one. It also sends before every save and snapshot. |
+| Guest | Takes the host's numbers and ledger entries at once. It brings its owned items in line with the model when quiet: it binds an equal unbound item, makes the host's item from its bytes, or removes an item the host doesn't have. After admission it binds by key, then by list order for the same part. An item it can't match or make reports out of sync for `/sync`. Items this game just used up wait up to 20 s for the host's removal. |
+| Installs | `EditStart.Item` and `EditResult.Item` name the exact owned item. The host refuses an item that is gone or already being installed (`CareerWorld.CheckUse`). In Career the other game installs that exact item. With no item ID it falls back to the same part from the inventory, and never makes a new part. Failure goes to the existing PC repair. |
+| New PCs | `PcLifecycle.Create` carries the owned case item. The host checks it, and every game removes it from its inventory after the PC is created (`IPcNative.UsedItem`). In Free Build the item is 0 and nothing changes. |
+| Guest refusals | `CareerGuards`: shop checkout, PC Bay, shares, job accept, collect, quit and turn-down, End Day/Skip Work and the Cable app are refused for the guest with a notice. A mirrored desktop click never runs them on the other game. Native addresses were checked distinct. |
+| End Day | The host's End Day waits while an edit or table session runs. Once the host's day has moved on and settled, the host saves ("Day saved.") and the guest reloads the host world ("The host finished the day…"). |
+
+### Not covered by 0.59
+
+- Jobs, emails, offers, deliveries and calendar events are not shared during a day. The guest's tablet may show stale job lists until the End Day reload. Phase 17 covers this.
+- A ledger entry's later `m_collected` change isn't shared. The host's ledger length and hash are checked at admission and only logged.
+- Carried-case "delete" in Career runs the existing Free Build path. Check whether the native `AddCaseToInventory` puts the case and parts back as owned items on both games.
+- Stored-PC delete, retail sales and package opening are not adapted. Phase 16 covers this.
+
+### Runtime checks for the gameplay sweep
+
+1. `CareerStatus.GetState()` and the interop field names read and write the values above, and the guest's cash display updates after a write.
+2. `PartVariants.Write`/`Read` round-trips career items (job tag, condition, dirt, lottery), and keys match between host and guest after a load.
+3. `AddItemToInventory(part, false, false, true, true)` puts parts and peripherals in the right list, and `UpdateInventory` refreshes the inventory UI.
+4. The installing part (`InstallingPartState.m_part`) is the inventory item itself, so its ID is known at Progress Started.
+5. The case spawn's `ItemDisplay.item` is the inventory item, and both games remove that case after creation.
+6. The host's End Day is detected by the day change. The save and guest reload follow without interrupting `AdvanceDay`.
+7. Guest refusals fire only for the guest's own actions. Onboarding steps that accept a job by themselves on the guest still work.
+8. Startup logs no `[hooks]` error for the eleven Career guard hooks.

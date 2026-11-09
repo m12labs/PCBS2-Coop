@@ -469,7 +469,12 @@ internal sealed partial class NativeComponentEdits : IEditNative
             var flipped = r?.Flipped ?? edit.Start?.Flipped ?? false;
             // Phase 9: a delidded CPU or a card with a water block is its own kind of item; install the same kind here.
             var variant = r?.Variant ?? edit.Start?.Variant ?? "";
-            if (fromInventory || variant != "")
+            // Career (phase 15c): the editor named the exact owned item; this game installs that one or repairs the PC.
+            var career = NativeCareer.InCareer;
+            var item = ComponentEditWorld.ItemOf(edit);
+            if (career && item != 0)
+                part = _coop.Career?.Find(item) ?? throw new InvalidDataException($"the editor's {edit.Part} (item {item}) isn't in this game's inventory");
+            else if (fromInventory || variant != "")
             {
                 PartInstance match = null;
                 var inventory = CareerStatus.Get()?.GetInventory();
@@ -477,9 +482,12 @@ internal sealed partial class NativeComponentEdits : IEditNative
                 if (match == null)
                     Plugin.Logger.LogWarning($"[edits] {plan.Label}: the editor used a {edit.Part}{(variant == "" ? "" : $" ({variant})")} from its inventory, but this player's inventory has none; using a new one.");
                 // From the catalog, the game installs a copy and the item stays; from the inventory, the item itself.
-                else part = fromInventory ? match : PartVariants.Copy(match);
+                else part = fromInventory || career ? match : PartVariants.Copy(match);
             }
+            // Career has no catalog: a part that isn't owned here is never made up (the PC is repaired from the host instead).
+            if (part == null && career) throw new InvalidDataException($"this game owns no {edit.Part}{(variant == "" ? "" : $" ({variant})")} to install");
             part ??= PartInstance.NewPartInstance(edit.Part, 0, null) ?? throw new InvalidDataException($"part {edit.Part} is unknown");
+
             if (part.IsFlipped() != flipped) part.SetFlipped(flipped);
             plan.Part = part;
             return plan;
@@ -587,7 +595,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
             if (install && _local.State == null) return true; // its install state isn't made yet
             var start = install
                 ? new EditStart(_local.Request.InventoryBefore > InventoryCount(_local.Request.Sku), _local.State.m_part?.IsFlipped() == true)
-                    { Variant = PartVariants.Of(_local.State.m_part) }
+                    { Variant = PartVariants.Of(_local.State.m_part), Item = _coop.Career?.IdOf(_local.State.m_part) ?? 0 }
                 : null;
             if (!Progress(EditProgress.Started, start)) return false;
             _local.StartSent = true;
@@ -720,6 +728,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
             Flipped = install && state.m_part?.IsFlipped() == true,
             FromInventory = install && _local.Request.InventoryBefore > InventoryCount(_local.Request.Sku),
             Variant = install ? PartVariants.Of(state.m_part) : "",
+            Item = install ? _coop.Career?.IdOf(state.m_part) ?? 0 : 0,
         };
         _local.Done = true;
     }

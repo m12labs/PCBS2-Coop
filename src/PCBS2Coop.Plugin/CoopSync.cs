@@ -397,7 +397,8 @@ internal sealed partial class CoopController
         _guestSync = true; _guestSyncMenuAt = -1;
         _guestSyncDeadline = Time.realtimeSinceStartup + GuestSyncTimeout;
         _guestLoading = false;
-        AddChat(by.StartsWith("the host is", StringComparison.Ordinal)
+        if (by == GuestDayReload) AddChat("The host finished the day: loading the host's world for the new day.");
+        else AddChat(by.StartsWith("the host is", StringComparison.Ordinal)
             ? $"The host is {(by.Contains("resetting") ? "resetting the world" : "loading another world")}: returning to the menu, then loading it."
             : $"Host is syncing both games ({by}): returning to the menu, then loading the host's world.");
         Objects.Reset(); ResetAutosave(); DestroyView();

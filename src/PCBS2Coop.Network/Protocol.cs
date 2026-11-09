@@ -148,6 +148,8 @@ public static class CommandTypes
     /// <summary>Phase 12: decorating, the room lights, seasonal decorations, shared pictures (custom wallpapers) and the
     /// pictures a guest is missing (<see cref="WorkshopWorld"/>).</summary>
     public const ushort Workshop = 17;
+    /// <summary>Phase 15c: the host's shared career numbers, owned items and ledger (<see cref="CareerWorld"/>).</summary>
+    public const ushort Career = 18;
 }
 
 /// <summary>One actor's pointer on a shared PC monitor. Coordinates are fractions of that PC's desktop
