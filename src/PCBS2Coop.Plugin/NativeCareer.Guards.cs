@@ -6,7 +6,9 @@ namespace PCBS2Coop;
 /// <summary>
 /// Career actions phases 16–17 will share (owner decision, November 8, 2026): until then the host does them and the
 /// guest takes the results; the guest's own are refused with a notice. Shop checkout and part sales are shared since
-/// 0.60 (<see cref="CommerceHooks"/>). A click the other player's desktop mirrors here
+/// 0.60 (<see cref="CommerceHooks"/>); job actions since 0.63 (<see cref="JobHooks"/>), whose guest hooks send them
+/// before the game reaches the <c>CareerStatus</c> job calls below, which stay as backstops. End Day stays host-only
+/// until 17d. A click the other player's desktop mirrors here
 /// (<see cref="NativeDesktopInput.Injecting"/>) never runs the action on this game: the host's result arrives as a
 /// career update, and a guest's mirrored action stays refused on the host too. Native addresses checked distinct
 /// (decompile RVAs); startup still reports any folded pair under <c>[hooks]</c>.
@@ -37,7 +39,7 @@ internal static class CareerGuards
         if (coop == null) return true;
         var busy = (coop.Edits?.Handler.Edits.Count ?? 0) > 0 || coop.Replays.Busy ||
                    coop.ToolBenches?.Handler.Of(ActorSlot.Host) != null || coop.ToolBenches?.Handler.Of(ActorSlot.Guest) != null;
-        if (!busy) return true;
+        if (!busy) { coop.Jobs?.DayStarted(); return true; }
         coop.Notice("Wait until both players finish what they're doing, then end the day.");
         Plugin.Logger.LogInfo("[career] End Day waits: an edit or table session is still running.");
         return false;

@@ -3,7 +3,9 @@ using LiteNetLib.Utils;
 namespace PCBS2Coop.Network;
 
 public enum PcAction : byte { Create = 1, Delete = 2, Observe = 3, Extend = 4, Import = 5, Adopt = 6 }
-public enum PcRemoval : byte { Carried = 1, Stored = 2 }
+/// <summary>Where a deleted PC was. <see cref="Game"/> (phase 17b, host only): the host's game removed a bench or
+/// storage PC by itself (a job collected, quit or turned down takes its PC away), so every game removes it too.</summary>
+public enum PcRemoval : byte { Carried = 1, Stored = 2, Game = 3 }
 /// <summary>A reusable Free Build catalog entry: SKU, native type and its position among entries with both. Not a physical part.</summary>
 public sealed record CatalogRef(string Sku, string NativeType, int Ordinal);
 public sealed record TemplatePart(string Sku, string NativeType);
@@ -210,6 +212,12 @@ public sealed class PcLifecycle : ICanonicalCommandHandler
             {
                 target = _objects.Pcs.SingleOrDefault(x => x.Id == c.Pc);
                 if (target == null) return "PC is unknown or retired.";
+                if (c.From == PcRemoval.Game)
+                {
+                    // The host's game already removed it; a claim on it can't keep it in the world.
+                    if (ctx.Op.Actor != ActorSlot.Host) return "Only the host reports PCs its game removed.";
+                    return target.Location.Place is PcPlace.Bench or PcPlace.Storage ? null : "The host's game can only remove a bench or storage PC by itself.";
+                }
                 if (c.From == PcRemoval.Carried && (target.Location.Place != PcPlace.Carrier ||
                     target.Location.Actor != actor.Actor || target.Location.Player != actor.Player)) return "That PC is not in your hands.";
                 if (c.From == PcRemoval.Stored && target.Location.Place != PcPlace.Storage) return "That PC is not in storage.";

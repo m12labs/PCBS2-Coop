@@ -20,6 +20,11 @@ internal sealed partial class CoopController
     public NativeCommerce Commerce { get; private set; }
     /// <summary>Phase 16c: packages and physical job notes.</summary>
     public NativePackages Packages { get; private set; }
+    /// <summary>Phase 17b: shared jobs and the inbox.</summary>
+    public NativeJobs Jobs { get; private set; }
+
+    /// <summary>Host: its day finished and the day-end save and guest reload are still running.</summary>
+    internal bool DayEnding => _day != DayStep.None;
 
     /// <summary>Host check of the owned item an install names (a method group: the plugin builds without nullable attributes).</summary>
     private string CheckCareerItem(ulong item, IEnumerable<ulong> inUse) => NativeCareer.InCareer ? Career?.Handler.CheckUse(item, inUse) : null;

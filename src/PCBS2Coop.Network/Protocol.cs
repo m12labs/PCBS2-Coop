@@ -154,6 +154,8 @@ public static class CommandTypes
     public const ushort Commerce = 19;
     /// <summary>Phase 16c: packages and physical job notes on benches, note slots and in players' hands (<see cref="PackageWorld"/>).</summary>
     public const ushort Packages = 20;
+    /// <summary>Phase 17b: the host's jobs and inbox, and either player's job actions (<see cref="JobWorld"/>).</summary>
+    public const ushort Jobs = 21;
 }
 
 /// <summary>One actor's pointer on a shared PC monitor. Coordinates are fractions of that PC's desktop

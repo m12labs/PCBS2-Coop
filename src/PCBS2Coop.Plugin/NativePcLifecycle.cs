@@ -216,6 +216,8 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
             case PcAction.Import when host:
                 if (wc.IsCaseLoading || Saves.SpawningPC) return "Objects are still loading.";
                 return wc.CarryingEmpty() ? null : "Your hands are not empty.";
+            case PcAction.Delete when command.From == PcRemoval.Game:
+                return null; // the host's game already removed it (phase 17b)
             case PcAction.Delete when command.From == PcRemoval.Carried:
                 return host ? CarriedEmpty(wc, target.Id) : RemoteEmpty(target);
             case PcAction.Delete:
@@ -286,6 +288,13 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
     {
         try
         {
+            if (from == PcRemoval.Game && _world.IsAuthority)
+            {
+                // Phase 17b: this game removed it already (a job collected, quit or turned down).
+                Objects.ForgetPc(pc.Id);
+                Plugin.Logger.LogInfo($"[objects] PC {pc.Id} left with its job on this game; removed from the shared world ({ctx.Op}).");
+                return;
+            }
             var request = LocalRequest(ctx);
             var wc = Workshop;
             var carried = wc.GetCarriedCase();
@@ -309,6 +318,7 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
             if (where == null) Plugin.Logger.LogWarning($"[objects] deleted PC {pc.Id} ({from}) had no projection on this game.");
             else Plugin.Logger.LogInfo($"[objects] deleted PC {pc.Id} ({from}) from {where} by {ctx.Op}.");
             var expected = from == PcRemoval.Stored ? "storage" : ctx.FromLocalPlayer ? "native carrier" : "remote carrier";
+            if (from == PcRemoval.Game) expected = where is "bench" or "storage" ? where : "bench or storage";
             if (where != null && where != expected) Plugin.Logger.LogWarning($"[objects] PC {pc.Id} was at {where} here, not {expected}; this game's world had drifted (unsynchronized movement).");
         }
         catch (Exception e) { Fault($"PC {pc.Id} was deleted, but this game could not remove it", e); }

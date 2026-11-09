@@ -402,7 +402,7 @@ internal sealed partial class CoopController
         Session.Stop(toPeer);
         SteamBootstrap.Service?.Cancel();
         Objects.Reset();
-        Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; Workstations = null; Career = null; Commerce = null; Packages = null; _notice = null; ResetAutosave(); ResetDayEnd();
+        Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; Workstations = null; Career = null; Commerce = null; Packages = null; Jobs = null; _notice = null; ResetAutosave(); ResetDayEnd();
         DestroyView();
         _pointers.Reset(); _localCursor = default;
         _lastRemoteAt = -1;
@@ -457,7 +457,7 @@ internal sealed partial class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Simulation?.Update(); ToolBenches?.Update(); Customization?.Update(); Workshop?.Update(); Career?.Update(); Commerce?.Update(); Packages?.Update(); Replays.Update(); if (Session.Role == Role.Host) { UpdateAutosave(); UpdateDayEnd(); } }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Simulation?.Update(); ToolBenches?.Update(); Customization?.Update(); Workshop?.Update(); Career?.Update(); Commerce?.Update(); Packages?.Update(); Jobs?.Update(); Replays.Update(); if (Session.Role == Role.Host) { UpdateAutosave(); UpdateDayEnd(); } }
         else if (Replays.Busy) Replays.Reset();
 
         UpdateRejoinPosition(inWorkshop);
@@ -492,6 +492,7 @@ internal sealed partial class CoopController
                 Career.BindHost();
                 Commerce.BindHost();
                 Packages.BindHost();
+                Jobs.BindHost();
                 // Saved work/reservations belong to the previous session. Preserve committed objects only.
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, default), out _);
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Host, Session.LocalIdentity.Player), out _);
@@ -534,6 +535,7 @@ internal sealed partial class CoopController
                 Career?.BindGuest();
                 Commerce?.BindGuest();
                 Packages?.BindGuest();
+                Jobs?.BindGuest();
                 Plugin.Logger.LogInfo($"[world] entered the host's world with {Objects.Model.Pcs.Count} bound PCs.");
                 OnGuestSyncAdmitted();
             }
@@ -849,6 +851,7 @@ internal sealed partial class CoopController
         Career = new NativeCareer(this, world);
         Commerce = new NativeCommerce(this, world, Career.Handler);
         Packages = new NativePackages(this, world, Career.Handler);
+        Jobs = new NativeJobs(this, world);
         // Career (phase 15c): an install names its exact owned item; the host refuses one that's gone or in use.
         Edits.Handler.ItemCheck = CheckCareerItem;
         Lifecycle.Handler.ItemCheck = CheckCareerCase;
@@ -882,6 +885,9 @@ internal sealed partial class CoopController
         world.Register(CommandTypes.Packages, Packages.Handler);
         // Optional: Free Build worlds and careers before 0.61 have no package state; the host binds it at generation start.
         world.RegisterState(Packages.Handler, optional: true);
+        world.Register(CommandTypes.Jobs, Jobs.Handler);
+        // Optional: Free Build worlds and careers before 0.63 have no job state; the host binds it at generation start.
+        world.RegisterState(Jobs.Handler, optional: true);
 
         world.RegisterState(Software.Handler, optional: true);
         // Optional: saves from before 0.24 have no workshop state (lights, seasonal decoration, pictures).

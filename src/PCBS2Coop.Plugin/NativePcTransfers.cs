@@ -87,6 +87,16 @@ internal sealed class NativePcTransfers : IPcTransferNative
         Submit(PcTransfers.Retrieve(Epoch, id), new Request { What = "Retrieve", Storage = ui });
     }
 
+    /// <summary>Phase 17b: a game path picks a shared stored PC up without the cupboard screen (a job's "work on it"
+    /// button). The pickup becomes the shared retrieval; the native call runs once the host accepts it.</summary>
+    internal void RequestRetrieve(ComputerSave record)
+    {
+        if (!Ready("Retrieve")) return;
+        var id = Objects.IdOf(record);
+        if (id.IsNone) { Refuse("Retrieve", "That stored PC has no co-op identity."); return; }
+        Submit(PcTransfers.Retrieve(Epoch, id), new Request { What = "Retrieve" });
+    }
+
     private bool Ready(string what)
     {
         if (!Active) { Refuse(what, "The shared world isn't ready on this game yet."); return false; }

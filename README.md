@@ -36,7 +36,7 @@ Free Build highlights below; see the **[full sync tracker](docs/sync-progress.md
 | Workshop | Decorator, wallpapers and PC imports |
 | Sessions and players | Late join, Rejoin, saves, backups, animated avatars, chat and `/sync` |
 
-**Career is in development and has not been tested in game.** The source includes hosting, saves, shared progression and inventory, shop carts, checkout and part sales. [Career checklist](docs/career-testing.md)
+**Career is in development and has not been tested in game.** The source includes hosting, saves, shared progression and inventory, shop carts, checkout and part sales, deliveries and packages, PC Bay, and jobs with a shared inbox. [Career checklist](docs/career-testing.md)
 
 ## Installation
 
@@ -113,7 +113,7 @@ LAN/direct-IP joining works without Steam. Dependency and App ID notes are in [t
 
 The guest can join at any time while the host is in the workshop, and can leave and rejoin. For LAN, `127.0.0.1` only reaches the same PC; allow the game through Windows Firewall on your private network if prompted, or forward the UDP port for direct-IP play outside your LAN.
 
-**Saves.** Free Build worlds use `<GameDir>\Saves\Coop`; Career worlds use `<GameDir>\Saves\Coop\Career`. Each native save needs its matching `.coop` sidecar. The 0.60 development build reads co-op pairs written by versions 0.16 through 0.60; for an older save, start a fresh co-op world.
+**Saves.** Free Build worlds use `<GameDir>\Saves\Coop`; Career worlds use `<GameDir>\Saves\Coop\Career`. Each native save needs its matching `.coop` sidecar. The 0.63 development build reads co-op pairs written by versions 0.16 through 0.63; for an older save, start a fresh co-op world.
 
 The host saves on an interval (Co-op Options, default 5 minutes), on Exit and from the Save screen; the game's own autosaves are skipped in co-op. If a save is interrupted, Continue restores a readable backup or selects the newest readable save, with a notice. The guest uses a temporary folder and keeps the host's latest save in that mode's `Joined` subfolder. Guests can't save, load or reset the world. Solo saves stay separate.
 

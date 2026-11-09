@@ -232,6 +232,13 @@ internal sealed class NativeCommerce : ICommerceNative
         _seenBaskets = EncodeBaskets(ReadBasketMap());
     }
 
+    /// <summary>Guest (phase 17b): the host's job tags replaced this game's; put the shared baskets back on them.</summary>
+    internal void FollowBaskets()
+    {
+        if (!Active) return;
+        WriteBaskets(Handler.Baskets);
+    }
+
     // ---------------- binding ----------------
 
     internal void BindHost()

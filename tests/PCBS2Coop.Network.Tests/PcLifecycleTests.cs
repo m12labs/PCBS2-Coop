@@ -158,6 +158,16 @@ internal static class PcLifecycleTests
         Send(l.Host, PcLifecycle.Extend(E(ha, ActorSlot.Host), new(3), new(new[] { new TemplatePart("fan", "FanPartInstance") }, new[] { new GrowthLink("y", -1, new(4)) })));
         t.Check(l.Host.Revision == rev && Same(), "growth from a guest, repeated paths, unknown aliases and unlinked parts are refused");
 
+        // Phase 17b: a job collected, quit or turned down takes its PC away on the host's game.
+        Send(l.Guest, PcLifecycle.Delete(E(ga, ActorSlot.Guest), new(3), PcRemoval.Game));
+        t.Check(Pc(ho, 3) != null && l.GuestRejected.Last().Text.Contains("Only the host"), "only the host reports a PC its game removed by itself");
+        var carriedByHost = ho.Pcs.First(x => x.Location.Place == PcPlace.Carrier && x.Location.Actor == ActorSlot.Host).Id;
+        Send(l.Host, PcLifecycle.Delete(E(ha, ActorSlot.Host), carriedByHost, PcRemoval.Game));
+        t.Check(Pc(ho, carriedByHost.Value) != null && l.HostRejected.Last().Text.Contains("bench or storage"), "the host's game can't remove a carried PC by itself");
+        Send(l.Host, PcLifecycle.Delete(E(ha, ActorSlot.Host), new(3), PcRemoval.Game));
+        t.Check(Pc(ho, 3) == null && Pc(go, 3) == null && hn.Calls.Last() == "delete 3 Game local=True" && gn.Calls.Last() == "delete 3 Game local=False" && Same(),
+            "a PC the host's game removed leaves both models, and the guest's game removes it");
+
         var saved = l.Host.CapturePosition(); var next = ho.NextId; var live = ho.Pcs.Select(x => x.Id).ToArray();
         l.Host.BeginGeneration("resume"); l.Host.RestoreState(saved.State);
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, host), CommandTypes.ActorActivity);

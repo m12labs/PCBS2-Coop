@@ -33,6 +33,7 @@ CampaignTests.Run(t);
 CareerTests.Run(t);
 CommerceTests.Run(t);
 PackageTests.Run(t);
+JobTests.Run(t);
 AcceptanceTests.Run(t);
 LoopbackTests.Run(t);
 return t.Finish();

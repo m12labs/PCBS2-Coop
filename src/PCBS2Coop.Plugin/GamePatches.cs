@@ -20,6 +20,7 @@ internal static class GamePatches
             CareerGuards.Apply(new Harmony(Plugin.Guid + ".career"));
             CommerceHooks.Apply(new Harmony(Plugin.Guid + ".commerce"));
             PackageHooks.Apply(new Harmony(Plugin.Guid + ".packages"));
+            JobHooks.Apply(new Harmony(Plugin.Guid + ".jobs"));
             game.PatchAll(typeof(CoopController.ExitSave));
             var menus = new Harmony(Plugin.Guid + ".save-menus");
             menus.PatchAll(typeof(CoopController.PauseLoad));
@@ -175,7 +176,21 @@ internal static class GamePatches
     private static class DestroyGuard { private static bool Prefix() => NativeActivity.Allow(NativeActivity.Carried()); }
     [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.PickupComputerFromStorage))]
     private static class RetrieveGuard
-    { private static bool Prefix(ComputerSave computer) => NativeActivity.Allow(CoopController.Instance?.Objects.IdOf(computer) ?? default); }
+    {
+        private static bool Prefix(ComputerSave computer)
+        {
+            var coop = CoopController.Instance;
+            var id = coop?.Objects.IdOf(computer) ?? default;
+            // Phase 17b: in a Career, a job's "work on it" button picks its stored PC up directly. Outside an accepted
+            // change, that pickup of a shared PC becomes the shared retrieval.
+            if (NativeCareer.InCareer && !NativeProjection.Active && !id.IsNone && coop?.Transfers != null)
+            {
+                coop.Transfers.RequestRetrieve(computer);
+                return false;
+            }
+            return NativeActivity.Allow(id);
+        }
+    }
     /// <summary>Every game save (manual, auto, Free Build) goes through CreateSaveGame. The host sends its saves to the guest as copies.</summary>
     [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.CreateSaveGame), typeof(string), typeof(bool), typeof(string))]
     private static class SaveHook

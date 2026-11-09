@@ -1,5 +1,7 @@
 # PCBS2 Co-op synchronization progress
 
+**November 9, 2026 — shared jobs and inbox, version 0.63 (not run in game).** Either player can accept, collect, quit or turn down a job; the host's game runs it and one result wins a race. The guest's inbox, job lists, reviews and calendar follow the host's during the day instead of waiting for the day-end reload. A job's PC leaves both games when the job is collected, quit or turned down. All 852 automated checks passed. [Phase 17b implementation](audit/phase-17.md#063-implementation-shared-jobs-and-the-inbox-17b)
+
 **November 9, 2026 — PC Bay, shares, shop-front prices and game-made PCs, version 0.62 (not run in game).** Either player can buy from PC Bay and buy shares; the host's game buys. Shop-front sale prices are shared. PCs the host's game makes by itself are now shared on both games: PC Bay purchases, customers' job PCs arriving in the morning and onboarding PCs. Before this, such a PC stopped the host's saves and the guest's day-end reload. Phase 16 is coded. All 826 automated checks passed. [Phase 16d implementation](audit/phase-16.md#062-implementation-pc-bay-shares-shop-front-prices-and-game-made-pcs-16d)
 
 **November 8, 2026 — deliveries, packages and job notes, version 0.61 (not run in game).** Both games share the delivery box, and either player can collect it. Packages and paper job notes are shared: packing, carrying, placing and opening packages, and moving notes. Career worlds with packages or notes are no longer refused; before this, the first accepted job blocked hosting. A guest's carried package goes to a free bench when the guest leaves. All 814 automated checks passed. [Phase 16c implementation](audit/phase-16.md#061-implementation-deliveries-packages-and-job-notes-16c)
@@ -322,14 +324,14 @@ The focused static audits are recorded for phases [15](audit/phase-15.md), [16](
 | Feature | Not synced | Partially synced | Synced | Comments |
 | --- | :---: | :---: | :---: | --- |
 | Modes/config and generated/pregenerated jobs/PCs | ✅ | | | Type presence does not prove selectable shipped modes. |
-| Jobs/objectives/subjobs/diagnosis/budget/deadline/collection | ✅ | | | 52 direct Objective subclasses inventoried; one settlement. |
+| Jobs/objectives/subjobs/diagnosis/budget/deadline/collection | ✅ | | | 52 direct Objective subclasses inventoried; one settlement. 0.63 (not run in game): either player accepts, collects, quits and turns down jobs through the host; objectives are 17c. |
 | Inventory quantities/provenance/owned/stored/sale PCs | ✅ | | | Identity across install/carry/store/sell/load. |
 | Shop stock/price/cart/discount/checkout/shipping/order | ✅ | | | Separate quote/commit/payment/delivery-option factors. |
 | Delivery/package/items/opening/returns/refund boundaries | ✅ | | | Exactly-once transfers; undocumented mechanics not assumed. |
 | Cash/overdraft/rent/utilities/bank charges/shares/ledger | ✅ | | | Individual payments/due states/source events. |
 | XP/kudos/level/unlocks/reputation/reviews/achievements | ✅ | | | Shared/personal policy and platform effects separate. |
 | PC Bay/market/retail/listings/prices/sales | ✅ | | | Offer/item identity, generation and ownership. |
-| Calendar/day/events/email/read flags/notes/post-its | ✅ | | | Linked deadlines/bills/deliveries/generated records. |
+| Calendar/day/events/email/read flags/notes/post-its | ✅ | | | Linked deadlines/bills/deliveries/generated records. 0.63 (not run in game): the host's inbox and calendar follow on the guest during a day; flags, tags and read state are 17e. |
 | Tutorials/onboarding/hints and progression flags | ✅ | | | Actor UI versus shared progress and callbacks. |
 | Manual/autosave/schema/codec/load/restore ordering | | ✅ | | Phase 3c pairs native saves with exact mod state/allocator/carrier graphs and validates before replay; joined copies retain both files. Missing/mismatched pairs fail explicitly. Phase 3e: created PCs keep their IDs/provenance through save, Host Continue and guest rejoin (E5, E7). 0.16: named co-op worlds, each with its own autosave. 0.17: the game's own autosaves are off in co-op; the host saves on an interval (Co-op Options, default 5 min), on Exit and from the Save screen; 0.17 reads 0.16 saves. Wider recovery/migration remains phase 8. |
 | Export/import/local PC files/external sharing | ✅ | | | Target: required custom/imported-PC content transfers automatically in-session. External platform paths remain unverified and need separate scope if encountered. |
