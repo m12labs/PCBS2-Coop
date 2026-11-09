@@ -9,13 +9,13 @@ using UnityEngine;
 using Object = UnityEngine.Object;
 
 /// <summary>
-/// Builds everything under Assets/PlayerModel from the Shyr base character and clips of Quaternius's Universal
+/// Builds the remote avatar from GDQuest's Mannequiny and clips of Quaternius's Universal
 /// Animation Library (docs/playermodel.md section 4). Safe to run again; then run PCBS2Coop/Build Player Bundle.
 /// Batch: Unity.exe -batchmode -quit -projectPath unity/PCBS2CoopModels -executeMethod PlayerModelSetup.Rebuild
 /// </summary>
 public static class PlayerModelSetup
 {
-    private const string CharacterFbx = "Assets/ThirdParty/Shyr/BaseCharacter/HumanCharacter.fbx";
+    private const string CharacterFbx = "Assets/ThirdParty/GDQuest/Mannequiny.fbx";
     /// <summary>The library's 24 MB FBXs are git-ignored; only the clips extracted from them are committed.</summary>
     private const string UalFbx = "Assets/ThirdParty/Quaternius/UniversalAnimationLibrary/UAL1_Standard.fbx";
     /// <summary>The same clips with root motion: read once for each clip's true speed.</summary>
@@ -30,30 +30,30 @@ public static class PlayerModelSetup
     private static readonly (string Source, string Name)[] UalClips =
         { ("Idle_Loop", "Idle"), ("Walk_Loop", "Walk"), ("Jog_Fwd_Loop", "Jog"), ("Sprint_Loop", "Sprint") };
 
-    /// <summary>The character is 1.734 m tall at scale 1; the capsule it replaces is 1.8 m.</summary>
-    private const float ImportScale = 1.8f / 1.734f;
+    private static readonly Vector3 CarryBoxSize = new(0.40f, 0.36f, 0.60f);
 
-    /// <summary>Where the hands hold the carried PC, in model space (+Z forward), and the box center that goes with it.</summary>
-    private static readonly Vector3 CarryHandLeft = new(-0.17f, 0.95f, 0.32f);
-    private static readonly Vector3 CarryHandRight = new(0.17f, 0.95f, 0.32f);
-    private static readonly Vector3 CarryAnchor = new(0f, 1.15f, 0.46f);
-
-    /// <summary>
-    /// The character's T-pose arms point this many degrees forward of straight out. It has no collarbones, so the
-    /// library's shoulder motion is lost and the arms otherwise hang about 30 degrees too far back and out; measured
-    /// against the library's own figure over idle, walk, jog and sprint, 30 halves the arm error (mean 30 to 16 degrees).
-    /// </summary>
-    private const float ArmRestForward = 30f;
-
-    /// <summary>Humanoid mapping of the character (its Blender bone names). It faces +Z; left is -X.</summary>
-    private static readonly Dictionary<string, string> CharacterBones = new()
+    /// <summary>Humanoid mapping for the neutral export, which faces +Z with its left arm on -X.</summary>
+    private static Dictionary<string, string> CharacterBones()
     {
-        { "Hips", "Body" }, { "Spine", "Torso" }, { "Chest", "Chest" }, { "Neck", "Neck" }, { "Head", "Head" },
-        { "LeftUpperArm", "Upper Arm L" }, { "LeftLowerArm", "Lower Arm L" }, { "LeftHand", "Hand L" },
-        { "RightUpperArm", "Upper Arm R" }, { "RightLowerArm", "Lower Arm R" }, { "RightHand", "Hand R" },
-        { "LeftUpperLeg", "Upper Leg L" }, { "LeftLowerLeg", "Lower Leg L" }, { "LeftFoot", "Heel L" }, { "LeftToes", "Feet L" },
-        { "RightUpperLeg", "Upper Leg R" }, { "RightLowerLeg", "Lower Leg R" }, { "RightFoot", "Heel R" }, { "RightToes", "Feet R" },
-    };
+        var mapping = new Dictionary<string, string>
+        {
+            { "Hips", "pelvis" }, { "Spine", "spine_01" }, { "Chest", "spine_02" }, { "Neck", "neck_01" }, { "Head", "head" },
+        };
+        var limbs = new (string Human, string Bone)[]
+        {
+            ("Shoulder", "clavicle"), ("UpperArm", "upperarm"), ("LowerArm", "lowerarm"), ("Hand", "hand"),
+            ("UpperLeg", "thigh"), ("LowerLeg", "calf"), ("Foot", "foot"), ("Toes", "ball"),
+        };
+        var segments = new[] { "Proximal", "Intermediate", "Distal" };
+        foreach (var (side, suffix) in new[] { ("Left", ".l"), ("Right", ".r") })
+        {
+            foreach (var (human, bone) in limbs) mapping.Add(side + human, bone + suffix);
+            foreach (var finger in new[] { "Thumb", "Index", "Middle", "Ring" })
+                for (var i = 0; i < segments.Length; i++)
+                    mapping.Add($"{side} {finger} {segments[i]}", $"{finger.ToLowerInvariant()}_0{i + 1}{suffix}");
+        }
+        return mapping;
+    }
 
     [MenuItem("PCBS2Coop/Rebuild Player Model")]
     public static void Rebuild()
@@ -63,29 +63,31 @@ public static class PlayerModelSetup
         ConfigureCharacterImport();
         var clips = UalClips.Select(c => AssetDatabase.LoadAssetAtPath<AnimationClip>($"{ClipDir}/UAL.{c.Name}.anim")
                                          ?? throw Fail($"missing {ClipDir}/UAL.{c.Name}.anim (run PCBS2Coop/Extract Animation Clips)")).ToArray();
-        var idle = clips[0];
+        var sourceIdle = clips[0];
 
         var model = BuildModel(out var avatar);
         try
         {
-            var carry = BakeCarryPose(model, avatar, idle);
-            // The carry layer holds the arms still relative to the chest, while walk and run move the chest. Hang the
-            // box anchor on the chest bone, placed while the model is in the carry pose, so it stays in the hands.
-            var anchor = new GameObject("CarryAnchor").transform;
-            anchor.SetPositionAndRotation(model.transform.TransformPoint(CarryAnchor), model.transform.rotation);
-            anchor.SetParent(model.GetComponent<Animator>().GetBoneTransform(HumanBodyBones.Chest), true); // keeps world scale 1 under the 100x armature
+            var animator = model.GetComponent<Animator>();
+            using var poses = new HumanPoseHandler(avatar, model.transform);
+            var bind = new HumanPose();
+            poses.GetHumanPose(ref bind);
+            clips[0] = BakeIdlePose(model, animator, poses, sourceIdle, bind.muscles);
+            var carry = BakeCarryPose(model, animator, poses, clips[0], bind.muscles);
+            var workbench = BakeWorkPose(model, animator, poses, clips[0], bind.muscles, WorkPose.Workbench);
+            var toolTable = BakeWorkPose(model, animator, poses, clips[0], bind.muscles, WorkPose.ToolTable);
+            var monitor = BakeWorkPose(model, animator, poses, clips[0], bind.muscles, WorkPose.Monitor);
             // Humanoid root motion scales with the avatar, so each clip covers (normalized speed × human scale) m/s here.
-            var humanScale = model.GetComponent<Animator>().humanScale;
+            var humanScale = animator.humanScale;
             var normalized = ReadUalSpeeds();
             var speeds = UalClips.Select((c, i) => i == 0 ? 0f : normalized[c.Name] * humanScale).ToArray(); // idle sits at 0
             for (var i = 1; i < speeds.Length; i++)
                 if (speeds[i] < 0.3f || speeds[i] <= speeds[i - 1]) throw Fail("implausible clip speeds: " + SpeedList(speeds));
 
-            var mask = BuildCarryMask();
-            var controller = BuildController(clips, speeds, carry, mask);
+            var mask = BuildUpperBodyMask();
+            var controller = BuildController(clips, speeds, carry, workbench, toolTable, monitor, mask);
 
             ResetToBindPose(model);
-            var animator = model.GetComponent<Animator>();
             animator.avatar = avatar;
             animator.runtimeAnimatorController = controller;
             animator.applyRootMotion = false;
@@ -115,15 +117,16 @@ public static class PlayerModelSetup
 
     private static void ConfigureCharacterImport()
     {
-        var imp = (ModelImporter)AssetImporter.GetAtPath(CharacterFbx);
-        imp.globalScale = ImportScale;
+        var imp = AssetImporter.GetAtPath(CharacterFbx) as ModelImporter
+                  ?? throw Fail($"missing {CharacterFbx}");
+        imp.globalScale = 1f;
         imp.useFileUnits = true;
+        imp.bakeAxisConversion = true;
         imp.importBlendShapes = false;
         imp.importCameras = false;
         imp.importLights = false;
         imp.importVisibility = false;
-        imp.isReadable = true; // the two body meshes are merged into PlayerModel.mesh.asset, which is what ships
-        imp.animationType = ModelImporterAnimationType.Generic; // the humanoid avatar is built from the cleaned prefab
+        imp.animationType = ModelImporterAnimationType.Generic; // build the Humanoid Avatar with an explicit bone map
         imp.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
         imp.importAnimation = false; // its own Blender clips aren't used
         imp.SaveAndReimport();
@@ -249,103 +252,44 @@ public static class PlayerModelSetup
     private static GameObject BuildModel(out Avatar avatar)
     {
         var src = AssetDatabase.LoadAssetAtPath<GameObject>(CharacterFbx);
-        var model = (GameObject)PrefabUtility.InstantiatePrefab(src);
-        PrefabUtility.UnpackPrefabInstance(model, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
+        if (src == null) throw Fail($"could not import {CharacterFbx}");
+        var model = Object.Instantiate(src);
         model.name = "PlayerModel";
-
-        var body = model.transform.Find("BaseCorpo") ?? throw Fail("BaseCorpo not found");
-        var torso = body.Find("Torso") ?? throw Fail("BaseCorpo/Torso not found");
-        var bodyRenderer = body.GetComponent<SkinnedMeshRenderer>();
-        var mesh = MergeBodyMeshes(bodyRenderer, torso.GetComponent<SkinnedMeshRenderer>());
-        mesh = SaveAsset(mesh, Dir + "/PlayerModel.mesh.asset");
-        Object.DestroyImmediate(torso.gameObject);
-
-        // Drop the test weapon, horns, teeth, ears and Blender bone-widget meshes.
-        foreach (var child in model.transform.Cast<Transform>().ToList())
-            if (child.name != "Armature" && child != body) Object.DestroyImmediate(child.gameObject);
-
-        body.name = "Mannequin";
-        var skinColor = bodyRenderer.sharedMaterial != null && bodyRenderer.sharedMaterial.HasProperty("_BaseColor")
-            ? bodyRenderer.sharedMaterial.GetColor("_BaseColor") : new Color(0.906f, 0.681f, 0.436f);
-        bodyRenderer.sharedMesh = mesh;
-        bodyRenderer.sharedMaterials = new[] { FlatMaterial("Skin", skinColor, 0.3f), FlatMaterial("Shirt", new Color(0.8f, 0.8f, 0.8f), 0.25f) };
-        bodyRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-        bodyRenderer.updateWhenOffscreen = false;
-
-        var names = model.GetComponentsInChildren<Transform>(true).GroupBy(t => t.name).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
-        if (names.Count > 0) throw Fail("duplicate transform names break the avatar: " + string.Join(", ", names));
-
-        var tpose = Object.Instantiate(model);
-        tpose.name = model.name;
         try
         {
-            PoseT(tpose.transform, CharacterBones);
-            avatar = AvatarBuilder.BuildHumanAvatar(tpose, Describe(tpose.transform, CharacterBones));
-        }
-        finally { Object.DestroyImmediate(tpose); }
-        if (!avatar.isValid || !avatar.isHuman) throw Fail("the character's humanoid avatar is invalid");
-        avatar.name = "PlayerModelAvatar";
-        avatar = SaveAsset(avatar, Dir + "/PlayerModel.avatar.asset");
-        model.GetComponent<Animator>().avatar = avatar;
-        return model;
-    }
-
-    /// <summary>One mesh, two submeshes: 0 = the body (Skin), 1 = the torso piece (Shirt, the tinted slot).</summary>
-    private static Mesh MergeBodyMeshes(SkinnedMeshRenderer body, SkinnedMeshRenderer torso)
-    {
-        var a = body.sharedMesh;
-        var b = torso.sharedMesh;
-        var boneIndex = body.bones.Select((t, i) => (t, i)).ToDictionary(x => x.t, x => x.i);
-        var remap = torso.bones.Select(t => boneIndex.TryGetValue(t, out var i) ? i : throw Fail("torso bone not in the body's bones: " + t.name)).ToArray();
-        // Skinning ignores the renderers' transforms: vertices live in bind space. With matching bindposes the
-        // torso's vertices are already in the body's space and are copied as they are.
-        for (var j = 0; j < remap.Length; j++)
-            if (!Approximately(b.bindposes[j], a.bindposes[remap[j]])) throw Fail($"torso and body bindposes differ for bone {torso.bones[j].name}");
-
-        var vertices = a.vertices.Concat(b.vertices).ToArray();
-        var normals = a.normals.Concat(b.normals).ToArray();
-        var weights = a.boneWeights.Concat(b.boneWeights.Select(w => new BoneWeight
-        {
-            boneIndex0 = remap[w.boneIndex0], weight0 = w.weight0, boneIndex1 = remap[w.boneIndex1], weight1 = w.weight1,
-            boneIndex2 = remap[w.boneIndex2], weight2 = w.weight2, boneIndex3 = remap[w.boneIndex3], weight3 = w.weight3,
-        })).ToArray();
-
-        var mesh = new Mesh { name = "PlayerModel" };
-        mesh.indexFormat = vertices.Length > 65535 ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16;
-        mesh.vertices = vertices;
-        mesh.normals = normals;
-        if (a.uv.Length == a.vertexCount && b.uv.Length == b.vertexCount) mesh.uv = a.uv.Concat(b.uv).ToArray();
-        mesh.boneWeights = weights;
-        mesh.bindposes = a.bindposes;
-        mesh.subMeshCount = 2;
-        mesh.SetTriangles(Enumerable.Range(0, a.subMeshCount).SelectMany(s => a.GetTriangles(s)).ToArray(), 0);
-        mesh.SetTriangles(Enumerable.Range(0, b.subMeshCount).SelectMany(s => b.GetTriangles(s)).Select(i => i + a.vertexCount).ToArray(), 1);
-        mesh.RecalculateBounds();
-        mesh.RecalculateTangents();
-        return mesh;
-    }
-
-    /// <summary>Aim each limb segment along the T-pose directions: spine up, arms out to the sides, legs down.</summary>
-    private static void PoseT(Transform root, Dictionary<string, string> map)
-    {
-        Transform Bone(string human) => map.TryGetValue(human, out var n) ? FindDeep(root, n) : null;
-        void Chain(Vector3 dir, params string[] humans)
-        {
-            var bones = humans.Select(Bone).Where(t => t != null).ToList();
-            for (var i = 0; i + 1 < bones.Count; i++)
+            var renderers = model.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            if (renderers.Length != 1) throw Fail($"expected one Mannequiny renderer, found {renderers.Length}");
+            var renderer = renderers[0];
+            renderer.sharedMesh = SaveAsset(Object.Instantiate(renderer.sharedMesh), Dir + "/PlayerModel.mesh.asset");
+            renderer.sharedMaterials = renderer.sharedMaterials.Select(m => m.name switch
             {
-                var current = bones[i + 1].position - bones[i].position;
-                if (current.sqrMagnitude > 1e-10f) bones[i].rotation = Quaternion.FromToRotation(current, dir) * bones[i].rotation;
-            }
+                "Azul" => FlatMaterial("Azul", new Color(0.035f, 0.235f, 0.515f), 0.60f),
+                "Negro" => FlatMaterial("Negro", new Color(0.053f, 0.051f, 0.054f), 0.70f),
+                "Blanco" => FlatMaterial("Blanco", Color.white, 0.50f),
+                _ => throw Fail($"unexpected Mannequiny material: {m.name}"),
+            }).ToArray();
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            renderer.updateWhenOffscreen = false;
+
+            var names = model.GetComponentsInChildren<Transform>(true).GroupBy(t => t.name).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+            if (names.Count > 0) throw Fail("duplicate transform names break the avatar: " + string.Join(", ", names));
+
+            avatar = AvatarBuilder.BuildHumanAvatar(model, Describe(model.transform, CharacterBones()));
+            if (!avatar.isValid || !avatar.isHuman) throw Fail("the character's humanoid avatar is invalid");
+            avatar = SaveAsset(avatar, Dir + "/PlayerModel.avatar.asset");
+            var animator = model.GetComponent<Animator>();
+            if (animator == null) animator = model.AddComponent<Animator>();
+            animator.avatar = avatar;
+            if (animator.GetBoneTransform(HumanBodyBones.LeftHand).position.x >= animator.GetBoneTransform(HumanBodyBones.RightHand).position.x ||
+                animator.GetBoneTransform(HumanBodyBones.LeftToes).position.z <= animator.GetBoneTransform(HumanBodyBones.LeftFoot).position.z)
+                throw Fail("Mannequiny must face +Z in its neutral pose");
+            return model;
         }
-        Chain(Vector3.up, "Spine", "Chest", "UpperChest", "Neck", "Head");
-        // Collarbones keep their rest angle; only the arm segments are aimed, swung forward by ArmRestForward.
-        var forward = Mathf.Sin(ArmRestForward * Mathf.Deg2Rad);
-        var side = Mathf.Cos(ArmRestForward * Mathf.Deg2Rad);
-        Chain(new Vector3(-side, 0, forward), "LeftUpperArm", "LeftLowerArm", "LeftHand");
-        Chain(new Vector3(side, 0, forward), "RightUpperArm", "RightLowerArm", "RightHand");
-        Chain(Vector3.down, "LeftUpperLeg", "LeftLowerLeg", "LeftFoot");
-        Chain(Vector3.down, "RightUpperLeg", "RightLowerLeg", "RightFoot");
+        catch
+        {
+            Object.DestroyImmediate(model);
+            throw;
+        }
     }
 
     private static HumanDescription Describe(Transform tposed, Dictionary<string, string> map)
@@ -364,33 +308,153 @@ public static class PlayerModelSetup
 
     // ---------------- clips ----------------
 
-    /// <summary>
-    /// Arms reaching forward to hold the box, on the idle's first frame. Arm, hand and torso muscles are written, so while
-    /// carrying the upper body keeps the idle posture and the box doesn't swing with a jog's twist; legs and hips still move.
-    /// </summary>
-    private static AnimationClip BakeCarryPose(GameObject model, Avatar avatar, AnimationClip idle)
+    private enum WorkPose { Free, Workbench, ToolTable, Monitor }
+
+    private static AnimationClip BakeIdlePose(GameObject model, Animator animator, HumanPoseHandler poses, AnimationClip source, float[] bind)
     {
         ResetToBindPose(model);
-        idle.SampleAnimation(model, 0);
-        var animator = model.GetComponent<Animator>();
-        Transform B(HumanBodyBones b) => animator.GetBoneTransform(b);
-        var root = model.transform;
-        Reach(B(HumanBodyBones.LeftUpperArm), B(HumanBodyBones.LeftLowerArm), B(HumanBodyBones.LeftHand), root.TransformPoint(CarryHandLeft), new Vector3(-0.6f, -1f, -0.3f));
-        Reach(B(HumanBodyBones.RightUpperArm), B(HumanBodyBones.RightLowerArm), B(HumanBodyBones.RightHand), root.TransformPoint(CarryHandRight), new Vector3(0.6f, -1f, -0.3f));
-
-        var handler = new HumanPoseHandler(avatar, model.transform);
-        var pose = new HumanPose();
-        handler.GetHumanPose(ref pose);
-        handler.Dispose();
-        var muscles = new AnimationCurve[HumanTrait.MuscleCount];
-        for (var i = 0; i < muscles.Length; i++)
-            if (IsCarryMuscle(HumanTrait.MuscleName[i])) muscles[i] = new AnimationCurve(new Keyframe(0, pose.muscles[i]), new Keyframe(1, pose.muscles[i]));
-        return SaveClip(BuildHumanClip("Carry", muscles, null), Dir + "/PlayerModel.Carry.anim", true);
+        source.SampleAnimation(model, 0f);
+        PlaceHand(animator, true, new Vector3(-0.245f, 1.00f, 0.065f), new Vector3(0f, -1f, 0.18f), Vector3.right);
+        PlaceHand(animator, false, new Vector3(0.245f, 1.00f, 0.065f), new Vector3(0f, -1f, 0.18f), Vector3.left);
+        var pose = CapturePose(poses, bind, 0.32f);
+        var idle = Object.Instantiate(source);
+        for (var i = 0; i < HumanTrait.MuscleCount; i++)
+        {
+            var muscle = HumanTrait.MuscleName[i];
+            if (IsArmMuscle(muscle)) WriteMuscle(idle, muscle, AnimationCurve.Constant(0f, source.length, pose.muscles[i]));
+        }
+        return SaveAsset(idle, Dir + "/PlayerModel.Idle.anim");
     }
 
-    private static bool IsCarryMuscle(string name) =>
-        name.StartsWith("Spine") || name.StartsWith("Chest") || name.StartsWith("UpperChest") ||
-        (name.StartsWith("Left") || name.StartsWith("Right")) && (name.Contains("Shoulder") || name.Contains("Arm") || name.Contains("Forearm") || name.Contains("Hand"));
+    private static AnimationClip BakeCarryPose(GameObject model, Animator animator, HumanPoseHandler poses, AnimationClip idle, float[] bind)
+    {
+        ResetToBindPose(model);
+        idle.SampleAnimation(model, 0f);
+        PlaceHand(animator, true, new Vector3(-0.158f, 0.94f, 0.35f), Vector3.forward, Vector3.up);
+        PlaceHand(animator, false, new Vector3(0.158f, 0.94f, 0.35f), Vector3.forward, Vector3.up);
+        var pose = CapturePose(poses, bind, 0.19f);
+        poses.SetHumanPose(ref pose);
+
+        // Fit the prop to the resulting Humanoid pose, which can differ from the original IK target.
+        // A palm midpoint is about halfway from the wrist to the base of the middle finger.
+        Vector3 Palm(HumanBodyBones wrist, HumanBodyBones middle) =>
+            Vector3.Lerp(animator.GetBoneTransform(wrist).position, animator.GetBoneTransform(middle).position, 0.55f);
+        var leftPalm = Palm(HumanBodyBones.LeftHand, HumanBodyBones.LeftMiddleProximal);
+        var rightPalm = Palm(HumanBodyBones.RightHand, HumanBodyBones.RightMiddleProximal);
+        var right = (rightPalm - leftPalm).normalized;
+        var forward = Vector3.Cross(right, model.transform.up).normalized;
+        var up = Vector3.Cross(forward, right);
+        var anchor = new GameObject("CarryAnchor").transform;
+        anchor.SetPositionAndRotation(
+            (leftPalm + rightPalm) * 0.5f + up * (CarryBoxSize.y * 0.5f + 0.018f) + forward * 0.16f,
+            Quaternion.LookRotation(forward, up));
+        anchor.SetParent(animator.GetBoneTransform(HumanBodyBones.Chest), true);
+        var volume = new GameObject("CarryVolume").transform;
+        volume.SetParent(anchor, false);
+        volume.localScale = CarryBoxSize;
+
+        var carry = new AnimationClip();
+        for (var i = 0; i < HumanTrait.MuscleCount; i++)
+        {
+            var muscle = HumanTrait.MuscleName[i];
+            if (IsArmMuscle(muscle) || IsTorsoMuscle(muscle))
+                WriteMuscle(carry, muscle, AnimationCurve.Constant(0f, 1f, pose.muscles[i]));
+        }
+        return SaveClip(carry, Dir + "/PlayerModel.Carry.anim");
+    }
+
+    private static AnimationClip BakeWorkPose(GameObject model, Animator animator, HumanPoseHandler poses, AnimationClip idle, float[] bind, WorkPose work)
+    {
+        var clip = new AnimationClip();
+        var curves = new AnimationCurve[HumanTrait.MuscleCount];
+        for (var frame = 0; frame <= 4; frame++)
+        {
+            ResetToBindPose(model);
+            idle.SampleAnimation(model, 0f);
+            var sway = Mathf.Sin(frame * Mathf.PI * 0.5f);
+            var (lean, look, braceHeight, reachHeight, reach, fineMotion) = work switch
+            {
+                WorkPose.ToolTable => (21f, 23f, 0.97f, 1.065f, 0.52f, 0.032f),
+                WorkPose.Monitor => (6f, -3f, 1.03f, 1.05f, 0.37f, 0.012f),
+                _ => (15f, 17f, 1.01f, 1.12f, 0.46f, 0.020f),
+            };
+            var axis = model.transform.right;
+            var spine = animator.GetBoneTransform(HumanBodyBones.Spine);
+            spine.rotation = Quaternion.AngleAxis(lean + sway * 1.5f, axis) * spine.rotation;
+            var head = animator.GetBoneTransform(HumanBodyBones.Head);
+            head.rotation = Quaternion.AngleAxis(look, axis) * head.rotation;
+            PlaceHand(animator, true, new Vector3(-0.19f, braceHeight, reach - 0.065f), Vector3.forward, Vector3.down);
+            PlaceHand(animator, false, new Vector3(0.17f + sway * fineMotion, reachHeight + sway * fineMotion * 0.3f, reach + sway * fineMotion),
+                Vector3.forward, Vector3.down);
+            var pose = CapturePose(poses, bind, work == WorkPose.ToolTable ? 0.52f : 0.36f);
+            for (var i = 0; i < curves.Length; i++)
+            {
+                var muscle = HumanTrait.MuscleName[i];
+                if (!IsArmMuscle(muscle) && !IsTorsoMuscle(muscle) && !muscle.StartsWith("Head") && !muscle.StartsWith("Neck")) continue;
+                curves[i] ??= new AnimationCurve();
+                curves[i].AddKey(new Keyframe(frame, pose.muscles[i]));
+            }
+        }
+        for (var i = 0; i < curves.Length; i++)
+            if (curves[i] != null) WriteMuscle(clip, HumanTrait.MuscleName[i], curves[i]);
+        return SaveClip(clip, $"{Dir}/PlayerModel.{work}.anim");
+    }
+
+    private static HumanPose CapturePose(HumanPoseHandler poses, float[] bind, float fingerCurl)
+    {
+        var pose = new HumanPose();
+        poses.GetHumanPose(ref pose);
+        for (var i = 0; i < pose.muscles.Length; i++)
+        {
+            var muscle = HumanTrait.MuscleName[i];
+            if (!IsFingerMuscle(muscle)) continue;
+            var curl = muscle.Contains("Stretched") && !muscle.Contains("Thumb") ? fingerCurl : 0f;
+            pose.muscles[i] = Mathf.Clamp(bind[i] - curl, -1f, 1f);
+        }
+        return pose;
+    }
+
+    private static bool IsFingerMuscle(string name) => name.Contains("Thumb") || name.Contains("Index") ||
+        name.Contains("Middle") || name.Contains("Ring");
+
+    private static bool IsArmMuscle(string name) =>
+        (name.StartsWith("Left") || name.StartsWith("Right")) &&
+        (name.Contains("Shoulder") || name.Contains("Arm") || name.Contains("Forearm") || name.Contains("Hand") || IsFingerMuscle(name));
+
+    private static bool IsTorsoMuscle(string name) =>
+        name.StartsWith("Spine") || name.StartsWith("Chest") || name.StartsWith("UpperChest");
+
+    private static void WriteMuscle(AnimationClip clip, string muscle, AnimationCurve curve)
+    {
+        if (IsFingerMuscle(muscle))
+        {
+            // Unity's serialized finger bindings are e.g. LeftHand.Index.1 Stretched.
+            var words = muscle.Split(new[] { ' ' }, 3);
+            muscle = $"{words[0]}Hand.{words[1]}.{words[2]}";
+        }
+        AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Animator), muscle), curve);
+    }
+
+    private static void PlaceHand(Animator animator, bool left, Vector3 target, Vector3 fingers, Vector3 palm)
+    {
+        var upper = animator.GetBoneTransform(left ? HumanBodyBones.LeftUpperArm : HumanBodyBones.RightUpperArm);
+        var lower = animator.GetBoneTransform(left ? HumanBodyBones.LeftLowerArm : HumanBodyBones.RightLowerArm);
+        var wrist = animator.GetBoneTransform(left ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+        var middle = animator.GetBoneTransform(left ? HumanBodyBones.LeftMiddleProximal : HumanBodyBones.RightMiddleProximal);
+        var thumb = animator.GetBoneTransform(left ? HumanBodyBones.LeftThumbProximal : HumanBodyBones.RightThumbProximal);
+        var root = animator.transform;
+        Reach(upper, lower, wrist, root.TransformPoint(target), root.TransformDirection(new Vector3(left ? -0.7f : 0.7f, -0.4f, -1f)));
+
+        Vector3 PalmNormal() => Vector3.Cross(middle.position - wrist.position, thumb.position - wrist.position).normalized * (left ? -1f : 1f);
+        var wantPalm = root.TransformDirection(palm);
+        var forearm = (wrist.position - lower.position).normalized;
+        // Put most of the twist into the forearm before aiming the wrist.
+        var twist = Vector3.SignedAngle(Vector3.ProjectOnPlane(PalmNormal(), forearm), Vector3.ProjectOnPlane(wantPalm, forearm), forearm);
+        lower.rotation = Quaternion.AngleAxis(twist, forearm) * lower.rotation;
+        var current = Quaternion.LookRotation(middle.position - wrist.position, PalmNormal());
+        var desired = Quaternion.LookRotation(root.TransformDirection(fingers), wantPalm);
+        wrist.rotation = desired * Quaternion.Inverse(current) * wrist.rotation;
+    }
 
     /// <summary>Two-bone IK: put the hand at the target with the elbow toward the pole direction.</summary>
     private static void Reach(Transform upper, Transform lower, Transform hand, Vector3 target, Vector3 pole)
@@ -407,28 +471,10 @@ public static class PlayerModelSetup
         lower.rotation = Quaternion.FromToRotation(hand.position - lower.position, s + dir * d - lower.position) * lower.rotation;
     }
 
-    private static AnimationClip BuildHumanClip(string name, AnimationCurve[] muscles, AnimationCurve[] root)
-    {
-        var clip = new AnimationClip { name = name };
-        for (var i = 0; i < muscles.Length; i++)
-        {
-            if (muscles[i] == null) continue;
-            var muscle = HumanTrait.MuscleName[i];
-            if (new[] { "Thumb", "Index", "Middle", "Ring", "Little" }.Any(muscle.Contains)) continue; // no finger bones mapped
-            AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Animator), muscle), muscles[i]);
-        }
-        if (root != null)
-        {
-            string[] props = { "RootT.x", "RootT.y", "RootT.z", "RootQ.x", "RootQ.y", "RootQ.z", "RootQ.w" };
-            for (var i = 0; i < 7; i++) AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Animator), props[i]), root[i]);
-        }
-        return clip;
-    }
-
-    private static AnimationClip SaveClip(AnimationClip clip, string path, bool loop)
+    private static AnimationClip SaveClip(AnimationClip clip, string path)
     {
         var settings = AnimationUtility.GetAnimationClipSettings(clip);
-        settings.loopTime = loop;
+        settings.loopTime = true;
         settings.loopBlendOrientation = true;
         settings.loopBlendPositionY = true;
         settings.loopBlendPositionXZ = true;
@@ -442,19 +488,21 @@ public static class PlayerModelSetup
 
     // ---------------- mask, controller ----------------
 
-    private static AvatarMask BuildCarryMask()
+    private static AvatarMask BuildUpperBodyMask()
     {
         var mask = new AvatarMask { name = "PlayerModel.CarryMask" };
         for (var i = 0; i < (int)AvatarMaskBodyPart.LastBodyPart; i++)
         {
             var part = (AvatarMaskBodyPart)i;
-            mask.SetHumanoidBodyPartActive(part, part is AvatarMaskBodyPart.Body or AvatarMaskBodyPart.LeftArm or AvatarMaskBodyPart.RightArm or AvatarMaskBodyPart.LeftFingers or AvatarMaskBodyPart.RightFingers);
+            mask.SetHumanoidBodyPartActive(part, part is AvatarMaskBodyPart.Body or AvatarMaskBodyPart.Head or
+                AvatarMaskBodyPart.LeftArm or AvatarMaskBodyPart.RightArm or AvatarMaskBodyPart.LeftFingers or AvatarMaskBodyPart.RightFingers);
         }
         return SaveAsset(mask, Dir + "/PlayerModel.CarryMask.mask");
     }
 
-    /// <summary>Base layer: locomotion clips blended on Speed (m/s) at their own ground speeds. Carry layer: arms only.</summary>
-    private static AnimatorController BuildController(AnimationClip[] locomotion, float[] speeds, AnimationClip carry, AvatarMask mask)
+    /// <summary>In-place locomotion and one masked upper-body layer. Carry takes priority over work.</summary>
+    private static AnimatorController BuildController(AnimationClip[] locomotion, float[] speeds, AnimationClip carry,
+        AnimationClip workbench, AnimationClip toolTable, AnimationClip monitor, AvatarMask mask)
     {
         // Rebuild the existing controller in place: deleting and recreating it changes its GUID and can leave the
         // prefab pointing at nothing.
@@ -467,6 +515,7 @@ public static class PlayerModelSetup
         ctrl.AddLayer("Base Layer");
         ctrl.AddParameter("Speed", AnimatorControllerParameterType.Float);
         ctrl.AddParameter("Carrying", AnimatorControllerParameterType.Bool);
+        ctrl.AddParameter("WorkPose", AnimatorControllerParameterType.Int);
 
         var loco = ctrl.CreateBlendTreeInController("Locomotion", out var tree, 0);
         tree.blendType = BlendTreeType.Simple1D;
@@ -475,7 +524,7 @@ public static class PlayerModelSetup
         for (var i = 0; i < locomotion.Length; i++) tree.AddChild(locomotion[i], speeds[i]);
         ctrl.layers[0].stateMachine.defaultState = loco;
 
-        ctrl.AddLayer("Carry");
+        ctrl.AddLayer("Upper Body");
         var layers = ctrl.layers;
         layers[1].defaultWeight = 1f;
         layers[1].blendingMode = AnimatorLayerBlendingMode.Override;
@@ -483,14 +532,27 @@ public static class PlayerModelSetup
         layers[1].iKPass = false;
         ctrl.layers = layers;
         var sm = ctrl.layers[1].stateMachine;
-        var empty = sm.AddState("Empty");
-        var hold = sm.AddState("Carry");
-        hold.motion = carry;
-        sm.defaultState = empty;
-        var on = empty.AddTransition(hold); on.hasExitTime = false; on.duration = 0.15f; on.AddCondition(AnimatorConditionMode.If, 0, "Carrying");
-        var off = hold.AddTransition(empty); off.hasExitTime = false; off.duration = 0.15f; off.AddCondition(AnimatorConditionMode.IfNot, 0, "Carrying");
+        sm.defaultState = AddPose("Free", null, WorkPose.Free);
+        AddPose("Carry", carry, null);
+        AddPose("Workbench", workbench, WorkPose.Workbench);
+        AddPose("ToolTable", toolTable, WorkPose.ToolTable);
+        AddPose("Monitor", monitor, WorkPose.Monitor);
         EditorUtility.SetDirty(ctrl);
         return ctrl;
+
+        AnimatorState AddPose(string name, Motion motion, WorkPose? work)
+        {
+            var state = sm.AddState(name);
+            state.motion = motion;
+            var transition = sm.AddAnyStateTransition(state);
+            transition.canTransitionToSelf = false;
+            transition.hasExitTime = false;
+            transition.hasFixedDuration = true;
+            transition.duration = 0.18f;
+            transition.AddCondition(work.HasValue ? AnimatorConditionMode.IfNot : AnimatorConditionMode.If, 0f, "Carrying");
+            if (work is { } pose) transition.AddCondition(AnimatorConditionMode.Equals, (int)pose, "WorkPose");
+            return state;
+        }
     }
 
     // ---------------- helpers ----------------
@@ -503,7 +565,7 @@ public static class PlayerModelSetup
         foreach (var t in model.GetComponentsInChildren<Transform>(true))
         {
             if (t == model.transform) continue;
-            var s = FindDeep(src.transform, t.name == "Mannequin" ? "BaseCorpo" : t.name);
+            var s = FindDeep(src.transform, t.name);
             if (s == null) continue;
             t.localPosition = s.localPosition;
             t.localRotation = s.localRotation;
@@ -515,7 +577,7 @@ public static class PlayerModelSetup
     {
         var r = model.GetComponentInChildren<SkinnedMeshRenderer>();
         var m = new Mesh();
-        r.BakeMesh(m, false); // unscaled bake + position/rotation only gives world units for this FBX's 100x renderer scale
+        r.BakeMesh(m, true);
         var top = m.vertices.Select(v => (r.transform.rotation * v + r.transform.position).y).DefaultIfEmpty(0).Max();
         Object.DestroyImmediate(m);
         return top - model.transform.position.y;
@@ -552,12 +614,6 @@ public static class PlayerModelSetup
         existing.name = name;
         EditorUtility.SetDirty(existing);
         return existing;
-    }
-
-    private static bool Approximately(Matrix4x4 x, Matrix4x4 y)
-    {
-        for (var i = 0; i < 16; i++) if (Mathf.Abs(x[i] - y[i]) > 1e-4f) return false;
-        return true;
     }
 
     private static Transform FindDeep(Transform root, string name)

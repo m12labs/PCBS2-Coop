@@ -1,4 +1,32 @@
-# Player model plan
+# Remote player model
+
+## Current avatar
+
+The remote avatar is Mannequiny from GDQuest's v0.2.0 release. The adapted mesh stands 1.8 m tall and faces +Z in Unity. A 45-bone Humanoid rig drives one skinned mesh with three flat materials. The white accents receive the player's colour in game. The owner confirmed the replacement model in PCBS2. [Character and motion credits](../third-party/Mannequiny.NOTICE.md)
+
+| Visible pose | What drives it |
+| --- | --- |
+| Idle and locomotion | Smoothed ground speed blends the in-place idle, walk, jog and sprint clips. The idle keeps the original body motion and uses relaxed wrists and fingers fitted to Mannequiny. |
+| Carry | Accepted PC ownership selects a palms-up hold. The box appears after the hands reach the hold. Its chest anchor and dimensions are fitted to both animated palms, so the game package and the fallback carton use the same grip. |
+| Workbench | A stationary player working on a shared PC leans forward, looks down, and holds one hand lower while reaching with the other. |
+| Specialist tool table | An accepted delidding, water cooling or case modding session selects a deeper lean with a smaller, lower reach. |
+| Monitor | A visible desktop cursor on the PC the player is working at selects a shallower lean with the head raised toward the screen. |
+
+Carry takes priority over work poses. Work poses blend back to locomotion while the player moves or when their activity ends. The pose selector uses the existing movement and activity data.
+
+**Player-model stage complete.** The owner confirmed the idle hands, carry grip, workbench and tool-table poses, desktop focus and return to walking in PCBS2 co-op. The reopened Windows bundle also passed the full pose sequence in Unity. Both palms stayed beneath the box footprint at every sampled locomotion speed.
+
+Open `unity/PCBS2CoopModels` in Unity 6000.2.6f2. Use **PCBS2Coop → Rebuild Player Model**, then **PCBS2Coop → Build Player Bundle**. The FBX and extracted locomotion clips are tracked, so this rebuild requires only Unity. The bundle is built for Windows x64 and loaded by the plugin alongside its attribution notice. [FBX conversion source](../tools/player-model/export_mannequiny.py)
+
+To regenerate the FBX, download `mannequiny-0.3.0.blend` from the v0.2.0 release. Its SHA-256 is `bfcac841b580555b4969ae22f8cce2c3c71a7bc55af939e16d60f5278c846c9c`. In Blender 4.5.3, run the following from the repository root. Then import the generated FBX as `Assets/ThirdParty/GDQuest/Mannequiny.fbx`.
+
+```powershell
+blender --background --factory-startup --disable-autoexec "path/to/mannequiny-0.3.0.blend" --python-exit-code 1 --python tools/player-model/export_mannequiny.py -- "path/to/Mannequiny.fbx"
+```
+
+The notes below record the original Shyr model and the bundle pipeline's initial development.
+
+## Original implementation notes
 
 Plan written October 25, 2026. Status (October 26, 2026): the Unity side is done (sections 3 to 5; the import results are in 4.4) and the first bundle is built. The plugin side (section 6) is written and builds, but hasn't been checked in game yet. The plan replaces the remote player's capsule with a rigged, animated character from Quaternius (CC0), shipped as a Unity AssetBundle next to the plugin DLL.
 

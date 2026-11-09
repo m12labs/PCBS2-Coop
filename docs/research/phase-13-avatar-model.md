@@ -4,7 +4,7 @@ Reviewed November 8, 2026 for PCBS2 Coop 0.57. The reference image sets the styl
 
 ## Selected replacement
 
-The owner chose **GDQuest Mannequiny v0.2.0**. Use the rigged, animated Blender character from that release and carry its CC BY 4.0 attribution into the repository and mod archive when it is imported. [GDQuest v0.2.0 release](https://github.com/gdquest-demos/godot-3d-mannequin/releases/tag/v0.2.0) · [Blender release asset](https://github.com/gdquest-demos/godot-3d-mannequin/releases/expanded_assets/v0.2.0)
+The owner chose **GDQuest Mannequiny v0.2.0**. The adapted model, rebuild steps and CC BY 4.0 attribution are recorded in the current avatar documentation. [Current avatar](../playermodel.md#current-avatar) · [GDQuest v0.2.0 release](https://github.com/gdquest-demos/godot-3d-mannequin/releases/tag/v0.2.0)
 
 ## Original model option
 
