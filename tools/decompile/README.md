@@ -35,4 +35,25 @@ The C# structural files have placeholder bodies. Read `native/pseudocode/` and `
 
 For a native address, add the RVA in `methods.tsv` to the image base `0x180000000`. Multiple methods can share an implementation. The method index preserves those aliases even when Ghidra uses one primary name.
 
+## Tracing a method
+
+Two read-only Python helpers read the preserved inputs when the ISIL listing is cut short or a call goes through a vtable slot or a delegate. They need Python 3.9 or later and `pip install capstone pefile`; checked with Capstone 5.0.3 and pefile 2024.8.26. Both default to `artiffacts/decompiled/` beside this repository and accept `--decompiled <folder>` for another output. Check first that the input hashes match `manifest.json`: slots, offsets and cells belong to one game build.
+
+```powershell
+python -B tools/decompile/trace_rva.py 0xE4CBA0              # disassemble a method by RVA or VA, call targets named from methods.tsv
+python -B tools/decompile/trace_rva.py 0x1800029D0 0x90      # a helper without an index row needs a byte length
+python -B tools/decompile/metadata_slots.py cell 0x1845EF918 # the method a delegate or listener cell points at
+python -B tools/decompile/metadata_slots.py slots Job@0x2000177 37 IEmail:15  # vtable entries; pin a type by its DiffableCs token
+```
+
+To read a path, start with the type's `metadata/csharp/DiffableCs/` file for fields, offsets, enums and tokens. Then find the method's RVA in `methods.tsv` and read its `native/isil/IsilDump/` listing, using `trace_rva.py` for anything the listing omits.
+- **Virtual call.** A call through `[klass+off]` uses slot `(off - vtable base) / 16`. The base is `0x138` in this build. Decode that slot on the receiver's real type, because overrides replace entries.
+- **Interface call.** An interface call adds the interface's offset in the receiver type to the slot.
+- **Delegates, listeners and lambdas.** These load a metadata cell at the next instruction's address plus the RIP-relative displacement. `metadata_slots.py cell` names the target.
+- **Coroutines.** These run in the nested `<Method>d__N.MoveNext`.
+
+Before hooking a method, search `methods.tsv` for every row with its exact RVA. More than one row means several methods share the native code, so a hook on it would fire for all of them.
+
+## Investigation points
+
 Initial multiplayer investigation points in `Assembly-CSharp` include `SimplePlayerMovement`, `WorkshopController`, `PlayerStatus`, `Inventory`, `ComponentPC`, `PartInstance`, `BenchSlot`, `Slot`, `Cable`, `SaveLoadSystem`, `SaveGame`, and `ComputerSave`. These are navigation points for further investigation; runtime hook suitability and state synchronization behavior still need verification.
