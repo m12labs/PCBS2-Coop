@@ -817,9 +817,9 @@ internal sealed partial class CoopController
 
     private void UpdateRemoteView(bool inWorkshop)
     {
-        var inWorld = Session.IsJoined && Session.World is { Admitted: true } &&
-                      (Session.Role == Role.Client || Session.GuestState == GuestState.InWorld);
-        if (!inWorld) { DestroyView(); return; }
+        if (!Session.IsJoined || Session.World is not { Admitted: true } world ||
+            (Session.Role != Role.Client && Session.GuestState != GuestState.InWorld))
+        { DestroyView(); return; }
 
         if (inWorkshop && Time.realtimeSinceStartup >= _nextSend && LocalPlayer.Find(forRemote: true) is { } local)
         {
@@ -834,12 +834,20 @@ internal sealed partial class CoopController
             _view.SetTarget(_remote);
             _view.SetCarrying(RemoteCarries);
             _view.SetActivity(RemoteActivity);
+            var other = world.Local == ActorSlot.Host ? ActorSlot.Guest : ActorSlot.Host;
+            _view.SetWorkPose(WorkPoseOf(other));
             _view.Update();
         }
         else DestroyView();
     }
 
-    /// <summary>The accepted facts say the other player carries a PC (derived, never read from native carry fields).</summary>
+    private RemoteWorkPose WorkPoseOf(ActorSlot actor)
+    {
+        if (ToolBenches?.Handler.Of(actor) != null) return RemoteWorkPose.ToolTable;
+        if (Activity?.Get(actor) is not { } activity || activity.WorkingPc.IsNone) return RemoteWorkPose.Free;
+        return _remote.Cursor.Visible && _remote.Cursor.Pc == activity.WorkingPc ? RemoteWorkPose.Monitor : RemoteWorkPose.Workbench;
+    }
+
     /// <summary>What the other player is doing at a tool table or with thermal paste, shown under their name (phase 9,
     /// owner decision November 2, 2026), or null.</summary>
     public string RemoteActivity
@@ -855,6 +863,7 @@ internal sealed partial class CoopController
         }
     }
 
+    /// <summary>The accepted facts say the other player carries a PC.</summary>
     public bool RemoteCarries
     {
         get
@@ -879,7 +888,7 @@ internal sealed partial class CoopController
             if (_view == null || cam == null) return "remote view: none";
             var pos = _view.Position;
             var to = pos - cam.transform.position;
-            return $"remote view at {pos}, {to.magnitude:F1} m from camera, {Vector3.Angle(cam.transform.forward, to):F0}° off view centre, body {_view.BodyLook}, ground speed {_view.GroundSpeed:F2} m/s";
+            return $"remote view at {pos}, {to.magnitude:F1} m from camera, {Vector3.Angle(cam.transform.forward, to):F0}° off view centre, body {_view.BodyLook}, ground speed {_view.GroundSpeed:F2} m/s, pose {_view.PoseLook}";
         }
     }
 

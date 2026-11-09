@@ -4,7 +4,7 @@ The initial design questions below were answered by the owner on October 25, 202
 
 ## Owner decisions
 
-**Answered:** Q-01–Q-10 and the avatar timing/reuse preference in Q-11 are recorded in [the plan](../../plan.md#owner-decisions). Players pass through each other. The table preserves the original audit questions for traceability rather than treating them as still pending. A suitable reusable player/NPC model remains unverified; phase 13 audits those assets before selecting one. New UI/product questions discovered by a phase's focused audit go to the owner before dependent implementation.
+**Answered:** Q-01–Q-10 and the avatar timing/reuse preference in Q-11 are recorded in [the plan](../../plan.md#owner-decisions). Players pass through each other. The owner selected and verified [Mannequiny](../playermodel.md) for the remote avatar. The table preserves the original audit questions for traceability. New UI or product questions go to the owner before dependent implementation.
 
 | ID | Decision | Why it affects synchronization |
 | --- | --- | --- |

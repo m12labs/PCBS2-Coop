@@ -10,7 +10,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 - Two players share the supported Free Build workshop over LAN or Steam. In 0.57, the automatic PSU splitter passed live and after cold Continue and guest admission, closing all 90 applicable gameplay checks. One Delidding table case is inapplicable. [Sync tracker](docs/sync-progress.md) · [Gameplay checklist](docs/needs_testing.md)
 - The gameplay pass covers standard building, cabling and power, tuning, save/rejoin, specialist tools, water cooling, customization and the workshop. The remaining Free Build work belongs to phases 13 and 14.
 - Phase 13 tracks remote presentation. Phase 14 tracks release acceptance, including faults, performance and a two-machine pass. Phase 15 is the first Career phase. Career development awaits phase 14 closure.
-- Initial scope decisions were answered by the owner on October 25, 2026 and are recorded below. Character asset availability remains an evidence question for the avatar audit.
+- The player-model stage is complete. The owner confirmed Mannequiny and its activity poses in PCBS2 co-op. [Player model](docs/playermodel.md)
 
 ## Required workflow for every phase
 
@@ -42,15 +42,13 @@ The owner confirmed these choices on October 25, 2026. Use this table as the cur
 | Absent PC carrier | If a guest disconnects while carrying a PC, or a co-op save loads without that PC's carrier, move the same PC and its contents into shared cupboard storage. Do not reserve it for rejoin. Owner answered during the phase 3 audit, October 25, 2026. | 3, 8, 14 |
 | Custom content | Automatically transfer required custom wallpapers, GIFs, themes and imported-PC content within the co-op session; local paths alone are not content identity. | 6, 11–14, 18 |
 | Personal preferences | Volume/mute, graphics/detail, language, keybindings and personal camera/input preferences remain local. Their values must not change shared simulation or event outcomes. | 2, 6–7, 12–14 |
-| Avatar asset preference | Prefer a reusable existing game character/NPC model if the asset audit finds a suitable rig. No such rig is verified yet; do not invent one or treat a controller class as a mesh. Present evidenced reuse/fallback options if none is suitable. | 13 |
+| Avatar asset preference | Prefer a suitable existing game character if the audit finds one. The owner selected GDQuest's Mannequiny after reviewing the fallback options. | 13 |
 
 Any UI placement or flow not settled by these answers remains a phase-start question under the repository's working rules.
 
 ### Existing player/NPC model evidence
 
-The historical workshop hierarchy identifies `Player {CharacterController, Walk, ActivateTablet}` with `Player/Main Camera`; it does not establish a humanoid mesh or animation rig. The current mod creates its own [capsule](src/PCBS2Coop.Plugin/RemotePlayerView.cs). A local main-assembly search found movement/controller and input-demo classes, not a confirmed reusable NPC/humanoid controller or skinned player body. [Walk](artiffacts/decompiled/metadata/csharp/DiffableCs/Assembly-CSharp/Walk.cs) and [SimplePlayerMovement](artiffacts/decompiled/metadata/csharp/DiffableCs/Assembly-CSharp/SimplePlayerMovement.cs) are movement code, not evidence of a character asset. Avatar IDs in reviews/jobs are not proof of a 3D character rig.
-
-The extracted Unity asset directory is still missing. Phase 13 must inspect actual model/prefab/rig/animation assets before deciding whether an existing game character can be reused. This evidence does not justify claiming either that a reusable NPC exists or that none can exist in bundled assets. Reuse is the owner's preference, and creating a new character is not preselected.
+The workshop hierarchy identifies the player as a controller with a first-person camera. The base asset and Addressables audit found a tablet rig and rigged PC parts. The owner selected the rigged Mannequiny fallback from the documented alternatives. [Game asset audit](docs/playermodel.md#1-audit-what-the-game-already-has) · [Model research](docs/research/phase-13-avatar-model.md)
 
 ## Numbered implementation phases
 
@@ -742,7 +740,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 ### 13. Remote player detail, animations, screens and audio parity
 
-**Status: Planned.** The current avatar and activity labels provide a baseline for this phase. [Player model](docs/playermodel.md)
+**Status: In progress.** The player-model stage is complete. The owner confirmed Mannequiny's relaxed idle, fitted carry grip, workbench, tool-table and monitor poses and their return to locomotion in co-op. [Player model](docs/playermodel.md)
 
 **Purpose:** finish the small visible and audible details across supported Free Build actions.
 

@@ -5,6 +5,8 @@ using Object = UnityEngine.Object;
 
 namespace PCBS2Coop;
 
+internal enum RemoteWorkPose { Free, Workbench, ToolTable, Monitor }
+
 /// <summary>
 /// The other player: the animated character from the player model bundle (docs/playermodel.md), or a colored
 /// capsule with a facing marker when the bundle can't load; plus a floating name tag and the carried-PC box.
@@ -19,6 +21,11 @@ internal sealed class RemotePlayerView
 
     private static readonly int SpeedParam = Animator.StringToHash("Speed");
     private static readonly int CarryingParam = Animator.StringToHash("Carrying");
+    private static readonly int WorkPoseParam = Animator.StringToHash("WorkPose");
+    private static readonly int WorkbenchState = Animator.StringToHash("Upper Body.Workbench");
+    private static readonly int CarryState = Animator.StringToHash("Upper Body.Carry");
+    private const int UpperBodyLayer = 1;
+    private const float WorkPoseMaxSpeed = 0.35f;
 
     /// <summary>The floor is searched from this far above the received feet position…</summary>
     private const float FloorProbeUp = 0.5f;
@@ -31,6 +38,8 @@ internal sealed class RemotePlayerView
     private readonly Transform _label;
     private readonly Animator _animator;
     private readonly Transform _carryAnchor;
+    private readonly Vector3? _carryVolume;
+    private readonly bool _supportsWorkPose;
     private Vector3 _targetPos;
     private float _targetYaw;
     private bool _placed;
@@ -38,6 +47,9 @@ internal sealed class RemotePlayerView
     private float _speed;
     private float _floorOffset;
     private bool _floorOffsetSet;
+    private bool _carrying;
+    private RemoteWorkPose _requestedWorkPose;
+    private RemoteWorkPose _workPose;
 
     private string _name = "", _activity;
     private TMP_Text _labelText;
@@ -59,12 +71,17 @@ internal sealed class RemotePlayerView
         _name = _labelText?.text ?? "";
         _animator = animator;
         _carryAnchor = carryAnchor;
+        var volume = carryAnchor != null ? carryAnchor.Find("CarryVolume") : null;
+        if (volume != null) _carryVolume = volume.localScale;
+        _supportsWorkPose = animator != null && animator.layerCount > UpperBodyLayer && animator.HasState(UpperBodyLayer, WorkbenchState);
     }
 
     /// <summary>"model" for the animated character, "capsule" for the fallback.</summary>
     public string BodyLook => _animator != null ? "model" : "capsule";
     /// <summary>Smoothed horizontal speed of the view in m/s (drives the animation).</summary>
     public float GroundSpeed => _speed;
+    public string PoseLook => _carrying ? "Carry" : _workPose.ToString();
+    public void SetWorkPose(RemoteWorkPose pose) => _requestedWorkPose = pose;
 
     public static RemotePlayerView Create(string name)
     {
@@ -170,6 +187,7 @@ internal sealed class RemotePlayerView
         }
         if (_animator != null && _visual.gameObject.activeSelf) Animate(t.position, dt);
         else _lastPos = t.position;
+        UpdateCarryBox();
     }
 
     /// <summary>
@@ -213,6 +231,12 @@ internal sealed class RemotePlayerView
         if (raw > TeleportSpeed) raw = 0;
         _speed = Mathf.Lerp(_speed, raw, 1f - Mathf.Exp(-8f * dt));
         _animator.SetFloat(SpeedParam, _speed);
+        _animator.SetBool(CarryingParam, _carrying);
+        if (_supportsWorkPose)
+        {
+            _workPose = _carrying || _speed >= WorkPoseMaxSpeed ? RemoteWorkPose.Free : _requestedWorkPose;
+            _animator.SetInteger(WorkPoseParam, (int)_workPose);
+        }
     }
 
     public Vector3 Position => _root != null ? _root.transform.position : Vector3.zero;
@@ -231,26 +255,30 @@ internal sealed class RemotePlayerView
     public string CarryLook { get; private set; } = "none";
 
     /// <summary>Show or hide the box. Derived from the accepted facts; it has no colliders and no game components.</summary>
-    public void SetCarrying(bool carrying)
+    public void SetCarrying(bool carrying) => _carrying = carrying;
+
+    private void UpdateCarryBox()
     {
-        if (_animator != null && _visual.gameObject.activeSelf) _animator.SetBool(CarryingParam, carrying);
-        if (!carrying) { if (_box != null) _box.SetActive(false); return; }
+        // The prop appears after the hands have reached it. Older avatar bundles still show it immediately.
+        var ready = _carrying && (!_supportsWorkPose || _visual.gameObject.activeSelf &&
+            !_animator.IsInTransition(UpperBodyLayer) && _animator.GetCurrentAnimatorStateInfo(UpperBodyLayer).fullPathHash == CarryState);
+        if (!ready) { if (_box != null && _box.activeSelf) _box.SetActive(false); return; }
         if (_box == null)
         {
             _box = new GameObject("CarriedPC");
             // The model's CarryAnchor is the box center resting on its hands; the capsule holds it in front.
             _box.transform.SetParent(_carryAnchor != null ? _carryAnchor : _visual, false);
             _box.transform.localPosition = _carryAnchor != null ? Vector3.zero : new Vector3(0, 1.05f, Radius + BoxSize * 0.5f);
-            try { CarryLook = BuildPackage(_box.transform) ? "package" : "cube"; }
+            try { CarryLook = BuildPackage(_box.transform, _carryVolume) ? "package" : "cube"; }
             catch (Exception e) { Plugin.Logger.LogWarning("[view] package meshes unavailable for the carried box: " + e.Message); CarryLook = "cube"; }
-            if (CarryLook == "cube") BuildCube(_box.transform);
+            if (CarryLook == "cube") BuildCube(_box.transform, _carryVolume);
             Plugin.Logger.LogInfo($"[view] carried-PC box ready ({CarryLook}).");
         }
-        _box.SetActive(true);
+        if (!_box.activeSelf) _box.SetActive(true);
     }
 
     /// <summary>Copy the visible meshes of the workshop's cardboard package prefab (no Package component, no colliders).</summary>
-    private static bool BuildPackage(Transform parent)
+    private static bool BuildPackage(Transform parent, Vector3? volume)
     {
         var prefab = Object.FindObjectOfType<WorkshopController>()?.m_packagePrefab;
         if (prefab == null) return false;
@@ -277,10 +305,13 @@ internal sealed class RemotePlayerView
                 if (!any) { bounds = new Bounds(p, Vector3.zero); any = true; } else bounds.Encapsulate(p);
             }
         }
-        if (!any || bounds.size.magnitude < 1e-4f) { Object.Destroy(holder.gameObject); return false; }
-        var scale = BoxSize / Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z));
-        holder.localScale = Vector3.one * scale;
-        holder.localPosition = -bounds.center * scale;
+        var size = bounds.size;
+        if (!any || Mathf.Min(size.x, Mathf.Min(size.y, size.z)) < 1e-4f) { Object.Destroy(holder.gameObject); return false; }
+        var scale = volume is { } fit
+            ? new Vector3(fit.x / size.x, fit.y / size.y, fit.z / size.z)
+            : Vector3.one * (BoxSize / Mathf.Max(size.x, size.y, size.z));
+        holder.localScale = scale;
+        holder.localPosition = -Vector3.Scale(bounds.center, scale);
         return true;
     }
 
@@ -297,13 +328,13 @@ internal sealed class RemotePlayerView
     }
 
     /// <summary>Fallback: a case-shaped cube with a generated cardboard texture (brown fibres and a packing-tape band).</summary>
-    private static void BuildCube(Transform parent)
+    private static void BuildCube(Transform parent, Vector3? volume)
     {
         var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
         cube.name = "Cardboard";
         Object.Destroy(cube.GetComponent<Collider>());
         cube.transform.SetParent(parent, false);
-        cube.transform.localScale = new Vector3(BoxSize * 0.42f, BoxSize * 0.8f, BoxSize);
+        cube.transform.localScale = volume ?? new Vector3(BoxSize * 0.42f, BoxSize * 0.8f, BoxSize);
         var m = MakeMaterial();
         foreach (var tex in new[] { "_MaskMap", "_NormalMap", "_EmissiveColorMap" }) if (m.HasProperty(tex)) m.SetTexture(tex, null);
         var cardboard = CardboardTexture();
