@@ -16,6 +16,8 @@ internal sealed partial class CoopController
     private float _dayAt, _dayGiveUp;
     private bool _daySaveStarted;
     public NativeCareer Career { get; private set; }
+    /// <summary>Phase 16b: shared carts, checkout and part sales.</summary>
+    public NativeCommerce Commerce { get; private set; }
 
     /// <summary>Host check of the owned item an install names (a method group: the plugin builds without nullable attributes).</summary>
     private string CheckCareerItem(ulong item, IEnumerable<ulong> inUse) => NativeCareer.InCareer ? Career?.Handler.CheckUse(item, inUse) : null;

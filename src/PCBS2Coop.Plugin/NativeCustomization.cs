@@ -475,14 +475,20 @@ internal sealed class NativeCustomization : ICustomizationNative
     [HarmonyPatch(typeof(CableApp), nameof(CableApp.OnBuy))]
     internal static class BuyHook
     {
-        private static bool Prefix(out Purchase __state)
+        private static bool Prefix(CableApp __instance, out Purchase __state)
         {
             __state = null;
             if (Bypass) return true;
             // The buyer's game shares the purchase; the mirrored click must not buy a second set here.
             if (NativeDesktopInput.Injecting) { Plugin.Logger.LogInfo("[cables] the other player's Buy click: their game shares the purchase."); return false; }
-            // Career (phase 15c): only the host buys for now; its cash and items reach the guest as a career update.
-            if (!CareerGuards.Allow("buy cables")) return false;
+            // Career (phase 16b): the host's game buys; the guest's Buy is sent to it, and the host's cash and items
+            // reach the guest as a career update.
+            if (NativeCareer.InCareer && !NativeProjection.Active && CoopSaves.Current != CoopSaves.Mode.Host)
+            {
+                try { NativeCommerce.Current?.RequestCableOrder(__instance); }
+                catch (Exception e) { Plugin.Logger.LogError("[cables] buy hook failed: " + e); }
+                return false;
+            }
             try { __state = Current?.BeforeBuy(); }
             catch (Exception e) { Plugin.Logger.LogError("[cables] buy hook failed: " + e); }
             return true;

@@ -150,6 +150,8 @@ public static class CommandTypes
     public const ushort Workshop = 17;
     /// <summary>Phase 15c: the host's shared career numbers, owned items and ledger (<see cref="CareerWorld"/>).</summary>
     public const ushort Career = 18;
+    /// <summary>Phase 16b: shared shop carts, job baskets, checkout placed by the host and part sales (<see cref="CommerceWorld"/>).</summary>
+    public const ushort Commerce = 19;
 }
 
 /// <summary>One actor's pointer on a shared PC monitor. Coordinates are fractions of that PC's desktop

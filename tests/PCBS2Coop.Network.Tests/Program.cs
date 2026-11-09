@@ -31,6 +31,7 @@ SyncTests.Run(t);
 PersistenceTests.Run(t);
 CampaignTests.Run(t);
 CareerTests.Run(t);
+CommerceTests.Run(t);
 AcceptanceTests.Run(t);
 LoopbackTests.Run(t);
 return t.Finish();

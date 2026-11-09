@@ -203,6 +203,47 @@ internal sealed class NativeCareer : ICareerNative
     /// <summary>The native item bound to <paramref name="id"/> on this game, or null.</summary>
     internal PartInstance Find(ulong id) => _natives.TryGetValue(id, out var p) && p != null ? p : null;
 
+    /// <summary>The shared ID for acting on <paramref name="p"/> (a sale): its own, else that of a bound item equal to
+    /// it (the inventory shows equal items as one row), or 0.</summary>
+    internal ulong IdForUse(PartInstance p)
+    {
+        if (p == null || !Handler.Bound) return 0;
+        if (_ids.TryGetValue(p.Pointer, out var id)) return id;
+        var key = KeyOf(p);
+        foreach (var (part, _) in Natives())
+            if (_ids.TryGetValue(part.Pointer, out var other) && KeyOf(part) == key) return other;
+        return 0;
+    }
+
+    /// <summary>The shared IDs of every broken part in the main inventory (what the game's Sell All Broken sells).</summary>
+    internal List<ulong> BrokenItems() =>
+        Natives().Where(n => n.List == ItemList.Main && n.Part.GetCondition() == PartCondition.BROKEN && _ids.ContainsKey(n.Part.Pointer))
+            .Select(n => _ids[n.Part.Pointer]).ToList();
+
+    /// <summary>Host: sell these owned items the way the game's Sell does (decompile, <c>ItemDisplay.SellItem</c>):
+    /// their resale value as a part sale, then the exact item out. The next update shares both.</summary>
+    internal void SellOwned(IReadOnlyList<ulong> ids)
+    {
+        var s = Status ?? throw new InvalidDataException("The career isn't loaded.");
+        var sold = 0;
+        foreach (var id in ids)
+        {
+            var part = Find(id);
+            if (part == null) { Plugin.Logger.LogWarning($"[career] item {id} to sell is gone."); continue; }
+            var list = Natives().FirstOrDefault(n => n.Part.Pointer == part.Pointer);
+            if (list.Part == null) continue;
+            var value = part.GetResaleValue();
+            NativeProjection.Run(() => s.AddCash(value, eTransactionCategory.PART_SALE, null, false));
+            Remove(s, part, list.List);
+            sold++;
+        }
+        if (sold > 0) NativeProjection.Run(s.UpdateInventory);
+        Plugin.Logger.LogInfo($"[career] sold {sold} item(s) for the client.");
+    }
+
+    /// <summary>Guest: compare the owned items with the model again soon (a refused sale).</summary>
+    internal void Recheck() => _dirty = true;
+
     /// <summary>An accepted change used item <paramref name="id"/> up (a case made into a PC): take it out of this
     /// game's inventory. The host's next update removes it from the model.</summary>
     internal void Consume(ulong id, string why)
@@ -360,11 +401,12 @@ internal sealed class NativeCareer : ICareerNative
             if (update.IsEmpty) return;
             if (Handler.CheckUpdate(update) is { } bad) throw new InvalidDataException(bad);
             var host = _coop.Activity.Get(ActorSlot.Host) ?? throw new InvalidDataException("the host isn't in the shared world");
+            // Before submitting: the host's own commands are answered inside Submit, which clears this again.
+            _pendingSince = Time.realtimeSinceStartup;
             foreach (var payload in CareerWorld.Submissions(host.Epoch, update))
-                if (!_world.Submit(CommandTypes.Career, payload, out _)) throw new InvalidDataException("not connected to the shared world");
+                if (!_world.Submit(CommandTypes.Career, payload, out _)) { _pendingSince = -1; throw new InvalidDataException("not connected to the shared world"); }
             foreach (var id in removed) Unbind(id);
             foreach (var (part, id) in rebind) { if (_ids.TryGetValue(part.Pointer, out var old)) Unbind(old); Bind(part, id); }
-            _pendingSince = Time.realtimeSinceStartup;
             Plugin.Logger.LogInfo($"[career] shared: {(update.Facts == null ? "" : facts.Difference(Handler.Facts) + "; ")}{removed.Count} item(s) out, {added.Count} in, {ledger.Count} ledger entr{(ledger.Count == 1 ? "y" : "ies")}.");
         }
         catch (Exception e) { _coop.ProjectionFailed("The host's career change could not be shared", e); }

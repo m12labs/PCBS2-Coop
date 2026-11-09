@@ -5,7 +5,8 @@ namespace PCBS2Coop;
 
 /// <summary>
 /// Career actions phases 16–17 will share (owner decision, November 8, 2026): until then the host does them and the
-/// guest takes the results; the guest's own are refused with a notice. A click the other player's desktop mirrors here
+/// guest takes the results; the guest's own are refused with a notice. Shop checkout and part sales are shared since
+/// 0.60 (<see cref="CommerceHooks"/>). A click the other player's desktop mirrors here
 /// (<see cref="NativeDesktopInput.Injecting"/>) never runs the action on this game: the host's result arrives as a
 /// career update, and a guest's mirrored action stays refused on the host too. Native addresses checked distinct
 /// (decompile RVAs); startup still reports any folded pair under <c>[hooks]</c>.
@@ -40,12 +41,6 @@ internal static class CareerGuards
         coop.Notice("Wait until both players finish what they're doing, then end the day.");
         Plugin.Logger.LogInfo("[career] End Day waits: an edit or table session is still running.");
         return false;
-    }
-
-    [HarmonyPatch(typeof(Checkout), nameof(Checkout.OnBuy))]
-    internal static class ShopCheckout
-    {
-        private static bool Prefix(ref bool __result) { if (Allow("buy from the shop")) return true; __result = false; return false; }
     }
 
     [HarmonyPatch(typeof(PCBayApp), nameof(PCBayApp.OnBuyAction))]
@@ -111,7 +106,7 @@ internal static class CareerGuards
 
     internal static void Apply(Harmony h)
     {
-        foreach (var t in new[] { typeof(ShopCheckout), typeof(PcBayBuy), typeof(ShareBuy), typeof(JobAccept), typeof(JobCollect), typeof(MultiJobCollect),
+        foreach (var t in new[] { typeof(PcBayBuy), typeof(ShareBuy), typeof(JobAccept), typeof(JobCollect), typeof(MultiJobCollect),
                      typeof(JobQuit), typeof(MultiJobQuit), typeof(JobReject), typeof(MultiJobReject), typeof(EndDay) })
             h.PatchAll(t);
     }

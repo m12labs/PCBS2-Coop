@@ -60,6 +60,10 @@ The owner confirmed these choices on October 25, 2026. Use this table as the cur
 | Career actions before phases 16 and 17 | The host may shop, take and collect jobs and end the day; the guest receives the results (cash, parts, XP, ledger). The guest is refused those actions with a notice until their phase shares them. Building and tools work for both. | 15c, 16, 17 |
 | Guest catch-up after End Day | Until phase 17 shares the day, the host saves once its day has finished and the guest then reloads the host world (the host keeps playing). Job lists may look stale on the guest during a day. | 15c, 17 |
 | Career mismatches | The host wins quietly: the guest takes the host values and logs the difference. Owned parts that cannot be matched show the out-of-sync marker so `/sync` can repair. | 15c |
+| Phase 16 checkout | The host's game places every order. The guest's Buy sends the cart lines and total it showed; the host checks price, stock and cash, runs the game's checkout and shares the result, and the guest's screen then confirms. | 16 |
+| Phase 16 packages | Packages are fully shared in 16c (fill, carry, place, open, same contents and job link), which removes the hosting refusal. A package whose carrier leaves goes back to a workshop bench. | 16 |
+| Phase 16 shop sales | Either player may put a PC up for sale and set its price; both games show the same price. Sales settle at the host's day end. | 16 |
+| Phase 16 delivery | One version per step: 0.60 carts, checkout, part selling and the Cable app (16b); 0.61 deliveries and packages (16c); 0.62 PC Bay and shop sales (16d). Stop after each for review. Code and model tests only, like phase 15. | 16 |
 | Phase 15 testing | Code and model tests only. Runtime-only questions are recorded as checks for the gameplay sweep after phase 17. | 15 |
 
 Any UI placement or flow not settled by these answers remains a phase-start question under the repository's working rules.
@@ -815,8 +819,8 @@ Implement the statically evidenced Career sync across 15–17 and run the build 
 
 | Task | Work and completion condition |
 | --- | --- |
-| **16a. Focused economy audit** | **Static pass recorded.** [Phase 16 audit](docs/audit/phase-16.md) covers checkout, delivery and PC Bay entry points. Resolve remaining retail, return and package-open callbacks before their adapters. |
-| **16b. Shared cart, quote and checkout** | CP-010, 017, 043–050. Bind each shop's cart, quote and delivery selection to the host order pipeline. Settle payment, stock, cart and goods together, including immediate and cable purchases. Complete when both actors' successful purchases, stale quotes, low funds and duplicate replays conserve cash and inventory. |
+| **16a. Focused economy audit** | **Static pass recorded; callbacks traced November 8, 2026.** [Phase 16 audit](docs/audit/phase-16.md) covers checkout, delivery and PC Bay entry points, with the [callback trace](docs/audit/phase-16.md#callback-trace-16a-follow-up). Package open/claim and refunds are traced with 16c. |
+| **16b. Shared cart, quote and checkout** | **Coded in 0.60, not run in game.** [0.60 implementation](docs/audit/phase-16.md#060-implementation-shared-carts-checkout-and-part-sales-16b). CP-010, 017, 043–050. Bind each shop's cart, quote and delivery selection to the host order pipeline. Settle payment, stock, cart and goods together, including immediate and cable purchases. Complete when both actors' successful purchases, stale quotes, low funds and duplicate replays conserve cash and inventory. |
 | **16c. Order and package lifecycle** | CP-009, 011, 049–051. Use the day identity from 15c and integrate with the day transaction in 17d. Implement transit, delivery, package pickup/place/open, recoverable custody and native refunds where reachable. Complete after both players can claim the same order exactly once and a carried package survives disconnect, cold Continue and rejoin without losing contents. |
 | **16d. PC Bay and retail** | CP-015–017, 052–054, 068. Identify offers and listings. Bind purchases and accepted sale results to funds, PC ownership, price/valuation, ledger and review facts. Complete after race, expiry, busy-PC, recovery and both actor tests pass. |
 
