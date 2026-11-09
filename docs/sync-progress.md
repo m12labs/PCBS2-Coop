@@ -1,6 +1,6 @@
 # PCBS2 Co-op synchronization progress
 
-**November 8, 2026 — Free Build gameplay acceptance complete, version 0.57.** All 90 applicable gameplay checks passed. The native automatic PSU splitter and all six GPU leads survived cold Continue and guest admission. The 21 owner save files remained byte-identical. Release built with zero warnings or errors and all 722 automated checks passed. Phase 13 presentation and phase 14 release acceptance precede phase 15 Career. [Gameplay checklist](needs_testing.md) · [Run record](audit/acceptance-2026-11-04.md#automatic-psu-splitter-during-gpu-assembly) · [Roadmap](../plan.md)
+**November 8, 2026 — Free Build gameplay acceptance complete, version 0.57.** All 90 applicable gameplay checks passed. The native automatic PSU splitter and all six GPU leads survived cold Continue and guest admission. The 21 owner save files remained byte-identical. Release built with zero warnings or errors and all 722 automated checks passed. Phase 13 presentation remains open. The owner skipped phase 14 release acceptance for now and moved on to the phase 15 Career audit. [Gameplay checklist](needs_testing.md) · [Run record](audit/acceptance-2026-11-04.md#automatic-psu-splitter-during-gpu-assembly) · [Roadmap](../plan.md)
 
 **November 5, 2026 — overlapping cable edits, version 0.29.** `6f05b8c` waits for the local cable replay before checking the host's new assembly profile. The two-game repeat overlapped CPU 8-pin and SATA data unplug and reconnect with clean native checks and no repair. Front-panel and SATA power also matched. **719/719** automated checks passed. [Run record](audit/acceptance-2026-11-04.md#overlapping-cable-edits-on-separate-pcs-028--029)
 
@@ -307,7 +307,7 @@ Detailed evidence: [SW-001–053](audit/screens-software-and-simulation.md).
 
 ## Career, economy, inventory and persistence
 
-Detailed evidence: [CP-001–070](audit/career-economy-and-persistence.md).
+The focused static audits are recorded for phases [15](audit/phase-15.md), [16](audit/phase-16.md), [17](audit/phase-17.md) and [18](audit/phase-18.md). The owner confirmed standard Career first, separate host rows for the two modes and shared Career transactions. The implementation plan reuses `WorldSync` and adds Career-specific native action adapters. The Career gameplay cases are pending. [Roadmap](../plan.md#career-implementation-and-testing-order) · [Career checklist](career-testing.md) · [CP-001–070](audit/career-economy-and-persistence.md)
 
 | Feature | Not synced | Partially synced | Synced | Comments |
 | --- | :---: | :---: | :---: | --- |

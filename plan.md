@@ -1,6 +1,6 @@
 # PCBS2 Co-op implementation plan
 
-Initial roadmap: October 25, 2026. **Free Build comes first; career starts after the Free Build acceptance phase.** This document orders future implementation. Creating the plan does not start a phase.
+Initial roadmap: October 25, 2026. Free Build gameplay acceptance is complete for the supported scope. Career planning starts with phase 15.
 
 Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md). Source evidence and unresolved behavior belong in [docs/audit](docs/audit/README.md). This plan owns phase order, accepted scope decisions, focused work plans and phase completion records.
 
@@ -9,7 +9,7 @@ Implementation status belongs in [docs/sync-progress.md](docs/sync-progress.md).
 - Broad static audit completed; asset/runtime verification and individual native-path gaps remain recorded in the audit.
 - Two players share the supported Free Build workshop over LAN or Steam. In 0.57, the automatic PSU splitter passed live and after cold Continue and guest admission, closing all 90 applicable gameplay checks. One Delidding table case is inapplicable. [Sync tracker](docs/sync-progress.md) · [Gameplay checklist](docs/needs_testing.md)
 - The gameplay pass covers standard building, cabling and power, tuning, save/rejoin, specialist tools, water cooling, customization and the workshop. The remaining Free Build work belongs to phases 13 and 14.
-- Phase 13 tracks remote presentation. Phase 14 tracks release acceptance, including faults, performance and a two-machine pass. Phase 15 is the first Career phase. Career development awaits phase 14 closure.
+- Phase 13 tracks remote presentation and remains open. The owner skipped phase 14 for now and moved Career planning ahead of Free Build release acceptance.
 - The player-model stage is complete. The owner confirmed Mannequiny and its activity poses in PCBS2 co-op. [Player model](docs/playermodel.md)
 
 ## Required workflow for every phase
@@ -43,6 +43,20 @@ The owner confirmed these choices on October 25, 2026. Use this table as the cur
 | Custom content | Automatically transfer required custom wallpapers, GIFs, themes and imported-PC content within the co-op session; local paths alone are not content identity. | 6, 11–14, 18 |
 | Personal preferences | Volume/mute, graphics/detail, language, keybindings and personal camera/input preferences remain local. Their values must not change shared simulation or event outcomes. | 2, 6–7, 12–14 |
 | Avatar asset preference | Prefer a suitable existing game character if the audit finds one. The owner selected GDQuest's Mannequiny after reviewing the fallback options. | 13 |
+
+### Career decisions confirmed November 8, 2026
+
+| Decision | Accepted behavior | Affected phases |
+| --- | --- | --- |
+| First supported Career | Fresh standard Career in the native starting workshop, with Continue and exact Load for its co-op saves. Include its native shop renovation as a host-controlled transition. Scope New Game Plus, solo-save imports and other workshops separately. | 15, 17–18 |
+| Co-op menu | Host Career and Host Free Build rows each have New Game, Continue and Load Game. One Join a Friend serves either mode. Both rows fit alongside Options and Back. | 15 |
+| Shared transactions | Either player can accept jobs, collect rewards and buy or sell from the shared wallet after host validation. Each shop's cart is shared and checkout validates the cart and quote shown to the buyer. | 16–17 |
+| Day and departure | Only the host advances the day and accepted actions must settle first. A package or physical note whose carrier leaves goes to shared staging or storage with the same contents and job link. | 16–18 |
+| Onboarding and inbox | Either player can complete required onboarding steps. Prompts and input stay local and the host controls skips and travel. Saved inbox flags, tags and notes are shared. Selection, scroll and focus stay local. | 17 |
+| Account effects | Steam achievements and external uploads belong to the account performing the action. Replication never writes to the other player's account. | 17–18 |
+| Menu availability during development | Host Career is visible in the co-op menu while phases 15–17 are built, with no extra toggle or label. The mod is unreleased and only the owner uses it. | 15 |
+| Career names | New Game uses the same name box as Free Build, defaulting to "Co-op Career N", with a per-career autosave. | 15 |
+| Phase 15 testing | Code and model tests only. Runtime-only questions are recorded as checks for the gameplay sweep after phase 17. | 15 |
 
 Any UI placement or flow not settled by these answers remains a phase-start question under the repository's working rules.
 
@@ -752,19 +766,23 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 ### 14. Free Build completeness, faults and performance acceptance
 
-**Status: Planned.** The gameplay checklist and the 39-PC run are inputs to phase-wide validation. Release acceptance still includes the applicable audit dispositions, fault and performance checks, and a two-machine pass. [Gameplay evidence](docs/needs_testing.md)
+**Status: Skipped for now by owner decision, November 8, 2026.** Phase 15 may proceed. The gameplay checklist and the 39-PC run remain inputs when this phase resumes. The release audit, fault and performance checks, and two-machine pass remain open. [Gameplay evidence](docs/needs_testing.md)
 
-**Purpose:** finish and prove Free Build before starting career.
+**Purpose:** finish Free Build release validation.
 
 **Scope:** reconcile every Free Build-relevant audit entry against implemented/tested/partial/intentionally-local/deferred disposition; exercise independent and same-PC work, late join, save/restart, content mismatches, failed loads, packet faults and disconnect at commit. Measure busy-world bandwidth/frame time/snapshot size and investigate observed bottlenecks. Complete the relevant V-01–V-19 cases with repeatable evidence, including a two-machine pass.
 
-**Exit:** every required Free Build feature meets its acceptance cases and performance expectations; no unresolved integrity/restore blocker remains; approved deferrals/local choices are explicit; tracker and evidence agree. Required unrun native/two-machine cases keep the phase in validation. Only then move to career.
+**Exit:** every required Free Build feature meets its acceptance cases and performance expectations; no unresolved integrity/restore blocker remains; approved deferrals/local choices are explicit; tracker and evidence agree. Required unrun native/two-machine cases keep the phase in validation when it resumes.
 
 **Audit starting points:** all Free Build dispositions, source/asset coverage gaps and the verification backlog.
 
+## Career implementation and testing order
+
+Implement the statically evidenced Career sync across 15–17 and run the build and model checks before the first end-to-end gameplay sweep. Host Career is visible while it is built (owner decision, November 8, 2026). During that sweep, use isolated saves and compare both games to identify missing native paths, reachability, state projection and visible results. Fix and rerun the affected cases before marking them passed. Use a narrowly scoped probe earlier only if a missing native boundary prevents safe implementation, and record what the probe establishes. [Career checklist](docs/career-testing.md)
+
 ### 15. Shared career model, progression and mode initialization
 
-**Status: Planned after Free Build release acceptance.**
+**Status: Focused audit and planning.**
 
 **Purpose:** add career to the proven Free Build synchronization foundation.
 
@@ -773,6 +791,13 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 **Exit:** career starts/loads with one agreed logical model according to the chosen personal/shared boundaries; award/spend mutations are attributable and replay-safe; progression/unlocks and saved references agree across restore/rejoin.
 
 **Audit starting points:** CP mode/finance/progression/inventory factors; SS ownership/schema; Free Build persistence contracts.
+
+| Task | Work and completion condition |
+| --- | --- |
+| **15a. Focused audit and scope** | **Static pass recorded.** Mode/load and save paths, safe sync reuse, and owner decisions are in the [phase 15 audit](docs/audit/phase-15.md). Asset, first-load and layout checks remain for runtime. |
+| **15b. Mode-aware host, join and saves** | CP-001, 024–026, 028, 055–059. Carry mode, campaign identity and native scene through `CoopController`, `CoopRunner`, `CoopSaves` and admission. Add the host-only new Career path and exact paired restore. Model tests cover legacy Free Build, mismatches, stale loads and backup isolation. Complete after New, Continue, Load, `/sync` and join/rejoin pass for both modes. |
+| **15c. Shared Career facts and inventory** | CP-007–009, 012–014, 030–042. Register Career state and typed mutations with `WorldSync`. Bind the wallet, ledger, day, progression and owned items to native state. Use item IDs and reservations in reused building and tool paths. Complete when duplicate items, exhausted stock, rejoin and cold restore preserve exact identity, condition, provenance and balances. Phase 16 consumes this model for trades. |
+| **15d. Career and Free Build menu rows** | CP-001, 026, 059. Wire two rows into the mode-aware host flow from 15b. Keep independent save lists and a common Join and Options. Fit the list and side card at supported sizes. Complete after two-mode hover/focus, controller/keyboard, no-save/has-save, cancel and resize checks pass. |
 
 ### 16. Career shopping, deliveries, markets and PC sales
 
@@ -784,6 +809,13 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** CP commerce/delivery/market/retail/ledger factors; PW package/PC location; SS cross-domain settlement.
 
+| Task | Work and completion condition |
+| --- | --- |
+| **16a. Focused economy audit** | **Static pass recorded.** [Phase 16 audit](docs/audit/phase-16.md) covers checkout, delivery and PC Bay entry points. Resolve remaining retail, return and package-open callbacks before their adapters. |
+| **16b. Shared cart, quote and checkout** | CP-010, 017, 043–050. Bind each shop's cart, quote and delivery selection to the host order pipeline. Settle payment, stock, cart and goods together, including immediate and cable purchases. Complete when both actors' successful purchases, stale quotes, low funds and duplicate replays conserve cash and inventory. |
+| **16c. Order and package lifecycle** | CP-009, 011, 049–051. Use the day identity from 15c and integrate with the day transaction in 17d. Implement transit, delivery, package pickup/place/open, recoverable custody and native refunds where reachable. Complete after both players can claim the same order exactly once and a carried package survives disconnect, cold Continue and rejoin without losing contents. |
+| **16d. PC Bay and retail** | CP-015–017, 052–054, 068. Identify offers and listings. Bind purchases and accepted sale results to funds, PC ownership, price/valuation, ledger and review facts. Complete after race, expiry, busy-PC, recovery and both actor tests pass. |
+
 ### 17. Career jobs, objectives, day flow and communications
 
 **Purpose:** complete the actual career gameplay loop.
@@ -793,6 +825,14 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 **Exit:** the supported full job/day loop converges on one outcome per transaction and progression event; day transitions coordinate deadlines/bills/deliveries/generation; UI follows the correct player/shared model; save/rejoin preserves the same career and operation state.
 
 **Audit starting points:** CP job/objective/day/email/tutorial/achievement factors, including the objective-class inventory; earlier Free Build simulation/build/result events.
+
+| Task | Work and completion condition |
+| --- | --- |
+| **17a. Focused jobs and day audit** | **Static pass recorded.** [Phase 17 audit](docs/audit/phase-17.md) ties job, day and cleaning paths to the existing pipeline. Resolve the shipped objective bindings and native coroutine/input hooks. |
+| **17b. Job lifecycle and settlement** | CP-002, 004–006, 039–041, 063–067. Bind generated job and multi-job identity, customer PC/package/note references, job actions, results and rewards. Complete after both actors can accept and collect, one reward wins a race, and day/rejoin preserves job state. |
+| **17c. Objectives and cleaning** | CP-003–005, 062, HW-017. Wire shipped objective families to accepted PC, tool, spend and simulation results. Share cleaned per-part filth, with dust accumulation in 17d. Complete when required, optional, hidden, multi-job, failure and deadline cases show the same outcomes on both games. |
+| **17d. Day transition and shop renovation** | CP-012, 018, 028, 033–036, 042, 065–067. Gate host End Day on settled work and project one accepted day, bills, debt/charges, deliveries, dust, deadlines, offers, jobs and emails. Include the native renovation's charge, save and generation change in the transition. Complete after a day-edge race, interrupted day restore and both peers' arrival in the renovated workshop pass. |
+| **17e. Inbox, notes, onboarding and account boundaries** | CP-019–021, 029, 061, 070. Project saved flags/tags/notes and physical references while keeping UI selection local. Wire shared onboarding from eligible actors and guard personal Steam/account effects. Include first-day onboarding, native skip where supported and reconnect in acceptance. |
 
 ### 18. Career recovery and full co-op acceptance
 
@@ -804,11 +844,16 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 **Audit starting points:** all domain reports, phase-focused audits and the full verification backlog.
 
+| Task | Work and completion condition |
+| --- | --- |
+| **18a. Fault and save recovery sweep** | CP-024–028, 055–059, SS generation/order/save factors, V-14–18. Run the [phase 18 audit](docs/audit/phase-18.md) matrix. Verify duplicate/stale requests, disconnect at irreversible boundaries, bad pairs, cold resume and old Free Build pair compatibility. |
+| **18b. Full two-game loop and gap fixes** | Run the [Career checklist](docs/career-testing.md) on isolated saves with both actor roles, LAN and Steam, two machines, contention, busy days, Free Build regressions and performance measurements. File and retest observed gaps. Close Career only when the supported loop passes and each remaining factor has an evidence-backed disposition. |
+
 ## Coverage rule for focused subplans
 
 The 318 audit entries are a source index for requirements, not 318 equally weighted implementation tasks. At the start of each phase, select exact factor IDs from the relevant reports and map each to a focused task or an explicit dependency/disposition. Source-index rows marked automatic-only still require investigation when their class/mutation path enters scope. Derived visuals and personal settings need explicit dispositions; they must not disappear between the broad audit and implementation.
 
-Free Build acceptance checks all Free Build-relevant entries before phase 15. Final career acceptance checks the complete supported scope. Remaining evidence gaps are logged with an owner phase and cannot be presented as runtime-verified behavior.
+Phase 14 retains the remaining Free Build release checks. Final Career acceptance checks the complete supported Career scope, including reuse of the Free Build mechanics. Record remaining evidence gaps against their owning phase and distinguish static evidence from runtime verification.
 
 ## Focused task format — populate after that phase's audit
 
