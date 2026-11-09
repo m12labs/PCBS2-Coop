@@ -97,9 +97,51 @@ internal static class CommerceHooks
         }
     }
 
+    /// <summary>Phase 16d: PC Bay. The guest's Buy goes to the host, whose game runs the purchase.</summary>
+    [HarmonyPatch(typeof(PCBayApp), nameof(PCBayApp.OnBuyAction))]
+    internal static class PcBayBuy
+    {
+        private static bool Prefix(Offer item)
+        {
+            if (!NativeCareer.InCareer || NativeProjection.Active) return true;
+            if (NativeDesktopInput.Injecting) { Plugin.Logger.LogInfo("[shop] the other player's mirrored PC Bay click: their game buys."); return false; }
+            if (CoopSaves.Current == CoopSaves.Mode.Host) return true;
+            try { NativeCommerce.Current?.RequestOffer(item); }
+            catch (System.Exception e) { Plugin.Logger.LogError("[shop] PC Bay hook failed: " + e); }
+            return false;
+        }
+    }
+
+    /// <summary>Phase 16d: shares. The guest's purchase goes to the host, whose game buys them.</summary>
+    [HarmonyPatch(typeof(CareerStatus), nameof(CareerStatus.BuyShare))]
+    internal static class ShareBuy
+    {
+        private static bool Prefix(int offerNumber, int share, int cost, ref bool __result)
+        {
+            if (!Guest) return true;
+            try { NativeCommerce.Current?.RequestShares(offerNumber, share, cost); }
+            catch (System.Exception e) { Plugin.Logger.LogError("[shop] share hook failed: " + e); }
+            __result = false;
+            return false;
+        }
+    }
+
+    /// <summary>Phase 16d: a shop-front PC's sale price (set when the price box closes). Either player; the other game shows it.</summary>
+    [HarmonyPatch(typeof(BenchSlot), nameof(BenchSlot.UpdateSalePrice))]
+    internal static class SalePrice
+    {
+        private static void Postfix(BenchSlot __instance, string price)
+        {
+            if (!NativeCareer.InCareer || NativeProjection.Active) return;
+            try { NativeCommerce.Current?.ShareSalePrice(__instance, price); }
+            catch (System.Exception e) { Plugin.Logger.LogError("[shop] sale price hook failed: " + e); }
+        }
+    }
+
     internal static void Apply(Harmony h)
     {
-        foreach (var t in new[] { typeof(ShopCheckout), typeof(CheckoutCase), typeof(SellOne), typeof(SellBroken), typeof(CollectDeliveries) })
+        foreach (var t in new[] { typeof(ShopCheckout), typeof(CheckoutCase), typeof(SellOne), typeof(SellBroken), typeof(CollectDeliveries),
+                     typeof(PcBayBuy), typeof(ShareBuy), typeof(SalePrice) })
             h.PatchAll(t);
     }
 }

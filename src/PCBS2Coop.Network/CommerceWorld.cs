@@ -47,6 +47,14 @@ public interface ICommerceNative
     void Sold(in MutationContext ctx, IReadOnlyList<ulong> items);
     /// <summary>Phase 16c: the delivery box is collected. The host's game collects it; its career update follows.</summary>
     void Collected(in MutationContext ctx);
+    /// <summary>Phase 16d: a PC Bay offer is bought. The host's game buys it (a PC it makes is shared as it appears).</summary>
+    void BoughtOffer(in MutationContext ctx, string offer, int cost);
+    /// <summary>Phase 16d: shares are bought. The host's game buys them.</summary>
+    void BoughtShares(in MutationContext ctx, int offer, int shares, int cost);
+    /// <summary>Phase 16d: PC Bay offers are gone (bought): every game takes them off its list.</summary>
+    void OffersGone(in MutationContext ctx, IReadOnlyList<string> offers);
+    /// <summary>Phase 16d: a PC's shop-front sale price changed. The game that set it already shows it.</summary>
+    void SalePrice(in MutationContext ctx, NetObjectId pc, int price);
 }
 
 /// <summary>
@@ -65,7 +73,7 @@ public interface ICommerceNative
 /// </summary>
 public sealed class CommerceWorld : ICommandHandler, IWorldState
 {
-    private enum Step : byte { SetCart = 1, SetBaskets = 2, Order = 3, Sell = 4, Collect = 5 }
+    private enum Step : byte { SetCart = 1, SetBaskets = 2, Order = 3, Sell = 4, Collect = 5, BuyOffer = 6, BuyShares = 7, OffersGone = 8, SalePrice = 9 }
     public const int MaxLines = 160, MaxLineBytes = 2048, MaxCartBytes = 12 * 1024, MaxBasketBytes = 12 * 1024, MaxSold = 512;
 
     private readonly ActivityWorld _activity;
@@ -80,6 +88,13 @@ public sealed class CommerceWorld : ICommandHandler, IWorldState
     public Func<ShopOrder, IReadOnlyList<byte[]>, string?>? OrderCheck { get; set; }
     /// <summary>Host: why these owned items can't be sold now, or null.</summary>
     public Func<IReadOnlyList<ulong>, string?>? SellCheck { get; set; }
+    /// <summary>Host (phase 16d): why this PC Bay offer can't be bought at this price now (gone, other price, cash), or null.</summary>
+    public Func<string, int, string?>? OfferCheck { get; set; }
+    /// <summary>Host (phase 16d): why these shares can't be bought now, or null.</summary>
+    public Func<int, int, int, string?>? ShareCheck { get; set; }
+    /// <summary>Host (phase 16d): why this PC's sale price can't be set (not on a shop-front bench here), or null.</summary>
+    public Func<NetObjectId, string?>? SaleCheck { get; set; }
+    public const int MaxOfferId = 256, MaxOffers = 256;
 
     public bool Bound { get; private set; }
     public ShopCart Cart(ShopKind shop) => _carts.TryGetValue(shop, out var c) ? c : ShopCart.Empty;
@@ -120,6 +135,18 @@ public sealed class CommerceWorld : ICommandHandler, IWorldState
 
     public static byte[] Order(ulong epoch, ShopOrder order) => Encode(w => { w.Put((byte)Step.Order); w.Put(epoch); order.Write(w); });
 
+    /// <summary>Phase 16d: buy the PC Bay offer with this ID at the price the buyer saw.</summary>
+    public static byte[] BuyOffer(ulong epoch, string offer, int cost) => Encode(w => { w.Put((byte)Step.BuyOffer); w.Put(epoch); w.Put(offer, MaxOfferId); w.Put(cost); });
+    /// <summary>Phase 16d: buy shares (the share-offer e-mail's numbers).</summary>
+    public static byte[] BuyShares(ulong epoch, int offer, int shares, int cost) => Encode(w => { w.Put((byte)Step.BuyShares); w.Put(epoch); w.Put(offer); w.Put(shares); w.Put(cost); });
+    /// <summary>Host only (phase 16d): these PC Bay offers left the host's list.</summary>
+    public static byte[] OffersGone(ulong epoch, IReadOnlyList<string> offers) => Encode(w =>
+    {
+        w.Put((byte)Step.OffersGone); w.Put(epoch); w.Put(offers.Count); foreach (var o in offers) w.Put(o, MaxOfferId);
+    });
+    /// <summary>Phase 16d: set a PC's shop-front sale price (either player).</summary>
+    public static byte[] SalePrice(ulong epoch, NetObjectId pc, int price) => Encode(w => { w.Put((byte)Step.SalePrice); w.Put(epoch); pc.Write(w); w.Put(price); });
+
     /// <summary>Phase 16c: collect the shared delivery box (either player).</summary>
     public static byte[] Collect(ulong epoch) => Encode(w => { w.Put((byte)Step.Collect); w.Put(epoch); });
 
@@ -128,7 +155,14 @@ public sealed class CommerceWorld : ICommandHandler, IWorldState
         w.Put((byte)Step.Sell); w.Put(epoch); w.Put(items.Count); foreach (var i in items) w.Put(i);
     });
 
-    private sealed record Command(Step Step, ulong Epoch, ShopKind Shop, ulong Revision, IReadOnlyList<byte[]> Lines, byte[] Blob, ShopOrder? Order, IReadOnlyList<ulong> Items);
+    private sealed record Command(Step Step, ulong Epoch, ShopKind Shop, ulong Revision, IReadOnlyList<byte[]> Lines, byte[] Blob, ShopOrder? Order, IReadOnlyList<ulong> Items)
+    {
+        public IReadOnlyList<string> Offers { get; init; } = Array.Empty<string>();
+        public int A { get; init; }
+        public int B { get; init; }
+        public int C { get; init; }
+        public NetObjectId Pc { get; init; }
+    }
 
     private static Command Parse(NetDataReader r)
     {
@@ -158,6 +192,29 @@ public sealed class CommerceWorld : ICommandHandler, IWorldState
             case Step.Collect:
                 c = new(step, epoch, default, 0, Array.Empty<byte[]>(), Array.Empty<byte>(), null, Array.Empty<ulong>());
                 break;
+            case Step.BuyOffer:
+            {
+                var offer = r.GetString(MaxOfferId);
+                c = new(step, epoch, default, 0, Array.Empty<byte[]>(), Array.Empty<byte>(), null, Array.Empty<ulong>()) { Offers = new[] { offer }, A = r.GetInt() };
+                break;
+            }
+            case Step.BuyShares:
+                c = new(step, epoch, default, 0, Array.Empty<byte[]>(), Array.Empty<byte>(), null, Array.Empty<ulong>()) { A = r.GetInt(), B = r.GetInt(), C = r.GetInt() };
+                break;
+            case Step.OffersGone:
+            {
+                var n = r.GetInt();
+                if (n is < 1 or > MaxOffers) throw new FormatException("Invalid offers.");
+                var offers = new string[n]; for (var i = 0; i < n; i++) offers[i] = r.GetString(MaxOfferId);
+                c = new(step, epoch, default, 0, Array.Empty<byte[]>(), Array.Empty<byte>(), null, Array.Empty<ulong>()) { Offers = offers };
+                break;
+            }
+            case Step.SalePrice:
+            {
+                var pc = NetObjectId.Read(r);
+                c = new(step, epoch, default, 0, Array.Empty<byte[]>(), Array.Empty<byte>(), null, Array.Empty<ulong>()) { Pc = pc, A = r.GetInt() };
+                break;
+            }
             case Step.Sell:
             {
                 var n = r.GetInt();
@@ -197,6 +254,17 @@ public sealed class CommerceWorld : ICommandHandler, IWorldState
             }
             case Step.Collect:
                 return _career.Items.Any(i => i.List == ItemList.Delivery) ? CommandVerdict.Accept : CommandVerdict.Reject("The delivery box is empty.");
+            case Step.BuyOffer:
+                if (string.IsNullOrEmpty(c.Offers[0]) || c.A < 0) return CommandVerdict.Reject("Invalid PC Bay offer.");
+                return OfferCheck?.Invoke(c.Offers[0], c.A) is { } offerWhy ? CommandVerdict.Reject(offerWhy) : CommandVerdict.Accept;
+            case Step.BuyShares:
+                if (c.B <= 0 || c.C < 0) return CommandVerdict.Reject("Invalid share purchase.");
+                return ShareCheck?.Invoke(c.A, c.B, c.C) is { } shareWhy ? CommandVerdict.Reject(shareWhy) : CommandVerdict.Accept;
+            case Step.OffersGone:
+                return ctx.Op.Actor == ActorSlot.Host ? CommandVerdict.Accept : CommandVerdict.Reject("Only the host reports its PC Bay offers.");
+            case Step.SalePrice:
+                if (c.Pc.IsNone || c.A is < 0 or > 100_000_000) return CommandVerdict.Reject("Invalid sale price.");
+                return SaleCheck?.Invoke(c.Pc) is { } saleWhy ? CommandVerdict.Reject(saleWhy) : CommandVerdict.Accept;
             default:
             {
                 if (c.Items.Distinct().Count() != c.Items.Count) return CommandVerdict.Reject("An item is sold twice.");
@@ -232,6 +300,18 @@ public sealed class CommerceWorld : ICommandHandler, IWorldState
             }
             case Step.Collect:
                 _native.Collected(ctx);
+                break;
+            case Step.BuyOffer:
+                _native.BoughtOffer(ctx, c.Offers[0], c.A);
+                break;
+            case Step.BuyShares:
+                _native.BoughtShares(ctx, c.A, c.B, c.C);
+                break;
+            case Step.OffersGone:
+                _native.OffersGone(ctx, c.Offers);
+                break;
+            case Step.SalePrice:
+                _native.SalePrice(ctx, c.Pc, c.A);
                 break;
             default:
                 _native.Sold(ctx, c.Items);

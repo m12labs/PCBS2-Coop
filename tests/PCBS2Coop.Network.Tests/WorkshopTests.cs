@@ -40,6 +40,7 @@ internal sealed class FakeImportNative : IPcNative, IPcImportNative
     public void Deleted(in MutationContext ctx, PcFact pc, PcRemoval from) => Calls.Add("delete");
     public PcTemplate? DescribeImport(byte[] hash) => Store.HasContent(hash) ? FakePcNative.Template("imported-case") : null;
     public void Imported(in MutationContext ctx, PcFact pc, byte[] hash) => Calls.Add($"import {pc.Id.Value} local={ctx.FromLocalPlayer}");
+    public void Adopted(in MutationContext ctx, PcFact pc, byte[] hash) => Calls.Add($"adopt {pc.Id.Value} {pc.Location.Place} local={ctx.FromLocalPlayer}");
 }
 
 internal static class WorkshopTests
@@ -65,7 +66,7 @@ internal static class WorkshopTests
         var host = PlayerId.New(); var guest = PlayerId.New();
         var origin = new InstanceProvenance(InstanceOrigin.Baseline, host, default);
         var pc = new PcFact(Id(2), origin, PcLocation.Bench("A"), new[] { new PartFact(Id(3), "case", "CasePartInstance") }, new[] { new PartLink("caseID", Id(3)) });
-        ho.Replace(Guid.NewGuid(), 4, new[] { new LocationFact(Id(1), "A") }, new[] { pc }, Array.Empty<NetObjectId>());
+        ho.Replace(Guid.NewGuid(), 5, new[] { new LocationFact(Id(1), "A"), new LocationFact(Id(4), "B") }, new[] { pc }, Array.Empty<NetObjectId>());
         void Send(WorldSync world, byte[] payload, ushort type = CommandTypes.Workshop) { world.Submit(type, payload, out _); l.Flush(); }
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, host), CommandTypes.ActorActivity);
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Guest, guest), CommandTypes.ActorActivity); l.Join();
@@ -169,6 +170,26 @@ internal static class WorkshopTests
         Send(l.Host, PcLifecycle.Import(H(), fileHash, file.Length), CommandTypes.PcLifecycle);
         t.Check(ho.Pcs.Count(x => x.Provenance.Origin == InstanceOrigin.Imported) == 2 && hi.Calls.Last().EndsWith("local=True") && Same(),
             "the host imports the same file as a second, separate PC");
+
+        // Phase 16d: a PC the host's game made by itself (PC Bay, a job PC arriving) gets shared IDs where it is.
+        var made = new byte[9000]; new Random(4).NextBytes(made);
+        var madeHash = SHA256.HashData(made);
+        foreach (var p in WorkshopWorld.Send(H(), made)) Send(l.Host, p);
+        Send(l.Guest, PcLifecycle.Adopt(G(), madeHash, made.Length, PcPlace.Storage, default), CommandTypes.PcLifecycle);
+        t.Check(l.GuestRejected.Last().Text.Contains("Only the host"), "only the host shares a PC its game made");
+        before = ho.NextId;
+        Send(l.Host, PcLifecycle.Adopt(H(), madeHash, made.Length, PcPlace.Storage, default), CommandTypes.PcLifecycle);
+        var adopted = ho.Pcs.SingleOrDefault(x => x.Id.Value == before);
+        t.Check(adopted != null && adopted.Location == PcLocation.Storage && adopted.Provenance.Origin == InstanceOrigin.NativeObserved &&
+                hi.Calls.Last() == $"adopt {before} Storage local=True" && gi.Calls.Last() == $"adopt {before} Storage local=False" && ho.ToBytes().SequenceEqual(go.ToBytes()) && Same(),
+            "a PC the host's game put in storage is shared there with host-given IDs");
+        before = ho.NextId;
+        Send(l.Host, PcLifecycle.Adopt(H(), madeHash, made.Length, PcPlace.Bench, Id(4)), CommandTypes.PcLifecycle);
+        t.Check(ho.Pcs.Any(x => x.Id.Value == before && x.Location == PcLocation.Bench("B")) && gi.Calls.Last() == $"adopt {before} Bench local=False" && Same(),
+            "a PC the host's game put on a free bench (a customer's PC arriving) is shared on that bench");
+        var count = l.HostRejected.Count;
+        Send(l.Host, PcLifecycle.Adopt(H(), madeHash, made.Length, PcPlace.Bench, Id(1)), CommandTypes.PcLifecycle);
+        t.Check(l.HostRejected.Count == count + 1 && l.HostRejected.Last().Text.Contains("isn't free"), "a bench that already holds a PC can't take another");
     }
 
     private static bool Throws(Action a)

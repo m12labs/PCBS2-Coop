@@ -45,12 +45,17 @@ internal sealed class NativeCommerce : ICommerceNative
     public NativeCommerce(CoopController coop, WorldSync world, CareerWorld career)
     {
         _coop = coop; _world = world;
-        Handler = new CommerceWorld(coop.Activity, career, this) { OrderCheck = CheckOrder, SellCheck = CheckSell };
+        Handler = new CommerceWorld(coop.Activity, career, this)
+            { OrderCheck = CheckOrder, SellCheck = CheckSell, OfferCheck = CheckOffer, ShareCheck = CheckShares, SaleCheck = CheckSale };
         world.GenerationStarted += (uint _, string _) => Clear();
         world.Rejected += OnRejected;
     }
 
-    private void Clear() { _seen.Clear(); _seenBaskets = Array.Empty<byte>(); _pending.Clear(); }
+    private void Clear() { _seen.Clear(); _seenBaskets = Array.Empty<byte>(); _pending.Clear(); _offersSeen = null; }
+
+    /// <summary>Host: the PC Bay offer IDs its game listed at the last check (phase 16d).</summary>
+    private HashSet<string> _offersSeen;
+    private float _nextOffers;
 
     private bool Active => NativeCareer.InCareer && Handler.Bound && _world.Admitted && _world.Divergence == null && _coop.WorldReady;
     private ulong Epoch => _coop.Activity.Get(_world.Local)?.Epoch ?? 0;
@@ -279,6 +284,7 @@ internal sealed class NativeCommerce : ICommerceNative
         var now = Time.realtimeSinceStartup;
         foreach (var (op, p) in _pending.ToList())
             if (now - p.At > PendingTimeout) { _pending.Remove(op); Plugin.Logger.LogWarning($"[shop] {p.What} wasn't answered; continuing."); }
+        if (_world.Local == ActorSlot.Host && now >= _nextOffers) { _nextOffers = now + 1f; ObserveOffers(); }
         if (now < _nextPoll) return;
         _nextPoll = now + PollEvery;
         try
@@ -362,6 +368,15 @@ internal sealed class NativeCommerce : ICommerceNative
                 case "collect":
                     _coop.Notice("The host couldn't collect the deliveries: " + text);
                     break;
+                case "offer":
+                    _coop.Notice("The host couldn't buy that: " + text);
+                    break;
+                case "shares":
+                    _coop.Notice("The host couldn't buy the shares: " + text);
+                    break;
+                case "price":
+                    _coop.Notice("The sale price wasn't shared: " + text);
+                    break;
             }
             Plugin.Logger.LogInfo($"[shop] {p.What} refused: {text}");
         }
@@ -427,6 +442,130 @@ internal sealed class NativeCommerce : ICommerceNative
         if (items.Count > CommerceWorld.MaxSold) items = items.Take(CommerceWorld.MaxSold).ToList();
         if (!Send(CommerceWorld.Sell(Epoch, items), "sale", default)) { _coop.Notice("Not connected to the host."); return; }
         Plugin.Logger.LogInfo($"[shop] asked the host to sell {items.Count} item(s).");
+    }
+
+    // ---------------- PC Bay, shares and sale prices (phase 16d) ----------------
+
+    private static List<Offer> Offers()
+    {
+        var list = new List<Offer>();
+        if (Status?.GetTodaysOffers() is { } offers) foreach (var o in offers) if (o != null && !string.IsNullOrEmpty(o.m_id)) list.Add(o);
+        return list;
+    }
+
+    /// <summary>Host: offers that left its PC Bay list (either player bought them) leave the guest's too.</summary>
+    private void ObserveOffers()
+    {
+        try
+        {
+            var now = new HashSet<string>(Offers().Select(o => o.m_id), StringComparer.Ordinal);
+            var gone = _offersSeen == null ? new List<string>() : _offersSeen.Where(id => !now.Contains(id)).ToList();
+            _offersSeen = now;
+            if (gone.Count > 0) _world.Submit(CommandTypes.Commerce, CommerceWorld.OffersGone(Epoch, gone.Take(CommerceWorld.MaxOffers).ToList()), out _);
+        }
+        catch (Exception e) { Plugin.Logger.LogWarning("[shop] could not compare the PC Bay offers: " + e.Message); }
+    }
+
+    /// <summary>Guest pressed Buy on a PC Bay offer.</summary>
+    internal void RequestOffer(Offer offer)
+    {
+        if (!Active) { _coop.Notice("PC Bay isn't shared yet; try again in a moment."); return; }
+        if (string.IsNullOrEmpty(offer?.m_id)) { _coop.Notice("That offer can't be bought in co-op."); return; }
+        if (_pending.Values.Any(p => p.What == "offer")) { _coop.Notice("Your last purchase is still on its way to the host."); return; }
+        if (Send(CommerceWorld.BuyOffer(Epoch, offer.m_id, offer.m_cost), "offer", default)) _coop.Notice("Buying it through the host…");
+        else _coop.Notice("Not connected to the host.");
+    }
+
+    /// <summary>Guest accepted a share offer.</summary>
+    internal void RequestShares(int offer, int shares, int cost)
+    {
+        if (!Active) { _coop.Notice("Shares aren't shared yet; try again in a moment."); return; }
+        if (!Send(CommerceWorld.BuyShares(Epoch, offer, shares, cost), "shares", default)) _coop.Notice("Not connected to the host.");
+    }
+
+    /// <summary>Either player set a shop-front PC's sale price (its game already shows it).</summary>
+    internal void ShareSalePrice(BenchSlot bench, string price)
+    {
+        if (!Active || bench == null || !int.TryParse(price, out var value)) return;
+        var pc = _coop.Objects.IdOf(bench.GetCaseInSlot());
+        if (pc.IsNone) return;
+        Send(CommerceWorld.SalePrice(Epoch, pc, value), "price", default);
+    }
+
+    private static PCBayApp PcBayApp() => UnityEngine.Object.FindObjectsOfType<PCBayApp>(true).FirstOrDefault(a => a != null);
+
+    private string CheckOffer(string id, int cost)
+    {
+        var offer = Offers().FirstOrDefault(o => o.m_id == id);
+        if (offer == null) return "That offer is gone.";
+        if (offer.m_cost != cost) return $"That offer costs {offer.m_cost} now.";
+        if ((Data?.m_cash ?? 0) < cost) return "There isn't enough cash for that.";
+        return PcBayApp() == null ? "The host's game hasn't opened PC Bay yet; ask the host to open it once, then buy again." : null;
+    }
+
+    private string CheckShares(int offer, int shares, int cost) => (Data?.m_cash ?? 0) < cost ? "There isn't enough cash for those shares." : null;
+
+    private string CheckSale(NetObjectId pc) => _coop.Objects.FindBench(pc) == null ? "That PC isn't on a bench on the host's game." : null;
+
+    public void BoughtOffer(in MutationContext ctx, string offer, int cost)
+    {
+        if (ctx.FromLocalPlayer && _pending.Remove(ctx.Op)) _coop.Notice($"Bought it (${cost}).");
+        if (_world.Local != ActorSlot.Host || ctx.Op.Actor == ActorSlot.Host) return;
+        try
+        {
+            var o = Offers().FirstOrDefault(x => x.m_id == offer) ?? throw new InvalidDataException("the offer is gone");
+            var app = PcBayApp() ?? throw new InvalidDataException("PC Bay isn't open on the host's game");
+            // The game's own purchase (payment, delivery or storage, repair job tag, e-mails, the offer used up). A PC it
+            // makes is shared when it appears; the offer leaves the guest's list with the next offer check.
+            app.OnBuyAction(o);
+            _coop.AddChat($"Client bought a PC Bay offer (${cost}).");
+        }
+        catch (Exception e) { _coop.ProjectionFailed("The client's PC Bay purchase could not be made", e); }
+    }
+
+    public void BoughtShares(in MutationContext ctx, int offer, int shares, int cost)
+    {
+        if (ctx.FromLocalPlayer && _pending.Remove(ctx.Op)) _coop.Notice($"Bought {shares} share(s).");
+        if (_world.Local != ActorSlot.Host || ctx.Op.Actor == ActorSlot.Host) return;
+        try
+        {
+            var s = Status ?? throw new InvalidDataException("The career isn't loaded.");
+            if (!s.BuyShare(offer, shares, cost)) Plugin.Logger.LogWarning("[shop] the host's game didn't buy the client's shares.");
+            else _coop.AddChat($"Client bought {shares} share(s).");
+        }
+        catch (Exception e) { _coop.ProjectionFailed("The client's share purchase could not be made", e); }
+    }
+
+    public void OffersGone(in MutationContext ctx, IReadOnlyList<string> offers)
+    {
+        if (_world.Local == ActorSlot.Host) return;
+        try
+        {
+            var s = Status ?? throw new InvalidDataException("The career isn't loaded.");
+            var gone = new HashSet<string>(offers, StringComparer.Ordinal);
+            var removed = 0;
+            foreach (var o in Offers()) if (gone.Contains(o.m_id)) { NativeProjection.Run(() => s.ConsumeOffer(o)); removed++; }
+            if (removed == 0) return;
+            foreach (var app in UnityEngine.Object.FindObjectsOfType<PCBayApp>(true))
+            {
+                try { if (app != null) NativeProjection.Run(app.UpdateForBuy); }
+                catch (Exception e) { Plugin.Logger.LogWarning("[shop] PC Bay could not show the bought offer: " + e.Message); }
+            }
+            Plugin.Logger.LogInfo($"[shop] {removed} PC Bay offer(s) were bought on the host's game.");
+        }
+        catch (Exception e) { _coop.ProjectionFailed("The bought PC Bay offers could not be taken off this game's list", e); }
+    }
+
+    public void SalePrice(in MutationContext ctx, NetObjectId pc, int price)
+    {
+        if (ctx.FromLocalPlayer) { _pending.Remove(ctx.Op); return; }
+        try
+        {
+            var bench = _coop.Objects.FindBench(pc);
+            if (bench == null) { Plugin.Logger.LogWarning($"[shop] PC {pc} isn't on a bench here; its sale price wasn't shown."); return; }
+            NativeProjection.Run(() => bench.UpdateSalePrice(price.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        catch (Exception e) { _coop.ProjectionFailed("The sale price could not be shown on this game", e); }
     }
 
     /// <summary>Guest accepted the delivery box (phase 16c): the host's game collects it.</summary>

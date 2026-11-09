@@ -153,6 +153,7 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
         Objects.SettleRemoteDrops(_coop.WorldReady);
         if (!_world.IsAuthority) return;
         ObserveHost(force: false);
+        if (NativeCareer.InCareer) AdoptNative();
     }
 
     /// <summary>Host: report its own native PC locations that differ from the model as one host-ordered change.</summary>

@@ -486,6 +486,65 @@ internal sealed class NativeObjectState : IWorldState
         }
     }
 
+    // ---------------- PCs the host's game made by itself (phase 16d) ----------------
+
+    /// <summary>Host: PCs its game holds that co-op has no ID for (a PC Bay purchase in storage, a job PC that arrived
+    /// on a bench, an onboarding PC). Empty while anything is loading.</summary>
+    internal List<(ComputerSave Record, Case Mesh, PcPlace Place, BenchSlot Bench)> UnboundHostPcs()
+    {
+        var found = new List<(ComputerSave, Case, PcPlace, BenchSlot)>();
+        var s = Saves; var wc = Workshop;
+        if (!Initialized || _spawnTickets.Count > 0 || wc.IsCaseLoading || s.SpawningPC) return found;
+        foreach (var bench in s.benchSlots)
+        {
+            if (bench == null) continue;
+            if (bench.m_caseLoadingToSlot) return new List<(ComputerSave, Case, PcPlace, BenchSlot)>();
+            var mesh = bench.GetCaseInSlot();
+            if (mesh == null || !IdOf(mesh).IsNone) continue;
+            var record = bench.GetComputer(false);
+            if (record != null && IdOf(record).IsNone) found.Add((record, mesh, PcPlace.Bench, bench));
+        }
+        var stored = s.localSaveGame?.computersInStorage;
+        if (stored != null) foreach (var r in stored) if (r != null && IdOf(r).IsNone) found.Add((r, null, PcPlace.Storage, null));
+        // An unbound case in the host's hands is left alone: its record is only made when it is put down or saved.
+        return found;
+    }
+
+    /// <summary>Host: the adopted PC's native objects get its IDs (a bench mesh then publishes its manifest).</summary>
+    internal void BindAdopted(PcFact pc, ComputerSave record, Case mesh)
+    {
+        CheckParts(pc, record);
+        RememberSave(pc.Id, record);
+        if (mesh != null)
+        {
+            _cases[mesh.Pointer.ToInt64()] = pc.Id;
+            Projections.Complete(Projections.Begin(pc.Id), mesh);
+        }
+    }
+
+    /// <summary>Guest: make the host's adopted PC here, at its place, through the game's own storage or bench loader.</summary>
+    internal void AdoptHere(PcFact pc, ComputerSave record)
+    {
+        switch (pc.Location.Place)
+        {
+            case PcPlace.Storage:
+                NativeProjection.Run(() => Saves.AddComputerToStorage(record));
+                RememberSave(pc.Id, record);
+                RefreshStorage();
+                break;
+            case PcPlace.Bench:
+            {
+                var bench = BenchAt(pc.Location.Key) ?? throw new InvalidDataException($"bench {pc.Location.Key} isn't in this game");
+                _carrierRecords[pc.Id] = record;
+                RemoteDrop(pc, bench);
+                break;
+            }
+            default:
+                SetRemoteCarrier(pc, record);
+                break;
+        }
+    }
+
     internal BenchSlot FindBench(NetObjectId id)
     {
         foreach (var bench in Saves.benchSlots)

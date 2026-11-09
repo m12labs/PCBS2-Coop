@@ -13,6 +13,11 @@ internal sealed class FakeCommerceNative : ICommerceNative
     public void Sold(in MutationContext ctx, IReadOnlyList<ulong> items) => Sales.Add((ctx.FromLocalPlayer, items.ToArray()));
     public int Collections;
     public void Collected(in MutationContext ctx) => Collections++;
+    public readonly List<string> Market = new();
+    public void BoughtOffer(in MutationContext ctx, string offer, int cost) => Market.Add($"offer {offer} {cost} local={ctx.FromLocalPlayer}");
+    public void BoughtShares(in MutationContext ctx, int offer, int shares, int cost) => Market.Add($"shares {offer} {shares} {cost} local={ctx.FromLocalPlayer}");
+    public void OffersGone(in MutationContext ctx, IReadOnlyList<string> offers) => Market.Add($"gone {string.Join(",", offers)}");
+    public void SalePrice(in MutationContext ctx, NetObjectId pc, int price) => Market.Add($"price {pc.Value} {price} local={ctx.FromLocalPlayer}");
 }
 
 /// <summary>Phase 16b: shared carts and job baskets, checkout placed by the host, and part sales.</summary>
@@ -26,6 +31,65 @@ internal static class CommerceTests
     {
         Model(t);
         Sync(t);
+        Markets(t);
+    }
+
+    private static void Markets(Checker t)
+    {
+        t.Section("Shops: PC Bay, shares and shop-front prices (phase 16d)");
+        var l = new FakeLink(); var ho = new ObjectWorld(); var go = new ObjectWorld();
+        var ha = new ActivityWorld(ho); var ga = new ActivityWorld(go);
+        var hc = new CareerWorld(ha, new FakeCareerNative()); var gc = new CareerWorld(ga, new FakeCareerNative());
+        var hn = new FakeCommerceNative(); var gn = new FakeCommerceNative();
+        var hw = new CommerceWorld(ha, hc, hn); var gw = new CommerceWorld(ga, gc, gn);
+        var offers = new Dictionary<string, int> { ["bay-7"] = 450 };
+        hw.OfferCheck = (id, cost) => !offers.TryGetValue(id, out var price) ? "That offer is gone." : price != cost ? $"That offer costs {price} now." : null;
+        hw.ShareCheck = (offer, shares, cost) => cost > 1000 ? "There isn't enough cash for those shares." : null;
+        hw.SaleCheck = pc => pc.Value == 5 ? null : "That PC isn't on a bench on the host's game.";
+        l.Host.RegisterState(ha); l.Guest.RegisterState(ga);
+        l.Host.RegisterState(hc, optional: true); l.Guest.RegisterState(gc, optional: true);
+        l.Host.RegisterState(hw, optional: true); l.Guest.RegisterState(gw, optional: true);
+        l.Host.Register(CommandTypes.ActorActivity, ha); l.Guest.Register(CommandTypes.ActorActivity, ga);
+        l.Host.Register(CommandTypes.Career, hc); l.Guest.Register(CommandTypes.Career, gc);
+        l.Host.Register(CommandTypes.Commerce, hw); l.Guest.Register(CommandTypes.Commerce, gw);
+        l.Host.BeginGeneration("markets");
+        void Send(WorldSync world, byte[] payload, ushort type = CommandTypes.Commerce) { world.Submit(type, payload, out _); l.Flush(); }
+        Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, PlayerId.New()), CommandTypes.ActorActivity);
+        Send(l.Host, ActivityWorld.Presence(ActorSlot.Guest, PlayerId.New()), CommandTypes.ActorActivity);
+        hc.BindHost(Facts(), Array.Empty<OwnedItem>(), 0, new byte[32], 1);
+        hw.BindHost(new Dictionary<ShopKind, IReadOnlyList<byte[]>>(), Array.Empty<byte>());
+        l.Join();
+        ulong H() => ha.Get(ActorSlot.Host)!.Epoch; ulong G() => ga.Get(ActorSlot.Guest)!.Epoch;
+
+        Send(l.Guest, CommerceWorld.BuyOffer(G(), "bay-7", 450));
+        t.Check(hn.Market.Last() == "offer bay-7 450 local=False" && gn.Market.Last() == "offer bay-7 450 local=True", "the guest's PC Bay purchase reaches the host's game, which buys");
+        var before = l.GuestRejected.Count;
+        Send(l.Guest, CommerceWorld.BuyOffer(G(), "bay-7", 400));
+        Send(l.Guest, CommerceWorld.BuyOffer(G(), "bay-9", 100));
+        t.Check(l.GuestRejected.Count == before + 2 && l.GuestRejected[^2].Text.Contains("costs 450") && l.GuestRejected[^1].Text.Contains("gone"),
+            "a stale price or a gone offer is refused");
+        offers.Remove("bay-7");
+        Send(l.Host, CommerceWorld.OffersGone(H(), new[] { "bay-7" }));
+        t.Check(gn.Market.Last() == "gone bay-7", "a bought offer leaves the guest's PC Bay list");
+        before = l.GuestRejected.Count;
+        Send(l.Guest, CommerceWorld.OffersGone(G(), new[] { "bay-1" }));
+        t.Check(l.GuestRejected.Count == before + 1, "only the host reports its offers");
+
+        Send(l.Guest, CommerceWorld.BuyShares(G(), 3, 10, 500));
+        t.Check(hn.Market.Last() == "shares 3 10 500 local=False", "the guest's share purchase reaches the host's game");
+        before = l.GuestRejected.Count;
+        Send(l.Guest, CommerceWorld.BuyShares(G(), 3, 10, 5000));
+        Send(l.Guest, CommerceWorld.BuyShares(G(), 3, 0, 5));
+        t.Check(l.GuestRejected.Count == before + 2, "shares the wallet can't pay for, or no shares, are refused");
+
+        Send(l.Guest, CommerceWorld.SalePrice(G(), new NetObjectId(5), 1299));
+        Send(l.Host, CommerceWorld.SalePrice(H(), new NetObjectId(5), 1199));
+        t.Check(hn.Market[^2] == "price 5 1299 local=False" && gn.Market.Last() == "price 5 1199 local=False" && l.InStep,
+            "either player sets a shop-front price and the other game shows it");
+        before = l.GuestRejected.Count;
+        Send(l.Guest, CommerceWorld.SalePrice(G(), new NetObjectId(6), 10));
+        Send(l.Guest, CommerceWorld.SalePrice(G(), new NetObjectId(5), -1));
+        t.Check(l.GuestRejected.Count == before + 2, "a price for a PC not on the host's bench, or a negative price, is refused");
     }
 
     private static void Model(Checker t)

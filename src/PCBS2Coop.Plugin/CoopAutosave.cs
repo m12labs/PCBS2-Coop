@@ -63,6 +63,8 @@ internal sealed partial class CoopController
         if (_initialSave != null) return "the new world's first save is still pending";
         if (OutOfSync != null) return "this game is out of sync";
         if (Workstations?.Settled == false || Workshop?.Settled == false || !NativeAssembly.CanCapture) return "a change is still being shown";
+        // Phase 16d: a PC the host's game made by itself gets its shared IDs first (the save refuses unshared PCs).
+        if (UnsharedGamePcs) return "a PC the game made is still being shared";
         return null;
     }
 

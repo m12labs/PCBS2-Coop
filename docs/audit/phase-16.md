@@ -129,3 +129,48 @@ The owner's choices for 16c:
 10. Packed parts fit in one command (no "too large to share" warnings).
 11. Career worlds with packages and notes host and admit.
 12. Startup logs no `[hooks]` error for the eight new hooks.
+
+## 16d owner decisions and trace (November 9, 2026)
+
+The trace found that co-op's save capture refused any PC the host's game made by itself ("A native PC was created outside the accepted change stream"). That covers three cases:
+
+- A PC Bay purchase delivered into storage (`PCBayApp.OnBuyAction` → `SaveLoadSystem.AddComputerToStorage`).
+- An onboarding PC Bay PC loaded onto a bench (`SpawnPCToBenchSlot`, `LoadComputerToSlot`).
+- A customer's job PC arriving in the morning (`CalendarEvent.OnMorning` → `WorkshopController.SpawnPC`).
+
+So the host's saves, and the guest's day-end reload, failed on any day such a PC appeared. The owner chose to have the host take on every game-made PC, and to let either player buy shares.
+
+| Path | What the game does (decompile) |
+| --- | --- |
+| PC Bay | `OnBuyAction(Offer)` pays `m_cost` (GOODS). A part offer (`m_computer` null) is scheduled as a PC Bay delivery. A PC with `m_delivery > 0` is scheduled for that day. Otherwise the PC goes to storage, or onto a bench during onboarding. It then makes the repair job tag and the broken-parts e-mail, and runs `ConsumeOffer`. It is a UI method on the PC Bay app (messages, list refresh). |
+| Offers | `CareerStatus.State.m_todaysOffers`, made each morning on the host. |
+| Shares | `CareerStatus.BuyShare(offerNumber, share, cost)`, from the share-offer e-mail. |
+| Shop-front price | `SaleInfo.OnDisable` → `BenchSlot.UpdateSalePrice(price)` writes `ComputerSave.m_status.salePrice` and refreshes the bench's sale display. Benches of type `FOR_SALE` show it. |
+| Shop sales | `ShopSalesManager.CalculateDayPurchases` runs at the day change. It sells shop-front PCs, adds the transactions and removes the PCs. This is already host-only, and the guest takes the result with the day-end reload. |
+
+## 0.62 implementation: PC Bay, shares, shop-front prices and game-made PCs (16d)
+
+**Status:** coded with model tests on November 9, 2026. Release built with zero warnings or errors and all 826 automated checks passed. No game was launched. Nothing here is verified in the running game.
+
+| Area | What 0.62 does |
+| --- | --- |
+| Game-made PCs | About once a second, the host looks for PCs its game holds without co-op IDs: on benches once loaded, and in storage. It sends each one's record (and case design) as content, then makes one host-only `PcLifecycle.Adopt` change naming where the game put it. The host binds its own objects to the new IDs; a bench PC then publishes its manifest as usual. The guest makes the same PC in storage, or on that bench through its bench loader. Saves and a guest's world copy wait until no such PC is left. |
+| PC Bay | The guest's Buy is sent with the offer ID and the price it saw. The host refuses an offer that is gone or now costs something else, too little cash, or a host game whose PC Bay app hasn't been opened. Otherwise the host's game runs the game's own `OnBuyAction`. A PC it makes is shared when it appears. Offers that leave the host's list (bought by either player) leave the guest's within a second. |
+| Shares | The guest's share purchase is sent to the host, whose game buys the shares. |
+| Shop-front prices | When either player closes the price box, the price is shared, and the other game sets the same price on the PC's bench. |
+
+### Not covered by 0.62
+
+- The host's PC Bay app must have been opened once in that session before it can buy for the guest. If it hasn't, the guest is asked to have the host open it. A case or PC created by the game straight into the host's hands isn't adopted until it is put down or stored.
+- Customer job PCs are now shared when they arrive. Their job details (objectives, notes for jobs the guest doesn't know yet) come with phase 17.
+- Shop-front sales still settle only at the host's day change (as before). The guest sees the sold PCs gone after the reload.
+
+### Runtime checks for the gameplay sweep
+
+1. A host PC Bay purchase into storage is adopted within a few seconds, appears in the guest's storage, and the next host save succeeds.
+2. A PC Bay PC with a later delivery, and a customer's job PC, are adopted on the bench where they arrive. The day-end save and guest reload then succeed on a day with a job PC.
+3. `bench.GetComputer(false)` returns a game-made bench PC's record, and the guest's bench load matches it.
+4. The guest's PC Bay purchase runs `OnBuyAction` on the host. Cash, the ledger and the PC follow, and the bought offer leaves the guest's list.
+5. The guest's share purchase runs `BuyShare` on the host, and the share count and cash follow.
+6. A price set on a `FOR_SALE` bench shows on the other game's sale display.
+7. Startup logs no `[hooks]` error for the PC Bay, share and sale-price hooks.

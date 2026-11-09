@@ -29,6 +29,10 @@ internal sealed partial class CoopController
 
     private void ResetDayEnd() { _day = DayStep.None; _daySaveStarted = false; }
 
+    /// <summary>Host (phase 16d): a PC its game made by itself (PC Bay, a customer's PC arriving) has no shared IDs
+    /// yet. Saves and a guest's world copy wait for it: the capture refuses unshared PCs.</summary>
+    private bool UnsharedGamePcs => NativeCareer.InCareer && (Lifecycle?.Adopting == true || Objects?.Initialized == true && Objects.UnboundHostPcs().Count > 0);
+
     private void UpdateDayEnd()
     {
         if (Career == null || Session.Role != Role.Host || !HostInWorld) { ResetDayEnd(); return; }

@@ -43,17 +43,6 @@ internal static class CareerGuards
         return false;
     }
 
-    [HarmonyPatch(typeof(PCBayApp), nameof(PCBayApp.OnBuyAction))]
-    internal static class PcBayBuy
-    {
-        private static bool Prefix() => Allow("buy from PC Bay");
-    }
-
-    [HarmonyPatch(typeof(CareerStatus), nameof(CareerStatus.BuyShare))]
-    internal static class ShareBuy
-    {
-        private static bool Prefix(ref bool __result) { if (Allow("buy shares")) return true; __result = false; return false; }
-    }
 
     [HarmonyPatch(typeof(CareerStatus), nameof(CareerStatus.OnAccept), typeof(Job))]
     internal static class JobAccept
@@ -106,7 +95,7 @@ internal static class CareerGuards
 
     internal static void Apply(Harmony h)
     {
-        foreach (var t in new[] { typeof(PcBayBuy), typeof(ShareBuy), typeof(JobAccept), typeof(JobCollect), typeof(MultiJobCollect),
+        foreach (var t in new[] { typeof(JobAccept), typeof(JobCollect), typeof(MultiJobCollect),
                      typeof(JobQuit), typeof(MultiJobQuit), typeof(JobReject), typeof(MultiJobReject), typeof(EndDay) })
             h.PatchAll(t);
     }

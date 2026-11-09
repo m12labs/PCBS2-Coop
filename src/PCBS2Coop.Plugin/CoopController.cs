@@ -510,7 +510,7 @@ internal sealed partial class CoopController
         if (_pairWrites.Count > 0 && !SaveLoadSystem.WaitingOnThread()) FinishPairWrites();
         if (_pendingFile is { } p) PollSnapshotFile(p);
         else if (Session.GuestNeedsWorld && _hostWorldStarted && _readiness.Ready && Workstations?.Settled != false &&
-            _sync == SyncStep.None && NativeAssembly.CanCapture && OutOfSync == null) TakeSnapshot();
+            _sync == SyncStep.None && NativeAssembly.CanCapture && OutOfSync == null && !UnsharedGamePcs) TakeSnapshot();
         else if (_copiesToSend.Count > 0 && Session.GuestState == GuestState.InWorld && !SaveLoadSystem.WaitingOnThread()) SendCopy(_copiesToSend.Dequeue());
     }
 

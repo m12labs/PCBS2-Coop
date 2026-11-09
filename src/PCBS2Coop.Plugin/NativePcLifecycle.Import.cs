@@ -122,6 +122,87 @@ internal sealed partial class NativePcLifecycle
         catch (Exception e) { Fault($"PC {pc.Id} was imported, but this game could not show it", e); }
     }
 
+    // ---------------- PCs the host's game made by itself (phase 16d, owner decision November 9, 2026) ----------------
+
+    private const float AdoptEvery = 1f;
+    private float _nextAdopt;
+    /// <summary>Host: game-made PCs being shared, by content hash.</summary>
+    private readonly Dictionary<string, (ComputerSave Record, Case Mesh)> _adopting = new(StringComparer.Ordinal);
+
+    /// <summary>Host: a PC its game made by itself is being shared (saves wait for it).</summary>
+    internal bool Adopting => _adopting.Count > 0;
+
+    /// <summary>Host, about once a second: give shared IDs to PCs its game made by itself (a PC Bay purchase into
+    /// storage, a customer's PC arriving on a bench in the morning, an onboarding PC). Its content goes first, as for
+    /// an import; then one host change names the place the game put it.</summary>
+    private void AdoptNative()
+    {
+        var now = UnityEngine.Time.realtimeSinceStartup;
+        if (now < _nextAdopt || _adopting.Count > 0) return;
+        _nextAdopt = now + AdoptEvery;
+        var workshop = _coop.Workshop;
+        if (workshop == null) return;
+        foreach (var (record, mesh, place, bench) in Objects.UnboundHostPcs())
+        {
+            byte[] content;
+            try { content = Pack(record, NativeToolBenches.DesignOf(record)); }
+            catch (Exception e) { Plugin.Logger.LogWarning("[objects] a PC the game made can't be read for sharing: " + e.Message); continue; }
+            if (content.Length > MaxImportBytes) { Plugin.Logger.LogWarning($"[objects] a PC the game made is too large to share ({content.Length / 1024} KB)."); continue; }
+            var hash = SHA256.HashData(content);
+            var hex = Convert.ToHexString(hash);
+            if (_adopting.ContainsKey(hex)) continue;
+            var location = place == PcPlace.Bench ? Objects.LocationOf(bench) : default;
+            if (place == PcPlace.Bench && location.IsNone) { Plugin.Logger.LogWarning("[objects] a PC the game made is on a bench co-op doesn't know."); continue; }
+            var length = content.Length;
+            _adopting[hex] = (record, mesh);
+            if (!workshop.SendContent(content, "a PC the game made", epoch =>
+                {
+                    // The host's change applies inside Submit, where Adopted still finds this entry.
+                    if (_coop.Activity.Get(_world.Local)?.Epoch == epoch) _world.Submit(CommandTypes.PcLifecycle, PcLifecycle.Adopt(epoch, hash, length, place, location), out _);
+                    _adopting.Remove(hex);
+                }))
+                _adopting.Remove(hex);
+            else Plugin.Logger.LogInfo($"[objects] sharing a PC the game made ({place}, {length / 1024} KB).");
+        }
+    }
+
+    public void Adopted(in MutationContext ctx, PcFact pc, byte[] hash)
+    {
+        try
+        {
+            if (_world.IsAuthority)
+            {
+                var hex = Convert.ToHexString(hash);
+                var content = NativeWorkshop.ReadContent(hash) ?? throw new InvalidDataException("the PC's content is gone");
+                (ComputerSave record, Case mesh) = _adopting.TryGetValue(hex, out var own) ? own : default;
+                if (record == null)
+                {
+                    // Sent in an earlier frame: find the same record again by its content.
+                    foreach (var (r, m, _, _) in Objects.UnboundHostPcs())
+                        if (SHA256.HashData(Pack(r, NativeToolBenches.DesignOf(r))).AsSpan().SequenceEqual(hash)) { record = r; mesh = m; break; }
+                }
+                if (record == null) throw new InvalidDataException("the PC the game made is no longer where it was");
+                Objects.BindAdopted(pc, record, mesh);
+                Plugin.Logger.LogInfo($"[objects] PC {pc.Id} (made by the game) is shared at {pc.Location.Place}.");
+                return;
+            }
+            var (copy, design) = Unpack(NativeWorkshop.ReadContent(hash) ?? throw new InvalidDataException("the PC's content isn't on this game"));
+            NativeObjectState.CheckParts(pc, copy);
+            NativeProjection.Run(() =>
+            {
+                if (design == null) { copy.isCustomised = false; return; }
+                var manager = CustomCaseManager.Get() ?? throw new InvalidDataException("The case design list isn't loaded.");
+                var number = FreshDesignNumber(manager);
+                design.CustomisationID = number;
+                manager.CustomisationList.Add(design);
+                copy.CustomisationID = number; copy.isCustomised = true;
+            });
+            Objects.AdoptHere(pc, copy);
+            Plugin.Logger.LogInfo($"[objects] PC {pc.Id} made by the host's game appears here ({pc.Location.Place}).");
+        }
+        catch (Exception e) { Fault($"PC {pc.Id} was made by the host's game, but this game could not show it", e); }
+    }
+
     /// <summary>A design number no design or PC on this game uses.</summary>
     private int FreshDesignNumber(CustomCaseManager manager)
     {
