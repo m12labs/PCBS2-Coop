@@ -1,6 +1,8 @@
 # Agent instructions
 
-PCBS2 Coop is a BepInEx 6 IL2CPP multiplayer mod for PC Building Simulator 2 (Unity 6000.2.6f2, Windows x64). Two players share one Free Build workshop over LAN or Steam. The host picks New Game, Continue or Load Game in the Co-op menu. A guest joins from the host's current snapshot. Co-op worlds use `Saves\Coop` and the host's native save plus a `.coop` sidecar.
+PCBS2 Coop is a BepInEx 6 IL2CPP multiplayer mod for PC Building Simulator 2 (Unity 6000.2.6f2, Windows x64). Currently two players share one Free Build workshop, joining by LAN/direct IP or optional Steam invites; the eventual goal is support for up to four players. The host picks New Game, Continue or Load Game in the Co-op menu. A guest joins from the host's current snapshot. Co-op worlds use `Saves\Coop` and the host's native save plus a `.coop` sidecar.
+
+PCBS2 must be owned and launched through Epic Games Launcher; the game is not sold on Steam. Describe the mod's Steam integration as an optional convenience for joining and inviting friends, with Steam running alongside the Epic-launched game. Epic Games invites are planned (coming soon™).
 
 Use [the sync tracker](docs/sync-progress.md) for current feature status, [the two-game checklist](docs/needs_testing.md) for gameplay acceptance and [the roadmap](plan.md) for phase closure. Version 0.57 closes the applicable Free Build gameplay checklist. Phase 13 covers remote presentation. Phase 14 (release completeness, faults, performance and two-machine validation) is skipped for now. Career began at phase 15: 0.58 adds Host Career, mode-aware saves and admission. 0.59 shares the host's career numbers, ledger and owned items. 0.60 shares shop carts, checkout and part sales (none run in game yet).
 
@@ -184,3 +186,4 @@ Phase 12 (0.24, docs/audit/phase-12.md):
 4. Separate what was verified in the running game from what was only read in the decompile.
 5. Leave the owner's own game processes and saves alone. Close only the instances you started.
 6. Commit Unity work separately from mod work, with a commit message starting `[unity]`. Unity work is everything under `unity/` plus the built bundle `src/PCBS2Coop.Plugin/Assets/pcbs2coop-player.bundle` (and docs that only describe it, e.g. `docs/playermodel.md`). Plugin, network, test and script changes go in ordinary commits, never mixed into a `[unity]` one.
+7. Before every commit, review [README.md](README.md) against the final changes and update affected versions, statistics, synced features, release status and setup/usage instructions in the same commit. Keep it concise and player-first, with a brief sync summary; keep detailed limits and deferred work in [the sync tracker](docs/sync-progress.md). Clearly distinguish current player support from future goals and automated checks from in-game verification.
