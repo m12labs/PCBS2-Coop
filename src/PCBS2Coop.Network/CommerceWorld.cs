@@ -45,6 +45,8 @@ public interface ICommerceNative
     void Ordered(in MutationContext ctx, ShopOrder order, IReadOnlyList<byte[]> lines);
     /// <summary>Owned items are sold. The host's game sells them; its career update follows.</summary>
     void Sold(in MutationContext ctx, IReadOnlyList<ulong> items);
+    /// <summary>Phase 16c: the delivery box is collected. The host's game collects it; its career update follows.</summary>
+    void Collected(in MutationContext ctx);
 }
 
 /// <summary>
@@ -63,7 +65,7 @@ public interface ICommerceNative
 /// </summary>
 public sealed class CommerceWorld : ICommandHandler, IWorldState
 {
-    private enum Step : byte { SetCart = 1, SetBaskets = 2, Order = 3, Sell = 4 }
+    private enum Step : byte { SetCart = 1, SetBaskets = 2, Order = 3, Sell = 4, Collect = 5 }
     public const int MaxLines = 160, MaxLineBytes = 2048, MaxCartBytes = 12 * 1024, MaxBasketBytes = 12 * 1024, MaxSold = 512;
 
     private readonly ActivityWorld _activity;
@@ -118,6 +120,9 @@ public sealed class CommerceWorld : ICommandHandler, IWorldState
 
     public static byte[] Order(ulong epoch, ShopOrder order) => Encode(w => { w.Put((byte)Step.Order); w.Put(epoch); order.Write(w); });
 
+    /// <summary>Phase 16c: collect the shared delivery box (either player).</summary>
+    public static byte[] Collect(ulong epoch) => Encode(w => { w.Put((byte)Step.Collect); w.Put(epoch); });
+
     public static byte[] Sell(ulong epoch, IReadOnlyList<ulong> items) => Encode(w =>
     {
         w.Put((byte)Step.Sell); w.Put(epoch); w.Put(items.Count); foreach (var i in items) w.Put(i);
@@ -149,6 +154,9 @@ public sealed class CommerceWorld : ICommandHandler, IWorldState
             }
             case Step.Order:
                 c = new(step, epoch, default, 0, Array.Empty<byte[]>(), Array.Empty<byte>(), ShopOrder.Read(r), Array.Empty<ulong>());
+                break;
+            case Step.Collect:
+                c = new(step, epoch, default, 0, Array.Empty<byte[]>(), Array.Empty<byte>(), null, Array.Empty<ulong>());
                 break;
             case Step.Sell:
             {
@@ -187,6 +195,8 @@ public sealed class CommerceWorld : ICommandHandler, IWorldState
                     return CommandVerdict.Reject("The cart changed before the order arrived. Check it and buy again.");
                 return OrderCheck?.Invoke(o, cart.Lines) is { } why ? CommandVerdict.Reject(why) : CommandVerdict.Accept;
             }
+            case Step.Collect:
+                return _career.Items.Any(i => i.List == ItemList.Delivery) ? CommandVerdict.Accept : CommandVerdict.Reject("The delivery box is empty.");
             default:
             {
                 if (c.Items.Distinct().Count() != c.Items.Count) return CommandVerdict.Reject("An item is sold twice.");
@@ -220,6 +230,9 @@ public sealed class CommerceWorld : ICommandHandler, IWorldState
                 _native.CartChanged(ctx, o.Shop);
                 break;
             }
+            case Step.Collect:
+                _native.Collected(ctx);
+                break;
             default:
                 _native.Sold(ctx, c.Items);
                 break;

@@ -18,6 +18,8 @@ internal sealed partial class CoopController
     public NativeCareer Career { get; private set; }
     /// <summary>Phase 16b: shared carts, checkout and part sales.</summary>
     public NativeCommerce Commerce { get; private set; }
+    /// <summary>Phase 16c: packages and physical job notes.</summary>
+    public NativePackages Packages { get; private set; }
 
     /// <summary>Host check of the owned item an install names (a method group: the plugin builds without nullable attributes).</summary>
     private string CheckCareerItem(ulong item, IEnumerable<ulong> inUse) => NativeCareer.InCareer ? Career?.Handler.CheckUse(item, inUse) : null;

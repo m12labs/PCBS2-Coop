@@ -83,11 +83,18 @@ internal static class CommerceHooks
         }
     }
 
-    /// <summary>Deliveries are shared in phase 16c; until then the host collects them.</summary>
+    /// <summary>Phase 16c: the delivery box is shared (<c>m_deliveries</c> is an owned-item list). The guest's
+    /// collection is sent to the host, whose game collects; the items reach the guest as a career update.</summary>
     [HarmonyPatch(typeof(CareerStatus), nameof(CareerStatus.CollectDeliveries))]
     internal static class CollectDeliveries
     {
-        private static bool Prefix() => CareerGuards.Allow("collect deliveries");
+        private static bool Prefix()
+        {
+            if (!Guest) return true;
+            try { NativeCommerce.Current?.RequestCollect(); }
+            catch (System.Exception e) { Plugin.Logger.LogError("[shop] collect hook failed: " + e); }
+            return false;
+        }
     }
 
     internal static void Apply(Harmony h)

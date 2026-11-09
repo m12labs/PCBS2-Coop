@@ -309,6 +309,8 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
     /// <summary>What the loaded world holds that co-op can't share yet, or null. Default Free Build has none (3b, B7/B8).</summary>
     internal static string Unsupported()
     {
+        // Phase 16c: a career shares packages and notes (NativePackages). Free Build has none.
+        if (CoopSaves.Kind == CoopGameMode.Career) return null;
         var found = new List<string>();
         var wc = Object.FindObjectOfType<WorkshopController>();
         if (wc != null && wc.GetCarriedPackage() != null) found.Add("a carried package");

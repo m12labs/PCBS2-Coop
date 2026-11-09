@@ -11,6 +11,8 @@ internal sealed class FakeCommerceNative : ICommerceNative
     public void BasketsChanged(in MutationContext ctx) => Baskets++;
     public void Ordered(in MutationContext ctx, ShopOrder order, IReadOnlyList<byte[]> lines) => Orders.Add((ctx.FromLocalPlayer, order, lines.Count));
     public void Sold(in MutationContext ctx, IReadOnlyList<ulong> items) => Sales.Add((ctx.FromLocalPlayer, items.ToArray()));
+    public int Collections;
+    public void Collected(in MutationContext ctx) => Collections++;
 }
 
 /// <summary>Phase 16b: shared carts and job baskets, checkout placed by the host, and part sales.</summary>

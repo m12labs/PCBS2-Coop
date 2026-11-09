@@ -359,6 +359,9 @@ internal sealed class NativeCommerce : ICommerceNative
                     _coop.Notice("The host couldn't sell that: " + text);
                     NativeCareer.Current?.Recheck();
                     break;
+                case "collect":
+                    _coop.Notice("The host couldn't collect the deliveries: " + text);
+                    break;
             }
             Plugin.Logger.LogInfo($"[shop] {p.What} refused: {text}");
         }
@@ -424,6 +427,14 @@ internal sealed class NativeCommerce : ICommerceNative
         if (items.Count > CommerceWorld.MaxSold) items = items.Take(CommerceWorld.MaxSold).ToList();
         if (!Send(CommerceWorld.Sell(Epoch, items), "sale", default)) { _coop.Notice("Not connected to the host."); return; }
         Plugin.Logger.LogInfo($"[shop] asked the host to sell {items.Count} item(s).");
+    }
+
+    /// <summary>Guest accepted the delivery box (phase 16c): the host's game collects it.</summary>
+    internal void RequestCollect()
+    {
+        if (!Active) { _coop.Notice("Deliveries aren't shared yet; try again in a moment."); return; }
+        if (_pending.Values.Any(p => p.What == "collect")) return;
+        if (!Send(CommerceWorld.Collect(Epoch), "collect", default)) _coop.Notice("Not connected to the host.");
     }
 
     // ---------------- host checks ----------------
@@ -560,6 +571,19 @@ internal sealed class NativeCommerce : ICommerceNative
         app.OnBuy();
         _seen[ShopKind.Cable] = ReadCart(ShopKind.Cable);
         Plugin.Logger.LogInfo($"[shop] bought the client's cables on PC {order.Pc}.");
+    }
+
+    public void Collected(in MutationContext ctx)
+    {
+        if (ctx.FromLocalPlayer && _pending.Remove(ctx.Op)) _coop.Notice("Deliveries collected.");
+        if (_world.Local != ActorSlot.Host || ctx.Op.Actor == ActorSlot.Host) return;
+        try
+        {
+            var s = Status ?? throw new InvalidDataException("The career isn't loaded.");
+            NativeProjection.Run(s.CollectDeliveries);
+            _coop.AddChat("Client collected the deliveries.");
+        }
+        catch (Exception e) { _coop.ProjectionFailed("The client's delivery collection could not be made", e); }
     }
 
     public void Sold(in MutationContext ctx, IReadOnlyList<ulong> items)

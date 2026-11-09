@@ -152,6 +152,8 @@ public static class CommandTypes
     public const ushort Career = 18;
     /// <summary>Phase 16b: shared shop carts, job baskets, checkout placed by the host and part sales (<see cref="CommerceWorld"/>).</summary>
     public const ushort Commerce = 19;
+    /// <summary>Phase 16c: packages and physical job notes on benches, note slots and in players' hands (<see cref="PackageWorld"/>).</summary>
+    public const ushort Packages = 20;
 }
 
 /// <summary>One actor's pointer on a shared PC monitor. Coordinates are fractions of that PC's desktop

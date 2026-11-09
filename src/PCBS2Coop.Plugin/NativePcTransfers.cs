@@ -150,7 +150,8 @@ internal sealed class NativePcTransfers : IPcTransferNative
             var pc = Objects.Model.Pcs.SingleOrDefault(x => x.Id == id);
             return pc != null && Objects.TryRemoteCarrier(pc, out _) ? null : "The guest's carried PC is unknown on the host.";
         }
-        string HandsFree() => !host || (wc.CarryingEmpty() && !wc.IsCaseLoading) ? null : "Your hands are not empty.";
+        var actor = ctx.Op.Actor;
+        string HandsFree() => (host ? wc.CarryingEmpty() && !wc.IsCaseLoading : NativePackages.Current?.HandsFull(actor) != true) ? null : "Your hands are not empty.";
         switch (c.Action)
         {
             case TransferAction.Pickup:
@@ -165,6 +166,8 @@ internal sealed class NativePcTransfers : IPcTransferNative
                 var bench = Objects.BenchAt(moves[^1].To.Key);
                 if (bench == null) return "That bench is missing on the host's game.";
                 if (bench.m_caseLoadingToSlot) return "That bench is still loading on the host's game.";
+                // Phase 16c: the game's drop onto a package destroys the package.
+                if (bench.GetPackageInSlot() != null || NativePackages.Current?.BenchHasPackage(bench) == true) return "There's a package on that bench.";
                 var there = Objects.IdOf(bench.GetCaseInSlot());
                 if (c.Occupant.IsNone ? bench.GetCaseInSlot() != null : there != c.Occupant) return "That bench changed on the host's game.";
                 return Carried(c.Pc);

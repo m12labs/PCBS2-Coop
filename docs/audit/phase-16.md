@@ -70,3 +70,62 @@ The owner accepted the recommended options, which are also in the [plan](../../p
 9. Job basket keys (`JobId|offer`) match on both games, and the guest's basket edits reach the host.
 10. Host career updates go out about every 0.5 s with no "wasn't confirmed" warnings.
 11. Startup logs no `[hooks]` error for the five new hooks.
+
+## 16c owner decisions and trace (November 8, 2026)
+
+The trace found that physical job notes block Career hosting. Accepting a job creates a note (`MultiJob.OnAccept`), and job PCs bring notes to their benches. Co-op refused every world with a note, both on Continue and at the guest's day-end reload. Packages move notes too:
+
+- `PickupPackage` moves the bench's job note onto the package.
+- `EmptyPackage` and `EmptyPackageSlot` spawn it at a free slot.
+
+The owner's choices for 16c:
+
+- **Notes:** share them in 16c, together with packages.
+- **No free bench:** a departed player's package returns its parts to the inventory.
+- **Calendar:** leave it to phase 17.
+
+| Path | What the game does (decompile) |
+| --- | --- |
+| Delivery box | The box is `State.m_deliveries`, filled by `AddDelivery` and the calendar's morning events. `DeliveryBox` opens the `Manifest`, and `Manifest.OnBack` calls `CollectDeliveries` (into the inventory), then autosaves. |
+| Packing | `ItemDisplay.ButtonPressedPackage` adds the part to the carried package (`Package.Add`), or spawns one in hands (`TrySpawnPackageInHands` → `Package.Init`). Both take an equal item out with `RemoveItemFromInventory`. |
+| Bench package | `BenchSlot.GetPackageInSlot`, with `Package.m_careerStatus` (`PackageCareerStatus`: `contents`, `jobId`). It is saved with the bench and loaded by `SaveLoadSystem.LoadPackageToSlot`. A carried package is saved with the player and comes back into the loading player's hands (`LoadPlayerData`). |
+| Moves | `WorkshopController.PickupPackage(bench)` moves the bench note onto the package. `DropPackage(bench)` uses `SetPackageInSlot`, which clears the package note and runs the bench's `UpdatePostIt`. A case dropped onto a package destroys it (`DropCase` → `DestroyPackage`). |
+| Opening | `EmptyPackage` and `EmptyPackageSlot` call `Package.RemoveAll` (every part back into the inventory) and `SpawnJobPostItAtAnySlot(job)`. |
+| Notes | A `PostIt` holds a `Job`, and `PostItSlot` is a slot on a bench, a board or a package. `PickUpPostIt`, `DropPostIt(PostItSlot)` and `DropPostIt(BenchSlot)` move notes. `SpawnJobPostItAtSlot` and `PostItSlot.Clear` make and remove them. Notes are saved per slot by job ID (`SavePostItsData`). |
+
+## 0.61 implementation: deliveries, packages and job notes (16c)
+
+**Status:** coded with model tests on November 8, 2026. Release built with zero warnings or errors and all 814 automated checks passed. No game was launched. Nothing here is verified in the running game.
+
+| Area | What 0.61 does |
+| --- | --- |
+| Delivery box | `m_deliveries` is a third owned-item list in `CareerWorld` (`ItemList.Delivery`). Same-day items from either player's order reach both games' boxes. The guest's collection is sent to the host (command 19, `Collect`), whose game collects. The items reach the guest as a career update. |
+| Model | Command 20 `PackageWorld`, with the optional world state `packages`. It holds the packages on benches (job and parts, compressed in the game's serialized form), the job notes on note slots, and what each player carries. |
+| Host | Twice a second, when nothing is loading, the host compares its benches, note slots and hands with the model, and shares any difference. |
+| Guest | The guest's game follows: it makes or removes bench packages and notes. Its pick-up, drop, pack, open and note moves are asked first. The host checks hands (one package, note or PC at a time), the bench or slot, and the item (owned, not being installed). Then the guest's game runs its own action, and the host's game makes the matching change on its benches and inventory. |
+| Parts | Packed items leave the shared inventory as the exact items. The game's equal-item removal is corrected. Opening a package returns the parts as new owned items through the host. |
+| PCs | A PC can't be dropped onto a bench with a package. A player holding a package or note can't pick up a PC. |
+| Departure | Within about 2 s of the guest leaving, the host puts the guest's carried package on a free package bench (or, with none free, returns its parts to the inventory). The note goes to a free board slot. This also covers the day-end reload and a cold Continue, since the guest's carried things are saved in the co-op state. |
+| Hosting | Career worlds with packages or notes are no longer refused. The host's own carried package, which arrives in the guest's hands with the host's save, is put down at admission. |
+
+### Not covered by 0.61
+
+- A note for a job the guest's game doesn't have yet (one the host took today) appears after the day-end reload. Jobs are shared in phase 17.
+- A note on a carried package itself can't be taken off on the guest; pick up the package instead.
+- When the guest drops a note on a bench, the host's game makes the note but doesn't run the bench's `UpdatePostIt` job link.
+- The calendar isn't shared during a day (owner decision; phase 17).
+
+### Runtime checks for the gameplay sweep
+
+1. Delivery items bind with matching keys on both games. The guest's delivery box shows the host's same-day items, and a collection from either game moves them into the inventory once.
+2. Bench packages read correctly (`GetPackageInSlot`, `m_careerStatus.contents` and `jobId`). `LoadPackageToSlot` on the other game shows the same package and bench note.
+3. A guest pack uses the exact item, and the host's inventory loses the same item.
+4. A guest's pick-up and drop of a bench package run the game's own action after acceptance, and the host's bench follows.
+5. Opening a carried or bench package returns its parts once, and its note appears once, at the host's chosen slot.
+6. Note slot paths match on both games. Note pick-up and drop work (slot and bench).
+7. PC transfers refuse a drop onto a package bench, and refuse a guest pickup while the guest holds a package or note.
+8. A departed guest's package and note are put down, including through the day-end reload and a cold Continue.
+9. The host's carried package is put down on the guest at admission.
+10. Packed parts fit in one command (no "too large to share" warnings).
+11. Career worlds with packages and notes host and admit.
+12. Startup logs no `[hooks]` error for the eight new hooks.

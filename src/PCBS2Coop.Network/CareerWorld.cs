@@ -50,8 +50,8 @@ public sealed record CareerFacts(int Cash, int Kudos, float Rating, int Day, int
     }
 }
 
-/// <summary>The game's two owned-item lists in <c>CareerStatus</c>: parts and peripherals.</summary>
-public enum ItemList : byte { Main = 1, Peripheral = 2 }
+/// <summary>The game's owned-item lists in <c>CareerStatus</c>: parts, peripherals and (0.61) the delivery box.</summary>
+public enum ItemList : byte { Main = 1, Peripheral = 2, Delivery = 3 }
 
 /// <summary>One owned item. <see cref="Key"/> is what tells otherwise equal items apart on both games (part, variant,
 /// job, condition, dirt, value, silicon lottery, PC Bay origin); the game gives items no ID of its own.</summary>

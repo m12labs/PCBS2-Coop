@@ -105,6 +105,8 @@ internal sealed class NativeCareer : ICareerNative
         if (s == null) return all;
         if (s.GetInventory() is { } main) foreach (var p in main) if (p != null) all.Add((p, ItemList.Main));
         if (s.GetPeripheralInventory() is { } perifs) foreach (var p in perifs) if (p != null) all.Add((p, ItemList.Peripheral));
+        // Phase 16c: the delivery box (CareerStatus.State.m_deliveries) is shared like the inventory.
+        if (Data?.m_deliveries is { } box) foreach (var p in box) if (p != null) all.Add((p, ItemList.Delivery));
         return all;
     }
 
@@ -243,6 +245,49 @@ internal sealed class NativeCareer : ICareerNative
 
     /// <summary>Guest: compare the owned items with the model again soon (a refused sale).</summary>
     internal void Recheck() => _dirty = true;
+
+    /// <summary>Host (phase 16c): take exactly this owned item out of the inventory (packed for the client). The next
+    /// update shares it.</summary>
+    internal void TakeOut(ulong id)
+    {
+        var s = Status ?? throw new InvalidDataException("The career isn't loaded.");
+        var part = Find(id) ?? throw new InvalidDataException($"item {id} is no longer in the host's inventory");
+        var list = Natives().FirstOrDefault(n => n.Part.Pointer == part.Pointer);
+        if (list.Part != null) Remove(s, part, list.List);
+        // Gone here at once: a second request for the same item finds nothing to pack.
+        Unbind(id);
+        NativeProjection.Run(s.UpdateInventory);
+    }
+
+    /// <summary>Guest (phase 16c): run the game's own packing with exactly this item. The game takes an equal item out
+    /// of the inventory (<c>RemoveItemFromInventory</c>); if it took a different one, that one goes back and this one
+    /// comes out. The host's update removing it follows.</summary>
+    internal void PackExact(ulong id, Action<PartInstance> pack)
+    {
+        var s = Status ?? throw new InvalidDataException("The career isn't loaded.");
+        var part = Find(id) ?? throw new InvalidDataException($"item {id} isn't in this game's inventory");
+        var before = Natives();
+        var mine = before.First(n => n.Part.Pointer == part.Pointer);
+        pack(part);
+        var after = new HashSet<IntPtr>(Natives().Select(n => n.Part.Pointer));
+        if (after.Contains(part.Pointer))
+        {
+            foreach (var (other, list) in before)
+                if (other.Pointer != part.Pointer && !after.Contains(other.Pointer)) Add(s, other, list);
+            Remove(s, part, mine.List);
+        }
+        _gone[id] = Time.realtimeSinceStartup;
+        Unbind(id);
+        NativeProjection.Run(s.UpdateInventory);
+    }
+
+    /// <summary>Host (phase 16c): a part from an opened package goes back into the inventory, in the list the game
+    /// chooses. The next update shares it as a new owned item.</summary>
+    internal void AddOwned(PartInstance part)
+    {
+        var s = Status ?? throw new InvalidDataException("The career isn't loaded.");
+        NativeProjection.Run(() => { s.AddItemToInventory(part, false, false, true, true); s.UpdateInventory(); });
+    }
 
     /// <summary>An accepted change used item <paramref name="id"/> up (a case made into a PC): take it out of this
     /// game's inventory. The host's next update removes it from the model.</summary>
@@ -489,7 +534,7 @@ internal sealed class NativeCareer : ICareerNative
         var d = Data ?? throw new InvalidDataException("The career isn't loaded.");
         NativeProjection.Run(() =>
         {
-            foreach (var l in new[] { d.m_inventory, d.m_peripheralInventory })
+            foreach (var l in new[] { d.m_inventory, d.m_peripheralInventory, d.m_deliveries })
                 for (var i = l.Count - 1; i >= 0; i--)
                     if (l[i] != null && l[i].Pointer == part.Pointer) l.RemoveAt(i);
         });
@@ -500,6 +545,8 @@ internal sealed class NativeCareer : ICareerNative
         var d = Data ?? throw new InvalidDataException("The career isn't loaded.");
         NativeProjection.Run(() =>
         {
+            // The delivery box: stored as the game's AddDelivery stores it, without its job-tag bookkeeping (the host's game did that).
+            if (list == ItemList.Delivery) { d.m_deliveries.Add(part); return; }
             s.AddItemToInventory(part, false, false, true, true);
             // Put it in the list the host has it in, whichever list the game chose.
             var inMain = d.m_inventory.Contains(part); var inPerif = d.m_peripheralInventory.Contains(part);
