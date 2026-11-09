@@ -56,6 +56,7 @@ The owner confirmed these choices on October 25, 2026. Use this table as the cur
 | Account effects | Steam achievements and external uploads belong to the account performing the action. Replication never writes to the other player's account. | 17–18 |
 | Menu availability during development | Host Career is visible in the co-op menu while phases 15–17 are built, with no extra toggle or label. The mod is unreleased and only the owner uses it. | 15 |
 | Career names | New Game uses the same name box as Free Build, defaulting to "Co-op Career N", with a per-career autosave. | 15 |
+| Career saves | Native Career autosaves (`AutoSave`, `AutoSaveNGP`, onboarding/manifest steps, Exit) are skipped on both games. The host saves on the co-op interval, Exit, the Save screen and `/sync`, plus once after each finished day once accepted work has settled. The guest never saves. | 15, 17 |
 | Phase 15 testing | Code and model tests only. Runtime-only questions are recorded as checks for the gameplay sweep after phase 17. | 15 |
 
 Any UI placement or flow not settled by these answers remains a phase-start question under the repository's working rules.
@@ -795,9 +796,9 @@ Implement the statically evidenced Career sync across 15–17 and run the build 
 | Task | Work and completion condition |
 | --- | --- |
 | **15a. Focused audit and scope** | **Static pass recorded.** Mode/load and save paths, safe sync reuse, and owner decisions are in the [phase 15 audit](docs/audit/phase-15.md). Asset, first-load and layout checks remain for runtime. |
-| **15b. Mode-aware host, join and saves** | CP-001, 024–026, 028, 055–059. Carry mode, campaign identity and native scene through `CoopController`, `CoopRunner`, `CoopSaves` and admission. Add the host-only new Career path and exact paired restore. Model tests cover legacy Free Build, mismatches, stale loads and backup isolation. Complete after New, Continue, Load, `/sync` and join/rejoin pass for both modes. |
+| **15b. Mode-aware host, join and saves** | **Coded in 0.58, not run in game.** [0.58 implementation](docs/audit/phase-15.md#058-implementation-mode-aware-host-join-and-saves-15b-and-the-two-host-rows-15d). CP-001, 024–026, 028, 055–059. Carry mode, campaign identity and native scene through `CoopController`, `CoopRunner`, `CoopSaves` and admission. Add the host-only new Career path and exact paired restore. Model tests cover legacy Free Build, mismatches, stale loads and backup isolation. Complete after New, Continue, Load, `/sync` and join/rejoin pass for both modes. |
 | **15c. Shared Career facts and inventory** | CP-007–009, 012–014, 030–042. Register Career state and typed mutations with `WorldSync`. Bind the wallet, ledger, day, progression and owned items to native state. Use item IDs and reservations in reused building and tool paths. Complete when duplicate items, exhausted stock, rejoin and cold restore preserve exact identity, condition, provenance and balances. Phase 16 consumes this model for trades. |
-| **15d. Career and Free Build menu rows** | CP-001, 026, 059. Wire two rows into the mode-aware host flow from 15b. Keep independent save lists and a common Join and Options. Fit the list and side card at supported sizes. Complete after two-mode hover/focus, controller/keyboard, no-save/has-save, cancel and resize checks pass. |
+| **15d. Career and Free Build menu rows** | **Rows coded in 0.58, not run in game.** CP-001, 026, 059. Wire two rows into the mode-aware host flow from 15b. Keep independent save lists and a common Join and Options. Fit the list and side card at supported sizes. Complete after two-mode hover/focus, controller/keyboard, no-save/has-save, cancel and resize checks pass. |
 
 ### 16. Career shopping, deliveries, markets and PC sales
 

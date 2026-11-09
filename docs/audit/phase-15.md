@@ -31,3 +31,33 @@ Hooking `SpendCash`, `AddCash` or a generic inventory writer alone loses context
 - Trace the exact Career first-load chain, scene selection and header fallback in real interop. Confirm when the native save first becomes available and when the starting tutorial permits guest input. Use the actual game as the authority for scene geometry, bench IDs, row navigation and autosave cadence.
 - Preserve the old Free Build load, Continue, backup, `/sync`, and guest-copy flows in regression tests. Refuse a wrong mode, run, scene, incompatible pair or unsupported content with a readable reason before overwriting anything or admitting the guest.
 - Use the [Career checklist](../career-testing.md#15-start-save-and-join) for New Game, exact Load, Continue, both peers and menu fitting. The individual save and transaction tests belong to their owning phase as well as the final recovery sweep.
+
+## 0.58 implementation: mode-aware host, join and saves (15b) and the two host rows (15d)
+
+**Status:** coded with model tests on November 8, 2026. Release built with zero warnings or errors and all 747 automated checks passed. No game was launched (owner decision: phase 15 is code and model tests only). Nothing here is verified in the running game.
+
+| Area | What 0.58 does |
+| --- | --- |
+| Run identity | `CoopCampaign` (Network) holds the mode, a run ID made when the run starts, and the workshop scene. Career plays in `Stage_02_Workshop_Shop_Rundown` and, after the native renovation, `Stage_02_Workshop`. Free Build plays only in `Stage_02_Workshop`. `CoopRunner.IsWorkshop` treats both as co-op workshops. |
+| Save pairs | Sidecar layout `PC2PAIR3` writes the campaign after the version. `PC2PAIR1`/`PC2PAIR2` pairs (0.16–0.57) read as `CoopCampaign.Legacy` (Free Build, empty run ID). An unknown mode or unsupported scene is refused with a reason. The snapshot bundle carries the same metadata, so the guest learns the host's mode and scene from it. |
+| Folders | Free Build stays in `Saves\Coop`. Career uses `Saves\Coop\Career` with its own `GuestSession`, `Joined`, `Transfer`, `Backup` and `Content`. Menu queries (`WorldSaves`, `NewestReadable`, `HasCoopWorld`, `WorldStems`, `RestoreUnreadable`, `DropOrphanPairs`, `DeleteSave`) take the mode. Continue and pause-menu Load also refuse a pair of the other mode found in a folder (`CoopSaveBackups.Readable(path, mode, …)`). |
+| Host start | Host Career → New repeats `NewMainMenu.PlayCareer` without its overwrite prompt: `loadedFromMainMenu`, `m_isNewGame`, `gameModeToLoad = CAREER`, `startHardCareer = false`, `WorkshopManager.WorkshopToLoad = Stage_02_Workshop_Shop_Rundown`, `StartNewGame(CAREER)`. The named first save follows once the world is ready. For Continue and Load, the pair's campaign must match the row's mode. The save list's native header must not report another mode, New Game Plus, hard mode or an unsupported scene. |
+| Exact load | `LoadExact` replaces `LoadNamedFreeBuild` for host, guest, `/sync` and pause-menu Load. Free Build loads as before. Career loads as `ContinueCareer` does (`gameModeToLoad = CAREER`, `LoadGameFromDir(file, scene, false)`), using the scene the run was saved in. Free Build Reset is refused in Career. |
+| Saves | Owner decision: native Career autosaves are skipped on both games (`AutoSave`, `AutoSaveNGP`, `SaveCurrentGame`, plus the existing `FreebuildSave`). Host interval, Exit, Save screen and `/sync` saves use the mode's autosave name (`auto.binary` for Career), redirected to `<stem>--auto.binary`. The host's save after each finished day belongs to 17d. |
+| Renovation | `CareerStatus.UpgradeShop` is refused in co-op with a notice until 17d makes it a host-controlled transition. It saves and reloads the workshop outside a shared generation. |
+| Menu | The co-op list shows Host Career above Host Free Build (owner decision: visible during development, no toggle). Each row's Continue and Load Game follow its own mode's saves. New Game suggests "Co-op Career N" with a "Career name" field. Join a Friend and Co-op Options are shared. |
+
+### Not covered by 0.58
+
+- 15c has not started. Cash, ledger, day, progression, owned inventory and job-owned PCs are not shared. Both games start from the same snapshot and then run their own Career simulation.
+- The existing refusal of worlds with packages or physical notes still applies. If the starting shop or its first day spawns either, Career hosting is refused until phases 16–17.
+
+### Runtime checks for the gameplay sweep
+
+1. Host Career → New reaches the run-down shop through `StartNewGame(CAREER)` with the co-op save folder redirected, and `WorldReadiness` settles there.
+2. The career's first named save succeeds once the world is ready. Check whether first-day onboarding allows a save at that point.
+3. The save list's `m_header` for a co-op career save reports `CAREER` and the scene `LoadExact` uses.
+4. A guest loads a Career snapshot through `LoadExact` and is admitted.
+5. Startup logs no `[hooks]` error for the `AutoSave`, `AutoSaveNGP`, `SaveCurrentGame` and `UpgradeShop` hooks (folded native functions).
+6. The co-op list fits with seven rows at 16:9, ultrawide and a small window. Both rows' sub-buttons respond to hover and click (C15-01).
+7. Free Build regression: New, Continue, Load, `/sync`, pause-menu Load/Reset and join still work, and 0.57 pairs load (C15-05).

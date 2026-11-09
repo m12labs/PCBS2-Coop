@@ -57,8 +57,8 @@ internal static class PersistenceTests
         var native = new byte[] { 3, 1, 4, 1, 5 }; var state = new byte[] { 0, 0, 0, 0 };
         var meta = CoopSavePair.Create(native, new SnapshotPosition(1, 5, 77, state), Array.Empty<CarrierPayload>());
         var encoded = CoopSavePair.Encode(meta);
-        t.Check(BitConverter.ToUInt64(encoded, 0) == 0x3252494150324350UL && CoopSavePair.Decode(encoded).Position.State.SequenceEqual(state),
-            "this version writes the compressed layout and reads it back");
+        t.Check(BitConverter.ToUInt64(encoded, 0) == 0x3352494150324350UL && CoopSavePair.Decode(encoded).Position.State.SequenceEqual(state),
+            "this version writes the compressed layout (with its campaign, 0.58) and reads it back");
         var old = CoopSavePair.Decode(OldLayout("0.20", native, state));
         t.Check(old.Position.State.SequenceEqual(state) && old.Position.Revision == 5, "a 0.20 save (uncompressed layout) still loads");
         string Message(string version)

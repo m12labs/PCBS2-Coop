@@ -23,6 +23,20 @@ public static class CoopSaveBackups
         catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException) { problem = e.Message; return false; }
     }
 
+    /// <summary>Whether the save reads as a world of <paramref name="mode"/> (phase 15: each mode has its own folder, and a
+    /// pair of the other mode found there is refused rather than loaded in the wrong mode).</summary>
+    public static bool Readable(string nativePath, CoopGameMode mode, out string? problem)
+    {
+        problem = null;
+        try
+        {
+            if (!File.Exists(nativePath)) { problem = "The save file is missing."; return false; }
+            problem = CoopSavePair.ReadSidecar(nativePath).Campaign.Problem(mode);
+        }
+        catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException) { problem = e.Message; }
+        return problem == null;
+    }
+
     /// <summary>
     /// Before a save replaces <paramref name="nativePath"/>: copy its pair into <paramref name="backupDir"/> when it reads,
     /// replacing the previous backup. An unreadable pair keeps the older backup. Returns whether a backup was made.

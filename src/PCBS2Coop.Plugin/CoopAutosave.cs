@@ -16,8 +16,15 @@ namespace PCBS2Coop;
 /// <item>when it leaves the world through the pause menu's Exit (the exit waits for the save, up to a few seconds);</item>
 /// <item>from the game's Save screen, as before (it calls <c>CreateSaveGame</c> directly).</item>
 /// </list>
-/// The mod's own saves call <c>CreateSaveGame</c> with the Free Build autosave name, which the save hook redirects to the
-/// world's own autosave file. The guest keeps only the copies the host sends.
+/// The mod's own saves call <c>CreateSaveGame</c> with the mode's autosave name (<see cref="CoopSaves.AutosaveName"/>),
+/// which the save hook redirects to the world's own autosave file. The guest keeps only the copies the host sends.
+/// <para>Career (owner decision, November 8, 2026) follows the same rule. The game's own Career saves are skipped on both
+/// games: <c>SaveLoadSystem.AutoSave</c> / <c>AutoSaveNGP</c> (decompile callers: the day iterator
+/// <c>CareerStatus.AdvanceDay</c>, <c>GameController.ExitGame</c>, <c>Manifest.OnBack</c>, first-day and shop-front
+/// onboarding steps) and <c>SaveCurrentGame</c> (after a workshop load; for Career it calls <c>CreateSaveGame</c>
+/// directly). The extra host save after each finished day comes with the shared day transition (phase 17d).
+/// The native shop renovation (<c>CareerStatus.UpgradeShop</c>) saves and reloads the workshop itself; it is refused in
+/// co-op until phase 17d makes it a host-controlled world change.</para>
 /// </summary>
 internal sealed partial class CoopController
 {
@@ -66,7 +73,7 @@ internal sealed partial class CoopController
         var saves = Object.FindObjectOfType<SaveLoadSystem>();
         if (saves == null) return false;
         var before = _hostSaves;
-        try { saves.CreateSaveGame(SaveLoadSystem.s_autoFreeBuildSaveName, false, ""); }
+        try { saves.CreateSaveGame(CoopSaves.AutosaveName, false, ""); }
         catch (Exception e) { Plugin.Logger.LogError($"[saves] {why} save failed: {e}"); return false; }
         var started = _hostSaves != before;
         Plugin.Logger.LogInfo(started ? $"[saves] {why} save started." : $"[saves] {why} save was refused (see the save guard above).");
@@ -149,6 +156,42 @@ internal sealed partial class CoopController
     {
         private static bool Prefix() => AllowGameAutosave();
     }
+
+    /// <summary>The game's Career autosave (day end, exit, manifest, onboarding steps).</summary>
+    [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.AutoSave))]
+    internal static class CareerAutosaveGuard
+    {
+        private static bool Prefix() => AllowGameAutosave();
+    }
+
+    /// <summary>The game's New Game Plus autosave (same callers as <see cref="CareerAutosaveGuard"/>).</summary>
+    [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.AutoSaveNGP))]
+    internal static class PlusAutosaveGuard
+    {
+        private static bool Prefix() => AllowGameAutosave();
+    }
+
+    /// <summary>The save after a workshop load: Free Build goes through <c>FreebuildSave</c>, Career straight to
+    /// <c>CreateSaveGame</c>.</summary>
+    [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.SaveCurrentGame))]
+    internal static class CurrentGameSaveGuard
+    {
+        private static bool Prefix() => AllowGameAutosave();
+    }
+
+    /// <summary>The native shop renovation: refused in a co-op world until it is shared (phase 17d).</summary>
+    [HarmonyPatch(typeof(CareerStatus), nameof(CareerStatus.UpgradeShop))]
+    internal static class ShopRenovationGuard
+    {
+        private static bool Prefix()
+        {
+            if (CoopSaves.Current == CoopSaves.Mode.None) return true;
+            Instance?.Notice("The shop renovation isn't shared in co-op yet.", 10f);
+            Plugin.Logger.LogWarning("[career] refused the native shop renovation (CareerStatus.UpgradeShop): it reloads the workshop outside a shared world change.");
+            return false;
+        }
+    }
+
 
     /// <summary>The pause menu's Exit (to the main menu), the host's way out of a co-op world.</summary>
     [HarmonyPatch(typeof(ExitPanel), nameof(ExitPanel.Exit))]

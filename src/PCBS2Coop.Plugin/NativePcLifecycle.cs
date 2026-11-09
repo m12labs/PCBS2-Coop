@@ -51,7 +51,7 @@ internal sealed partial class NativePcLifecycle : IPcNative, IPcImportNative
     }
 
     /// <summary>A co-op world is loaded here, whether or not this peer is admitted yet.</summary>
-    internal static bool InCoopWorkshop => CoopSaves.Current != CoopSaves.Mode.None && CoopRunner.Instance?.Scene == CoopRunner.WorkshopScene &&
+    internal static bool InCoopWorkshop => CoopSaves.Current != CoopSaves.Mode.None && CoopRunner.InWorkshop &&
                                            CoopController.Instance?.Session.IsRunning == true;
     private bool Active => _world.Admitted && _world.Divergence == null && Objects.Initialized && _coop.Activity.Get(_world.Local) != null;
     private static WorkshopController Workshop => Object.FindObjectOfType<WorkshopController>() ?? throw new InvalidDataException("Workshop unavailable.");

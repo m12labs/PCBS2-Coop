@@ -29,6 +29,7 @@ SnapshotTests.Run(t);
 TransportTests.Run(t);
 SyncTests.Run(t);
 PersistenceTests.Run(t);
+CampaignTests.Run(t);
 AcceptanceTests.Run(t);
 LoopbackTests.Run(t);
 return t.Finish();

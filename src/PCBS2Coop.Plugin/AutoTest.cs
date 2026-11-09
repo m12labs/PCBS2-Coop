@@ -130,7 +130,7 @@ internal sealed class AutoTest
                 break;
             }
             case 3:
-                Plugin.Logger.LogInfo($"AUTOTEST: dialog open = {r.Menu.Dialog.IsOpen} ({r.Menu.Dialog.Current}), worlds = {CoopSaves.WorldSaves().Count}, scene = {r.Scene}.");
+                Plugin.Logger.LogInfo($"AUTOTEST: dialog open = {r.Menu.Dialog.IsOpen} ({r.Menu.Dialog.Current}), worlds = {CoopSaves.WorldSaves(CoopGameMode.FreeBuild).Count}, scene = {r.Scene}.");
                 Shot(r, "dialog");
                 Next(now + 1.5f);
                 break;
@@ -227,7 +227,7 @@ internal sealed class AutoTest
             case 14:
             {
                 var canContinue = r.Menu.CoopReady && r.Menu.ContinueButton.activeInHierarchy;
-                Plugin.Logger.LogInfo($"AUTOTEST: co-op list shown = {r.Menu.CoopShown}, Continue shown = {canContinue}, worlds = [{string.Join(", ", CoopSaves.WorldSaves().Select(f => f.Name))}].");
+                Plugin.Logger.LogInfo($"AUTOTEST: co-op list shown = {r.Menu.CoopShown}, Continue shown = {canContinue}, worlds = [{string.Join(", ", CoopSaves.WorldSaves(CoopGameMode.FreeBuild).Select(f => f.Name))}].");
                 Shot(r, "coop-menu-2");
                 if (!canContinue) { Fail("Continue is not offered after a co-op save."); break; }
                 Click(r.Menu.ContinueButton);

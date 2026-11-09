@@ -12,7 +12,14 @@ public sealed class CoopRunner : MonoBehaviour
     public CoopRunner(IntPtr ptr) : base(ptr) { }
 
     public const string MenuScene = "Main_Menu";
-    public const string WorkshopScene = "Stage_02_Workshop";
+    /// <summary>The Free Build workshop (probes and the self test run there).</summary>
+    public const string WorkshopScene = CoopCampaign.FreeBuildScene;
+
+    /// <summary>A workshop a co-op world can be played in: the Free Build workshop or a supported Career shop (phase 15).</summary>
+    internal static bool IsWorkshop(string scene) => CoopCampaign.IsWorkshop(scene);
+
+    /// <summary>The active scene is a co-op workshop.</summary>
+    internal static bool InWorkshop => Instance != null && IsWorkshop(Instance.Scene);
 
     internal static CoopRunner Instance { get; private set; }
     internal CoopController Coop { get; private set; }
@@ -62,11 +69,12 @@ public sealed class CoopRunner : MonoBehaviour
         SteamBootstrap.Service?.Poll();
         Menu?.Update();
 
-        Coop.Update(scene == WorkshopScene);
+        var workshop = IsWorkshop(scene);
+        Coop.Update(workshop);
         _steamMenu ??= new SteamInviteMenu(Coop);
-        _steamMenu.Update(scene == WorkshopScene);
-        UpdateStatus(scene == WorkshopScene);
-        Chat.Update(scene == WorkshopScene);
+        _steamMenu.Update(workshop);
+        UpdateStatus(workshop);
+        Chat.Update(workshop);
         _autoTest?.Update(this);
         _probe?.Update(this);
         _phase3Probe?.Update(this);

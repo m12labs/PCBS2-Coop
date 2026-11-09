@@ -34,7 +34,7 @@ internal sealed partial class CoopController
     internal bool OnFreeBuildReset()
     {
         if (GuestInWorld) { Notice("Only the host can reset the co-op world."); return false; }
-        if (CoopSaves.Current != CoopSaves.Mode.Host || CoopRunner.Instance?.Scene != CoopRunner.WorkshopScene) return true;
+        if (CoopSaves.Current != CoopSaves.Mode.Host || !CoopRunner.InWorkshop) return true;
         if (StartWorldSwitch(null) is { } why) Notice($"Can't reset the world now: {why}.");
         return false;
     }

@@ -34,7 +34,7 @@ internal sealed partial class CoopController
     private string _hostWorldKind;
     private (uint Id, SnapshotPurpose Purpose, string Path, float Deadline)? _pendingFile;
     private readonly Queue<string> _copiesToSend = new();
-    private readonly Queue<(string Path, SnapshotPosition Position, IReadOnlyList<CarrierPayload> Carriers)> _pairWrites = new();
+    private readonly Queue<(string Path, SnapshotPosition Position, IReadOnlyList<CarrierPayload> Carriers, CoopCampaign Campaign)> _pairWrites = new();
     private (SnapshotPosition Position, IReadOnlyList<CarrierPayload> Carriers)? _saveCapture;
     private SaveMetadata _loadingPair;
     private (SnapshotPosition Position, IReadOnlyList<CarrierPayload> Carriers)? _snapshotPair;
@@ -152,17 +152,19 @@ internal sealed partial class CoopController
     private bool ResolveStart(HostStart start, out string stem, out string file, out string error)
     {
         stem = file = null; error = null;
+        var mode = start.Mode;
+        var noun = mode == CoopGameMode.Career ? "career" : "world";
         switch (start.What)
         {
             case HostStart.Kind.New:
                 stem = start.Name;
-                if (CoopSaves.WorldExists(stem)) error = $"There is already a world called \"{CoopWorldNames.WorldName(stem)}\".";
+                if (CoopSaves.WorldExists(stem, mode)) error = $"There is already a {noun} called \"{CoopWorldNames.WorldName(stem)}\".";
                 break;
             case HostStart.Kind.Continue:
                 // The newest save that loads (owner decision, phase 8: an unreadable newest save falls back).
-                NoteRestored(CoopSaves.RestoreUnreadable());
-                file = CoopSaves.NewestReadable()?.Name;
-                if (file == null) error = CoopSaves.HasCoopWorld() ? "None of your co-op worlds can be loaded. See the log for why." : "There is no co-op world to continue.";
+                NoteRestored(CoopSaves.RestoreUnreadable(mode));
+                file = CoopSaves.NewestReadable(mode)?.Name;
+                if (file == null) error = CoopSaves.HasCoopWorld(mode) ? $"None of your co-op {noun}s can be loaded. See the log for why." : $"There is no co-op {noun} to continue.";
                 break;
             default:
                 file = Path.GetFileName(start.Name ?? "");
@@ -170,8 +172,8 @@ internal sealed partial class CoopController
                 break;
         }
         if (file != null)
-            stem = CoopSaves.IsEarlierWorld(file)
-                ? CoopWorldNames.StemFromName(CoopWorldNames.NextDefaultName(CoopSaves.WorldStems()), out _)
+            stem = mode == CoopGameMode.FreeBuild && CoopSaves.IsEarlierWorld(file)
+                ? CoopWorldNames.StemFromName(CoopWorldNames.NextDefaultName(CoopSaves.WorldStems(mode), mode), out _)
                 : CoopWorldNames.SafeStem(CoopWorldNames.StemOf(file));
         return error == null;
     }
@@ -187,16 +189,24 @@ internal sealed partial class CoopController
         var local = GameInfo.Build();
         if (!(transport == null ? Session.Host(port, local, out error) : Session.Host(transport, local, out error))) return false;
         BeginBackgroundRun();
-        CoopSaves.EnterHost(stem);
+        var career = start.Mode == CoopGameMode.Career;
         var newWorld = start.What == HostStart.Kind.New;
-        _hostWorldKind = newWorld ? "new co-op world" : "continued co-op world";
+        // A new run gets its own run ID; a saved one takes the ID its pair recorded (read below).
+        CoopSaves.EnterHost(stem, career ? CoopCampaign.NewCareer() : CoopCampaign.NewFreeBuild());
+        _hostWorldKind = (newWorld ? "new co-op " : "continued co-op ") + (career ? "career" : "world");
         _initialSave = newWorld ? stem : null;
 
         string name;
         if (!newWorld)
         {
             name = CoopSaves.FindSaveFile(file);
-            if (name == null) { Fail($"The co-op world \"{CoopWorldNames.DisplayOf(file)}\" isn't in the save list."); error = LastFailure; return false; }
+            if (name == null) { Fail($"The co-op {(career ? "career" : "world")} \"{CoopWorldNames.DisplayOf(file)}\" isn't in the save list."); error = LastFailure; return false; }
+        }
+        else if (career)
+        {
+            Plugin.Logger.LogInfo($"[world] host starts the new co-op career '{CoopWorldNames.WorldName(stem)}' in '{CoopSaves.CoopDir}'.");
+            try { StartNewCareer(); return true; }
+            catch (Exception e) { Fail("Could not start the co-op career: " + e.Message); error = LastFailure; return false; }
         }
         else
         {
@@ -220,12 +230,15 @@ internal sealed partial class CoopController
                     NoteRestored(new[] { CoopSaves.DisplayName(name) });
                 }
                 _loadingPair = CoopSavePair.ReadSidecar(path);
+                if (_loadingPair.Campaign.Problem(start.Mode) is { } wrong) throw new InvalidDataException(wrong);
+                if (NativeModeProblem(name, start.Mode) is { } native) throw new InvalidDataException(native);
+                CoopSaves.SetCampaign(_loadingPair.Campaign);
             }
-            LoadNamedFreeBuild(name); return true;
+            LoadExact(name, CoopSaves.Campaign); return true;
         }
         catch (Exception e)
         {
-            Fail("Could not load the co-op world: " + e.Message);
+            Fail($"Could not load the co-op {(career ? "career" : "world")}: " + e.Message);
             error = LastFailure;
             return false;
         }
@@ -239,16 +252,73 @@ internal sealed partial class CoopController
     }
 
     /// <summary>
-    /// ContinueFreeBuild's string is a default-save switch, not a filename: a nonempty value prefers the shipped
-    /// default save. Use the same lower-level entry point with our exact save instead, for host and guest alike.
+    /// Load one exact co-op save in its mode and scene, for host and guest alike.
+    /// <list type="bullet">
+    /// <item>Free Build: ContinueFreeBuild's string is a default-save switch, not a filename (a nonempty value prefers the
+    /// shipped default save), so use the same lower-level entry point with our exact save.</item>
+    /// <item>Career: what <c>NewMainMenu.ContinueCareer</c> does (decompile): <c>gameModeToLoad = CAREER</c>, then
+    /// <c>LoadGameFromDir(file, header.m_scene, false)</c>. The scene is the one the run was saved in.</item>
+    /// </list>
     /// </summary>
-    private static void LoadNamedFreeBuild(string name)
+    private static void LoadExact(string name, CoopCampaign campaign)
     {
         var level = Object.FindObjectOfType<LevelLoadPersistency>();
         if (level == null) throw new InvalidOperationException("The game's loading system isn't ready.");
+        if (campaign.Problem(campaign.Mode) is { } problem) throw new InvalidDataException(problem);
         NewMainMenu.RefreshControllerInput();
-        level.gameModeToLoad = GameMode.FREEBUILD;
-        level.LoadGameFromDir(name, CoopRunner.WorkshopScene, false);
+        level.gameModeToLoad = campaign.Mode == CoopGameMode.Career ? GameMode.CAREER : GameMode.FREEBUILD;
+        level.LoadGameFromDir(name, campaign.Mode == CoopGameMode.Career ? campaign.Scene : CoopRunner.WorkshopScene, false);
+    }
+
+    /// <summary>
+    /// Host, new co-op career: what <c>NewMainMenu.PlayCareer</c> does (decompile), without its "overwrite your save?"
+    /// prompt (each co-op career has its own files): <c>loadedFromMainMenu</c>, <c>m_isNewGame</c>, Career mode, no hard
+    /// mode, the run-down starting shop as the workshop to load, then <c>StartNewGame(CAREER)</c>. The career's first
+    /// save under its name follows once the world is ready (<see cref="SaveNewWorld"/>).
+    /// </summary>
+    private static void StartNewCareer()
+    {
+        // The game's own accessors, as PlayCareer uses them (Singleton<T>.Instance may create the object).
+        var level = PCBS.Singleton<LevelLoadPersistency>.Instance;
+        var workshops = PCBS.Singleton<PCBS.WorkshopManager>.Instance;
+        if (level == null || workshops == null) throw new InvalidOperationException("The game's loading system isn't ready.");
+        if (level.isLevelLoading) throw new InvalidOperationException("The game is already loading.");
+        NewMainMenu.RefreshControllerInput();
+        level.loadedFromMainMenu = true;
+        level.m_isNewGame = true;
+        level.gameModeToLoad = GameMode.CAREER;
+        level.startHardCareer = false;
+        workshops.WorkshopToLoad = CoopCampaign.CareerStartScene;
+        level.StartNewGame(GameMode.CAREER);
+    }
+
+    /// <summary>Why the game's own header of save <paramref name="name"/> (in the current save folder) says it isn't a
+    /// <paramref name="mode"/> save, or null. A header the save list doesn't give is left to the pair's check.</summary>
+    private static string NativeModeProblem(string name, CoopGameMode mode)
+    {
+        SaveGameHeader header = null;
+        foreach (var info in SaveLoadSystem.GetSaveGamesWindows())
+            if (info.m_name == name || info.m_info?.Name == name) { header = info.m_header; break; }
+        if (header == null) { Plugin.Logger.LogWarning($"[saves] no native header listed for '{name}'; relying on its co-op pair."); return null; }
+        Plugin.Logger.LogInfo($"[saves] '{name}' native header: mode {header.m_gameMode}, scene '{header.m_scene}', hard {header.m_hardMode}.");
+        return (mode, header.m_gameMode) switch
+        {
+            (_, GameMode.NEWGAMEPLUS) => "New Game Plus isn't supported in co-op yet.",
+            (CoopGameMode.FreeBuild, GameMode.CAREER) => "This save is a Career game, not Free Build.",
+            (CoopGameMode.Career, GameMode.FREEBUILD) => "This save is a Free Build game, not Career.",
+            (CoopGameMode.Career, _) when header.m_hardMode => "Hard mode careers aren't supported in co-op yet.",
+            (CoopGameMode.Career, _) when !string.IsNullOrEmpty(header.m_scene) && !CoopCampaign.Supports(CoopGameMode.Career, header.m_scene) =>
+                $"This career is in a workshop co-op doesn't support yet ({header.m_scene}).",
+            _ => null,
+        };
+    }
+
+    /// <summary>Host: the run as it is now (the scene can change with the native shop renovation).</summary>
+    private static CoopCampaign CurrentCampaign()
+    {
+        var campaign = CoopSaves.Campaign ?? throw new InvalidOperationException("No co-op run is being hosted.");
+        var scene = CoopRunner.Instance?.Scene;
+        return scene != campaign.Scene && CoopCampaign.Supports(campaign.Mode, scene) ? campaign.InScene(scene) : campaign;
     }
 
     public bool Join(string address, int port, out string error)
@@ -559,7 +629,7 @@ internal sealed partial class CoopController
         try
         {
             var bytes = File.ReadAllBytes(file);
-            var pair = CoopSavePair.Create(bytes, _snapshotPair.Value.Position, _snapshotPair.Value.Carriers);
+            var pair = CoopSavePair.Create(bytes, _snapshotPair.Value.Position, _snapshotPair.Value.Carriers, CurrentCampaign());
             CoopSavePair.WriteSidecar(file, bytes, pair);
             Session.SetSnapshotFile(p.Id, Path.GetFileName(file), CoopSavePair.Pack(bytes, pair));
             _snapshotPair = null;
@@ -577,7 +647,7 @@ internal sealed partial class CoopController
     {
         if (Session.Role != Role.Host || string.IsNullOrEmpty(path) || _saveCapture == null) return;
         Plugin.Logger.LogInfo($"[world] host saved '{path}'.");
-        _pairWrites.Enqueue((path, _saveCapture.Value.Position, _saveCapture.Value.Carriers));
+        _pairWrites.Enqueue((path, _saveCapture.Value.Position, _saveCapture.Value.Carriers, CurrentCampaign()));
         HostSaveWritten(_saveCapture.Value.Position.Revision);
         _saveCapture = null;
     }
@@ -631,7 +701,7 @@ internal sealed partial class CoopController
             {
                 var file = File.Exists(p.Path + ".zip") ? p.Path + ".zip" : p.Path;
                 var bytes = File.ReadAllBytes(file);
-                CoopSavePair.WriteSidecar(file, bytes, CoopSavePair.Create(bytes, p.Position, p.Carriers));
+                CoopSavePair.WriteSidecar(file, bytes, CoopSavePair.Create(bytes, p.Position, p.Carriers, p.Campaign));
                 _saveError = null;
                 Plugin.Logger.LogInfo($"[saves] paired identities with '{file}'.");
                 if (Session.GuestState == GuestState.InWorld) _copiesToSend.Enqueue(file);
@@ -681,7 +751,9 @@ internal sealed partial class CoopController
                 LeaveToMenu("The host's world arrived while this game wasn't on the main menu.", failAdmission: true);
                 return;
             }
-            CoopSaves.EnterGuest();
+            var campaign = pair.Metadata.Campaign;
+            if (campaign.Problem(campaign.Mode) is { } unsupported) throw new InvalidDataException(unsupported);
+            CoopSaves.EnterGuest(campaign.Mode);
             if (s.Position == null || s.Position.Generation != pair.Metadata.Position.Generation || s.Position.Revision != pair.Metadata.Position.Revision ||
                 s.Position.ChainHash != pair.Metadata.Position.ChainHash || !s.Position.State.AsSpan().SequenceEqual(pair.Metadata.Position.State))
                 throw new InvalidDataException("Snapshot mark and paired save state do not match.");
@@ -690,12 +762,12 @@ internal sealed partial class CoopController
             _loadingPair = pair.Metadata;
             var name = CoopSaves.FindSaveName(f => f.Equals(s.FileName, StringComparison.OrdinalIgnoreCase));
             if (name == null) { LeaveToMenu("The game could not read the host's world file.", failAdmission: true); return; }
-            Plugin.Logger.LogInfo($"[world] loading the host's world '{name}' from '{CoopSaves.GuestSessionDir}'.");
+            Plugin.Logger.LogInfo($"[world] loading the host's {CoopCampaign.ModeName(campaign.Mode)} world '{name}' (scene '{campaign.Scene}', run {campaign.RunId:N}) from '{CoopSaves.GuestSessionDir}'.");
             _guestLoading = true;
             GuestLoadStarted = true;
             _guestLoadDeadline = Time.realtimeSinceStartup + GuestLoadTimeout;
             _readiness.Reset();
-            LoadNamedFreeBuild(name);
+            LoadExact(name, campaign);
         }
         catch (Exception e)
         {
@@ -725,7 +797,7 @@ internal sealed partial class CoopController
         DestroyView();
         if (Session.Role == Role.Client)
         {
-            var inWorld = CoopRunner.Instance?.Scene == CoopRunner.WorkshopScene || _guestLoading;
+            var inWorld = CoopRunner.InWorkshop || _guestLoading;
             if (inWorld) LeaveToMenu(reason, failAdmission: false);
             else { LastFailure = reason; Stop(null, reason); }
         }
@@ -979,22 +1051,28 @@ internal static class LocalPlayer
     public static CharacterController Controller => _cc;
 }
 
-/// <summary>Which co-op world the host plays.</summary>
+/// <summary>Which co-op world the host plays, and in which mode (phase 15: Host Free Build or Host Career).</summary>
 internal sealed class HostStart
 {
     public enum Kind { New, Continue, Load }
 
-    private HostStart(Kind what, string name) { What = what; Name = name; }
+    private HostStart(Kind what, string name, CoopGameMode mode) { What = what; Name = name; Mode = mode; }
     public Kind What { get; }
     /// <summary>New: the world's stem. Load: the chosen save's name.</summary>
     public string Name { get; }
+    public CoopGameMode Mode { get; }
 
-    /// <summary>A new world from the game's default build, saved as <paramref name="stem"/> (see <see cref="PCBS2Coop.Network.CoopWorldNames"/>).</summary>
-    public static HostStart New(string stem) => new(Kind.New, stem);
+    /// <summary>A new world saved as <paramref name="stem"/> (see <see cref="PCBS2Coop.Network.CoopWorldNames"/>): Free Build
+    /// from the game's default build, Career from the game's own new-career start.</summary>
+    public static HostStart New(string stem, CoopGameMode mode = CoopGameMode.FreeBuild) => new(Kind.New, stem, mode);
 
-    /// <summary>The most recently saved co-op world (its named save or its autosave, whichever is newer).</summary>
-    public static HostStart Continue { get; } = new(Kind.Continue, null);
+    /// <summary>The most recently saved co-op Free Build world (its named save or its autosave, whichever is newer).</summary>
+    public static HostStart Continue { get; } = new(Kind.Continue, null, CoopGameMode.FreeBuild);
+
+    /// <summary>The most recently saved co-op world of <paramref name="mode"/>.</summary>
+    public static HostStart ContinueIn(CoopGameMode mode) => mode == CoopGameMode.FreeBuild ? Continue : new(Kind.Continue, null, mode);
 
     /// <summary>One save chosen on the load screen, by its save list name.</summary>
-    public static HostStart Load(string saveName) => new(Kind.Load, saveName);
+    public static HostStart Load(string saveName, CoopGameMode mode = CoopGameMode.FreeBuild) => new(Kind.Load, saveName, mode);
+
 }

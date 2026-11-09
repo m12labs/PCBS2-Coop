@@ -10,7 +10,8 @@ namespace PCBS2Coop;
 /// <summary>
 /// The co-op side panel: a dark card that slides out to the right of the co-op list, its top level with the entry that
 /// opened it, using the menu's fonts and copies of the game's white Free Build buttons. Modes: New Game (world name),
-/// Load Game (the co-op worlds, newest first, with delete), Join a Friend (IP and port), Co-op Options (Steam or LAN,
+/// Load Game (the co-op worlds, newest first, with delete), both for the game mode of the row that opened them (Career
+/// or Free Build, phase 15), Join a Friend (IP and port), Co-op Options (Steam or LAN,
 /// LAN port, autosave interval), messages, and waiting for a Steam lobby or a connection. Join and Options have no title (the entry next
 /// to the card already names it). The list stays clickable (another entry switches the card), except while waiting.
 /// </summary>
@@ -42,6 +43,8 @@ internal sealed class CoopDialog
     private int _autosave;
     private RectTransform _anchor;
     private Mode _mode;
+    /// <summary>New Game and Load Game: the mode of the host row that opened the card.</summary>
+    private CoopGameMode _game = CoopGameMode.FreeBuild;
     private bool _hostWaiting, _steam;
     /// <summary>The message offers Rejoin (the guest left the host's world unexpectedly).</summary>
     private bool _rejoin;
@@ -151,9 +154,12 @@ internal sealed class CoopDialog
 
     // ---------------- opening ----------------
 
-    /// <summary>Open the card in <paramref name="mode"/>, level with <paramref name="anchor"/> (an entry of the list).</summary>
-    public void Open(Mode mode, RectTransform anchor = null)
+    /// <summary>Open the card in <paramref name="mode"/>, level with <paramref name="anchor"/> (an entry of the list).
+    /// <paramref name="game"/> picks the co-op saves New Game and Load Game work with (unchanged when not given).</summary>
+    public void Open(Mode mode, RectTransform anchor = null, CoopGameMode? game = null)
     {
+        if (game != null) _game = game.Value;
+        var career = _game == CoopGameMode.Career;
         if (mode is Mode.NewWorld or Mode.Join or Mode.Load) _coop.Stop(null, "Opening a co-op panel.");
         if (!IsOpen || (anchor != null && anchor != _anchor) || mode != _mode) _shownAt = Time.realtimeSinceStartup;
         if (anchor != null) _anchor = anchor;
@@ -166,16 +172,18 @@ internal sealed class CoopDialog
         switch (mode)
         {
             case Mode.NewWorld:
-                _title.text = "New Co-op World";
+                _title.text = career ? "New Co-op Career" : "New Co-op World";
                 Ui.SetText(_apply.transform, "Start");
-                _name.text = CoopWorldNames.NextDefaultName(CoopSaves.WorldStems());
+                Ui.SetText(_nameRow.Find("Label"), career ? "Career name" : "World name");
+                _name.text = CoopWorldNames.NextDefaultName(CoopSaves.WorldStems(_game), _game);
                 SetStatus(HostInfo(), !HostAvailable(), layout: false);
                 focus = _name.gameObject;
                 break;
             case Mode.Load:
-                _title.text = "Load a Co-op World";
+                _title.text = career ? "Load a Co-op Career" : "Load a Co-op World";
                 FillWorlds();
-                SetStatus(_worldCount > 0 ? "Click a world to host it. Newest first." : "No co-op worlds yet. Start one with New Game.", false, layout: false);
+                SetStatus(_worldCount > 0 ? $"Click a {(career ? "career" : "world")} to host it. Newest first."
+                    : $"No co-op {(career ? "careers" : "worlds")} yet. Start one with New Game.", false, layout: false);
                 break;
             case Mode.Join:
                 Ui.SetText(_apply.transform, "Connect");
@@ -254,15 +262,16 @@ internal sealed class CoopDialog
     private void FillWorlds()
     {
         for (var i = _worldContent.childCount - 1; i >= 0; i--) Object.Destroy(_worldContent.GetChild(i).gameObject);
-        var files = CoopSaves.WorldSaves();
+        var files = CoopSaves.WorldSaves(_game);
         _worldCount = files.Count;
+        var game = _game;
         var inner = Width - 2 * Pad;
         for (var i = 0; i < files.Count; i++)
         {
             var file = files[i];
             var saveName = file.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? file.Name[..^4] : file.Name;
             var y = i * (ButtonHeight + ListGap);
-            var row = Button(_worldContent, CoopSaves.DisplayName(file.Name), () => StartHost(HostStart.Load(saveName)));
+            var row = Button(_worldContent, CoopSaves.DisplayName(file.Name), () => StartHost(HostStart.Load(saveName, game)));
             TopLeft(row.GetComponent<RectTransform>(), 0, y, inner - ButtonHeight - ListGap, ButtonHeight);
             var label = Ui.Child(row.transform, "Text (TMP)").GetComponent<TMP_Text>();
             label.alignment = TextAlignmentOptions.MidlineLeft;
@@ -288,10 +297,10 @@ internal sealed class CoopDialog
             SetStatus($"Delete \"{name}\"? Click its X again to delete it.", true);
             return;
         }
-        try { CoopSaves.DeleteSave(file); }
+        try { CoopSaves.DeleteSave(file, _game); }
         catch (Exception e) { SetStatus("Could not delete it: " + e.Message, true); return; }
         WorldsChanged?.Invoke();
-        if (CoopSaves.WorldSaves().Count == 0) { Close(); return; }
+        if (CoopSaves.WorldSaves(_game).Count == 0) { Close(); return; }
         Open(Mode.Load);
         SetStatus($"Deleted \"{name}\".", false);
     }
@@ -410,8 +419,10 @@ internal sealed class CoopDialog
             {
                 var stem = CoopWorldNames.StemFromName(_name.text, out var error);
                 if (stem == null) { SetStatus(error, true); return; }
-                if (CoopSaves.WorldExists(stem)) { SetStatus($"There is already a world called \"{CoopWorldNames.WorldName(stem)}\".", true); return; }
-                StartHost(HostStart.New(stem));
+                if (CoopSaves.WorldExists(stem, _game))
+                { SetStatus($"There is already a {(_game == CoopGameMode.Career ? "career" : "world")} called \"{CoopWorldNames.WorldName(stem)}\".", true); return; }
+                StartHost(HostStart.New(stem, _game));
+
                 return;
             }
             case Mode.Join:

@@ -179,7 +179,7 @@ internal sealed partial class CoopController
     {
         string why = null;
         if (_sync != SyncStep.None) why = "a sync is already running";
-        else if (!_hostWorldStarted || CoopRunner.Instance?.Scene != CoopRunner.WorkshopScene) why = "the world is still loading";
+        else if (!_hostWorldStarted || !CoopRunner.InWorkshop) why = "the world is still loading";
         else if (_pendingFile != null || (Session.IsJoined && Session.GuestState == GuestState.Loading)) why = "Client is still loading the world";
         if (why != null)
         {
@@ -263,7 +263,7 @@ internal sealed partial class CoopController
         Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, default), out _);
         Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Host, Session.LocalIdentity.Player), out _);
         _syncSaving = true;
-        try { path = saves.CreateSaveGame(SaveLoadSystem.s_autoFreeBuildSaveName, false, ""); }
+        try { path = saves.CreateSaveGame(CoopSaves.AutosaveName, false, ""); }
         catch (Exception e) { _saveError ??= e.Message; }
         finally { _syncSaving = false; }
         if (string.IsNullOrEmpty(path) || _saveError != null) { FailSync(_saveError ?? "the save did not start"); return; }
@@ -283,9 +283,10 @@ internal sealed partial class CoopController
     {
         if (Session.Role != Role.Host || CoopSaves.Current != CoopSaves.Mode.Host) return "you aren't hosting a co-op world";
         if (_sync != SyncStep.None) return "a sync is already running";
-        if (!_hostWorldStarted || !_readiness.Ready || CoopRunner.Instance?.Scene != CoopRunner.WorkshopScene) return "the world is still loading";
+        if (!_hostWorldStarted || !_readiness.Ready || !CoopRunner.InWorkshop) return "the world is still loading";
         if (_pendingFile != null || (Session.IsJoined && Session.GuestState is GuestState.Loading or GuestState.Leaving)) return "Client is still loading the world";
         WorldSwitch target;
+        if (saveName == null && CoopSaves.Kind != CoopGameMode.FreeBuild) return "only a Free Build world can be reset";
         if (saveName == null)
         {
             var name = CoopSaves.FindSaveName(f => f.StartsWith("defaultFreebuild.binary", StringComparison.OrdinalIgnoreCase));
@@ -304,8 +305,9 @@ internal sealed partial class CoopController
                 Plugin.Logger.LogWarning($"[saves] '{file}' didn't load ({unreadable}); its backup was put back and loads instead.");
                 NoteRestored(new[] { CoopSaves.DisplayName(file) });
             }
-            if (!CoopSaveBackups.Readable(path, out var problem)) return "that save can't be loaded in co-op (" + problem.TrimEnd('.') + ")";
-            if (!ResolveStart(HostStart.Load(saveName), out var stem, out _, out var error)) return error;
+            if (!CoopSaveBackups.Readable(path, CoopSaves.Kind, out var problem)) return "that save can't be loaded in co-op (" + problem.TrimEnd('.') + ")";
+            if (NativeModeProblem(saveName, CoopSaves.Kind) is { } native) return "that save can't be loaded in co-op (" + native.TrimEnd('.') + ")";
+            if (!ResolveStart(HostStart.Load(saveName, CoopSaves.Kind), out var stem, out _, out var error)) return error;
             target = new WorldSwitch(saveName, file, stem, false);
         }
         _syncRequestUntil = -1;
@@ -329,7 +331,7 @@ internal sealed partial class CoopController
         {
             var saves = Object.FindObjectOfType<SaveLoadSystem>();
             string path = null;
-            try { path = saves?.CreateSaveGame(SaveLoadSystem.s_autoFreeBuildSaveName, false, ""); }
+            try { path = saves?.CreateSaveGame(CoopSaves.AutosaveName, false, ""); }
             catch (Exception e) { _saveError ??= e.Message; }
             if (string.IsNullOrEmpty(path) || _saveError != null)
             {
@@ -358,21 +360,24 @@ internal sealed partial class CoopController
         // Nothing from the old scene may bind into the reloaded one; the generation start resets the rest.
         Objects.Reset(); Activity?.Reset(); Workstations?.Reset(); ResetAutosave(); DestroyView();
         Plugin.Logger.LogInfo($"[sync] host continues '{name}' from '{CoopSaves.CoopDir}'.");
-        LoadNamedFreeBuild(name);
+        LoadExact(name, _loadingPair.Campaign);
     }
 
     private void ReloadForSwitch(WorldSwitch target)
     {
         var name = CoopSaves.FindSaveName(f => f.Equals(target.File, StringComparison.OrdinalIgnoreCase)) ?? target.SaveName;
         _loadingPair = target.Reset ? null : CoopSavePair.ReadSidecar(CoopSaves.NativeFile(CoopSaves.CoopDir, target.File));
+        if (_loadingPair?.Campaign.Problem(CoopSaves.Kind) is { } wrong) throw new InvalidDataException(wrong);
         CoopSaves.SwitchWorld(target.Stem);
+        if (_loadingPair != null) CoopSaves.SetCampaign(_loadingPair.Campaign);
         _hostWorldStarted = false;
         _hostWorldKind = target.Reset ? "co-op world reset to the default build" : "co-op world loaded from the pause menu";
         _readiness.Reset();
         Objects.Reset(); Activity?.Reset(); Workstations?.Reset(); ResetAutosave(); DestroyView();
         _guestPoses.Clear(); // another world: where the guest stood no longer applies
         Plugin.Logger.LogInfo($"[sync] host loads '{name}' from '{CoopSaves.CoopDir}' ({_hostWorldKind}).");
-        LoadNamedFreeBuild(name);
+        LoadExact(name, CoopSaves.Campaign);
+
     }
 
     private void FailSync(string why)

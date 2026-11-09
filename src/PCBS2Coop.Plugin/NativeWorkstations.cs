@@ -150,7 +150,7 @@ internal sealed class NativeWorkstations : IPeripheralNative, IWorldState
     {
         Model.Read(r);
         // A guest enters (and a host restores) only after its own load settled: check the game shows the same peripherals.
-        if (Model.Bound && CoopRunner.Instance?.Scene == CoopRunner.WorkshopScene && Difference(Read(out _)) is { } diff)
+        if (Model.Bound && CoopRunner.InWorkshop && Difference(Read(out _)) is { } diff)
             throw new InvalidDataException("The loaded world's peripherals don't match the host's: " + diff);
     }
 

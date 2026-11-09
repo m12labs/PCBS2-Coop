@@ -17,6 +17,8 @@ namespace PCBS2Coop;
 /// <item>A world saved before named worlds keeps the game's Free Build file name (<see cref="IsEarlierWorld"/>).
 /// Save zips must never be renamed: the file inside keeps the original name and the game unpacks it under that name.</item>
 /// </list>
+/// Co-op Career (phase 15) keeps the same layout one level down, in <c>Saves/Coop/Career</c> (its own guest, joined,
+/// transfer, backup and content folders), so Free Build and Career save lists, Continue and backups never mix.
 /// The game lists only the top level of its save folder, so the guest folders never appear in a load list and co-op
 /// worlds never appear in the solo one. The redirect is undone only on the main menu, so an autosave can never land
 /// in the solo folder.
@@ -29,55 +31,77 @@ internal static class CoopSaves
 
     public static Mode Current { get; private set; }
 
+    /// <summary>The mode of the co-op world being played (Free Build when none is).</summary>
+    public static CoopGameMode Kind { get; private set; } = CoopGameMode.FreeBuild;
+
+    /// <summary>Host: the run being played (mode, run ID, scene). Each host save pairs with it; null when not hosting.</summary>
+    public static CoopCampaign Campaign { get; private set; }
+
     /// <summary>Host: the world being played, or null.</summary>
     public static string WorldStem { get; private set; }
 
     /// <summary>The game's save folder before the redirect (normally "Saves").</summary>
     public static string BaseDir => _base ?? SaveLoadSystem.s_saveDir;
-    public static string CoopDir => BaseDir + "/Coop";
+    /// <summary>The co-op folder of one mode.</summary>
+    public static string RootOf(CoopGameMode mode) => BaseDir + (mode == CoopGameMode.Career ? "/Coop/Career" : "/Coop");
+    /// <summary>The co-op folder of the world being played (<see cref="Kind"/>).</summary>
+    public static string CoopDir => RootOf(Kind);
     public static string GuestSessionDir => CoopDir + "/GuestSession";
     public static string JoinedDir => CoopDir + "/Joined";
     public static string TransferDir => CoopDir + "/Transfer";
     public static string BackupDir => CoopDir + "/Backup";
+    public static string BackupDirOf(CoopGameMode mode) => RootOf(mode) + "/Backup";
 
     private const string DefaultBuild = "defaultFreebuild.binary";
 
-    /// <summary>Save files of co-op worlds that have their <c>.coop</c> pair, newest first.</summary>
-    public static List<FileInfo> WorldSaves() =>
-        SaveFiles().Where(f => File.Exists(f.FullName + CoopSavePair.Extension)).OrderByDescending(f => f.LastWriteTimeUtc).ToList();
+    /// <summary>Save files of co-op worlds of <paramref name="mode"/> that have their <c>.coop</c> pair, newest first.</summary>
+    public static List<FileInfo> WorldSaves(CoopGameMode mode) =>
+        SaveFiles(mode).Where(f => File.Exists(f.FullName + CoopSavePair.Extension)).OrderByDescending(f => f.LastWriteTimeUtc).ToList();
 
-    /// <summary>The newest world save that loads with its pair (Continue), or null.</summary>
-    public static FileInfo NewestReadable() => WorldSaves().FirstOrDefault(f => CoopSaveBackups.Readable(f.FullName, out _));
+    /// <summary>The newest world save of <paramref name="mode"/> that loads with its pair (Continue), or null.</summary>
+    public static FileInfo NewestReadable(CoopGameMode mode) => WorldSaves(mode).FirstOrDefault(f => CoopSaveBackups.Readable(f.FullName, mode, out _));
 
-    /// <summary>A co-op world exists (Continue is possible).</summary>
-    public static bool HasCoopWorld() => WorldSaves().Count > 0;
+    /// <summary>A co-op world of <paramref name="mode"/> exists (Continue is possible).</summary>
+    public static bool HasCoopWorld(CoopGameMode mode) => WorldSaves(mode).Count > 0;
 
-    /// <summary>Stems of every world save in the co-op folder (paired or not).</summary>
-    public static IEnumerable<string> WorldStems() => SaveFiles().Select(f => CoopWorldNames.StemOf(f.Name)).Distinct(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Stems of every world save of <paramref name="mode"/> (paired or not).</summary>
+    public static IEnumerable<string> WorldStems(CoopGameMode mode) => SaveFiles(mode).Select(f => CoopWorldNames.StemOf(f.Name)).Distinct(StringComparer.OrdinalIgnoreCase);
 
-    public static bool WorldExists(string stem) => WorldStems().Contains(stem, StringComparer.OrdinalIgnoreCase);
+    public static bool WorldExists(string stem, CoopGameMode mode) => WorldStems(mode).Contains(stem, StringComparer.OrdinalIgnoreCase);
 
-    private static IEnumerable<FileInfo> SaveFiles()
+    private static IEnumerable<FileInfo> SaveFiles(CoopGameMode mode)
     {
-        var dir = new DirectoryInfo(CoopDir);
+        var dir = new DirectoryInfo(RootOf(mode));
         if (!dir.Exists) return Enumerable.Empty<FileInfo>();
         return dir.GetFiles().Where(f =>
             (f.Name.EndsWith(".binary", StringComparison.OrdinalIgnoreCase) || f.Name.EndsWith(".binary.zip", StringComparison.OrdinalIgnoreCase)) &&
             !f.Name.StartsWith(DefaultBuild, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>Host: play the world <paramref name="stem"/> from the co-op folder.</summary>
-    public static void EnterHost(string stem)
+    /// <summary>Host: play the world <paramref name="stem"/> of <paramref name="campaign"/> from its mode's co-op folder.</summary>
+    public static void EnterHost(string stem, CoopCampaign campaign)
     {
-        Enter(Mode.Host, CoopDir);
+        Enter(Mode.Host, campaign.Mode, true);
         WorldStem = stem;
-        EnsureDefaultBuild();
-        Plugin.Logger.LogInfo($"[saves] hosting world '{CoopWorldNames.WorldName(stem)}' (files '{CoopWorldNames.FileOf(stem)}', autosave '{CoopWorldNames.AutoFileOf(stem)}').");
+        Campaign = campaign;
+        if (campaign.Mode == CoopGameMode.FreeBuild) EnsureDefaultBuild();
+        Plugin.Logger.LogInfo($"[saves] hosting {CoopCampaign.ModeName(campaign.Mode)} world '{CoopWorldNames.WorldName(stem)}' (files '{CoopWorldNames.FileOf(stem)}', " +
+            $"autosave '{CoopWorldNames.AutoFileOf(stem)}', run {campaign.RunId:N}).");
     }
 
-    public static void EnterGuest()
+    /// <summary>Host: the run being played, once its save is read or its scene changes.</summary>
+    public static void SetCampaign(CoopCampaign campaign)
     {
-        Enter(Mode.Guest, null);
+        if (Current != Mode.Host || campaign.Mode != Kind) throw new InvalidOperationException("The hosted run can't change mode.");
+        Campaign = campaign;
+    }
+
+    /// <summary>The game's autosave name the mod's host saves use in this mode (redirected to the world's own autosave).</summary>
+    public static string AutosaveName => Kind == CoopGameMode.Career ? SaveLoadSystem.s_autoSaveName : SaveLoadSystem.s_autoFreeBuildSaveName;
+
+    public static void EnterGuest(CoopGameMode mode)
+    {
+        Enter(Mode.Guest, mode, false);
         Recreate(GuestSessionDir);
         SaveLoadSystem.s_saveDir = GuestSessionDir;
         Plugin.Logger.LogInfo($"[saves] guest saves go to '{GuestSessionDir}'.");
@@ -90,7 +114,9 @@ internal static class CoopSaves
         SaveLoadSystem.s_saveDir = _base;
         Plugin.Logger.LogInfo($"[saves] save folder restored to '{_base}' ({why}).");
         Current = Mode.None;
+        Kind = CoopGameMode.FreeBuild;
         WorldStem = null;
+        Campaign = null;
         _base = null;
     }
 
@@ -101,7 +127,7 @@ internal static class CoopSaves
     public static void RedirectAutosave(ref string fileName, ref string overrideName)
     {
         if (Current != Mode.Host || WorldStem == null || CoopController.TakingSnapshot) return;
-        if (!string.Equals(fileName, SaveLoadSystem.s_autoFreeBuildSaveName, StringComparison.OrdinalIgnoreCase)) return;
+        if (!string.Equals(fileName, AutosaveName, StringComparison.OrdinalIgnoreCase)) return;
         fileName = CoopWorldNames.AutoFileOf(WorldStem);
         overrideName = CoopWorldNames.DisplayOf(fileName);
         Plugin.Logger.LogInfo($"[saves] autosave goes to '{fileName}'.");
@@ -120,7 +146,7 @@ internal static class CoopSaves
         }
         var name = Path.GetFileName(fileName);
         var bare = Bare(name);
-        var files = SaveFiles().ToList();
+        var files = SaveFiles(Kind).ToList();
         if (files.Any(f => string.Equals(Bare(f.Name), bare, StringComparison.OrdinalIgnoreCase))) return; // a file of that name exists
         var shown = files.Where(f => string.Equals(DisplayName(f.Name), bare, StringComparison.OrdinalIgnoreCase)).ToList();
         if (shown.Count != 1) return;
@@ -143,17 +169,19 @@ internal static class CoopSaves
         catch (Exception e) { Plugin.Logger.LogWarning("[saves] could not keep a backup before saving: " + e.Message); }
     }
 
-    /// <summary>A save that no longer loads with its pair gets its backup back. Returns the restored saves' names.</summary>
-    public static List<string> RestoreUnreadable()
+    /// <summary>A save of <paramref name="mode"/> that no longer loads with its pair gets its backup back. Returns the
+    /// restored saves' names.</summary>
+    public static List<string> RestoreUnreadable(CoopGameMode mode)
     {
         var restored = new List<string>();
-        foreach (var file in SaveFiles().ToList())
+        var backups = BackupDirOf(mode);
+        foreach (var file in SaveFiles(mode).ToList())
         {
             try
             {
-                if (!CoopSaveBackups.Restore(file.FullName, BackupDir, out var problem)) continue;
+                if (!CoopSaveBackups.Restore(file.FullName, backups, out var problem)) continue;
                 restored.Add(DisplayName(file.Name));
-                Plugin.Logger.LogWarning($"[saves] '{file.Name}' didn't load ({problem}); its previous pair is available (the unreadable copy is in '{BackupDir}').");
+                Plugin.Logger.LogWarning($"[saves] '{file.Name}' didn't load ({problem}); its previous pair is available (the unreadable copy is in '{backups}').");
             }
             catch (Exception e) { Plugin.Logger.LogWarning($"[saves] could not restore the backup of '{file.Name}': {e.Message}"); }
         }
@@ -169,12 +197,13 @@ internal static class CoopSaves
     }
 
     /// <summary>A save deleted outside the co-op menu leaves its <c>.coop</c> pair behind; remove it.</summary>
-    public static void DropOrphanPairs()
+    public static void DropOrphanPairs(CoopGameMode mode)
     {
         try
         {
-            if (!Directory.Exists(CoopDir)) return;
-            foreach (var pair in Directory.GetFiles(CoopDir, "*" + CoopSavePair.Extension))
+            var dir = RootOf(mode);
+            if (!Directory.Exists(dir)) return;
+            foreach (var pair in Directory.GetFiles(dir, "*" + CoopSavePair.Extension))
             {
                 var native = pair[..^CoopSavePair.Extension.Length];
                 if (File.Exists(native)) continue;
@@ -199,12 +228,12 @@ internal static class CoopSaves
     /// <summary>The name a save is shown under in the co-op menu.</summary>
     public static string DisplayName(string fileName) => IsEarlierWorld(fileName) ? "Earlier co-op world" : CoopWorldNames.DisplayOf(fileName);
 
-    /// <summary>Delete one world save and its <c>.coop</c> pair.</summary>
-    public static void DeleteSave(FileInfo file)
+    /// <summary>Delete one world save of <paramref name="mode"/> and its <c>.coop</c> pair.</summary>
+    public static void DeleteSave(FileInfo file, CoopGameMode mode)
     {
         if (File.Exists(file.FullName)) File.Delete(file.FullName);
         if (File.Exists(file.FullName + CoopSavePair.Extension)) File.Delete(file.FullName + CoopSavePair.Extension);
-        try { CoopSaveBackups.Delete(file.Name, BackupDir); }
+        try { CoopSaveBackups.Delete(file.Name, BackupDirOf(mode)); }
         catch (Exception e) { Plugin.Logger.LogWarning("[saves] could not delete the save's backup: " + e.Message); }
         Plugin.Logger.LogInfo($"[saves] deleted '{file.Name}', its pair and its backup.");
     }
@@ -239,16 +268,18 @@ internal static class CoopSaves
         return File.Exists(path + ".zip") ? path + ".zip" : path;
     }
 
-    private static void Enter(Mode mode, string dir)
+    private static void Enter(Mode mode, CoopGameMode kind, bool redirect)
     {
         if (Current != Mode.None) Restore("switching co-op save mode");
         _base = SaveLoadSystem.s_saveDir;
+        Kind = kind;
         Directory.CreateDirectory(CoopDir);
         Current = mode;
-        if (dir == null) return;
-        SaveLoadSystem.s_saveDir = dir;
-        Plugin.Logger.LogInfo($"[saves] {mode} saves go to '{dir}' (was '{_base}').");
+        if (!redirect) return;
+        SaveLoadSystem.s_saveDir = CoopDir;
+        Plugin.Logger.LogInfo($"[saves] {mode} {CoopCampaign.ModeName(kind)} saves go to '{CoopDir}' (was '{_base}').");
     }
+
 
     /// <summary>
     /// A new Free Build loads the game's shipped default build when it is in the save folder

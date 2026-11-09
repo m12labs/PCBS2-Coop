@@ -109,7 +109,7 @@ internal sealed partial class Phase6Probe
             saveDir = SaveLoadSystem.s_saveDir, coopDir = CoopSaves.CoopDir, mode = CoopSaves.Current.ToString(),
             coop = Files(CoopSaves.CoopDir), backup = Files(CoopSaves.BackupDir),
             unreadable = Directory.Exists(CoopSaves.BackupDir) ? Directory.GetFiles(CoopSaves.BackupDir, "*.unreadable*").Select(Path.GetFileName).ToArray() : Array.Empty<string>(),
-            newestReadable = CoopSaves.NewestReadable()?.Name
+            newestReadable = CoopSaves.NewestReadable(CoopSaves.Kind)?.Name
         };
     }
 

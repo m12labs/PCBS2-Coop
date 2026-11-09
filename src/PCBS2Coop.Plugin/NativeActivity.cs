@@ -66,7 +66,7 @@ internal sealed class NativeActivity
     {
         if (NativePcLifecycle.Projecting) return true; // an accepted change is running its native steps
         var coop = CoopController.Instance;
-        if (coop?.Session.World is not { Admitted: true } || !coop.Objects.Initialized || CoopRunner.Instance?.Scene != CoopRunner.WorkshopScene) return true;
+        if (coop?.Session.World is not { Admitted: true } || !coop.Objects.Initialized || !CoopRunner.InWorkshop) return true;
         foreach (var pc in pcs)
         {
             if (pc.IsNone) continue; // Unbound native objects get IDs at the next host capture.

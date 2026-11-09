@@ -15,6 +15,8 @@ public static class CoopWorldNames
     public const string AutoSuffix = "--auto";
     public const int MaxNameLength = 32;
     public const string DefaultName = "Co-op World";
+    /// <summary>A new co-op Career's suggested name (owner decision, November 8, 2026: named like Free Build worlds).</summary>
+    public const string DefaultCareerName = "Co-op Career";
     private const int MaxStemLength = 48 - 6; // room for the autosave suffix inside a snapshot name
 
     /// <summary>The world stem of a save file name ("X--auto.binary.zip" → "X").</summary>
@@ -65,13 +67,14 @@ public static class CoopWorldNames
         return s;
     }
 
-    /// <summary>"Co-op World N" with the lowest N no existing world uses.</summary>
-    public static string NextDefaultName(IEnumerable<string> existingStems)
+    /// <summary>"Co-op World N" (or "Co-op Career N") with the lowest N no existing world of that mode uses.</summary>
+    public static string NextDefaultName(IEnumerable<string> existingStems, CoopGameMode mode = CoopGameMode.FreeBuild)
     {
         var taken = new HashSet<string>(existingStems, StringComparer.OrdinalIgnoreCase);
+        var prefix = mode == CoopGameMode.Career ? DefaultCareerName : DefaultName;
         for (var i = 1; ; i++)
         {
-            var name = $"{DefaultName} {i}";
+            var name = $"{prefix} {i}";
             if (!taken.Contains(name.Replace(' ', '_'))) return name;
         }
     }

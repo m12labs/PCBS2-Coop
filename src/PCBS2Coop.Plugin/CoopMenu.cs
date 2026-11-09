@@ -12,7 +12,8 @@ namespace PCBS2Coop;
 /// <list type="bullet">
 /// <item>Main list: a "Co-op" entry (a copy of Options) just above Options.</item>
 /// <item>Clicking it swaps the list in place: the main entries fade out and the co-op ones fade in, with "CO-OP" under
-/// the logo. Entries: Host Co-op (a copy of Free Build: Continue / Load Game / New Game on hover), Join a Friend,
+/// the logo. Entries: Host Career and Host Free Build (copies of Free Build: Continue / Load Game / New Game on hover,
+/// each for its own mode's co-op saves; phase 15), Join a Friend (either mode: the guest loads whatever the host plays),
 /// Co-op Options, Back. Back or Esc swaps back.</item>
 /// <item>The bottom row (social icons, news) moves with whichever list is shown. It gains a GitHub icon linking the
 /// mod's repository with the mod version under it, so a screenshot shows whether the mod is loaded.</item>
@@ -51,9 +52,14 @@ internal sealed class CoopMenu
 
     /// <summary>The "Co-op" entry on the main list.</summary>
     public GameObject Entry { get; }
+    /// <summary>Host Free Build's Continue / Load Game / New Game (the self test and probes use these).</summary>
     public GameObject ContinueButton { get; }
     public GameObject LoadButton { get; }
     public GameObject NewGameButton { get; }
+    /// <summary>Host Career's Continue / Load Game / New Game.</summary>
+    public GameObject CareerContinueButton { get; }
+    public GameObject CareerLoadButton { get; }
+    public GameObject CareerNewGameButton { get; }
     public GameObject JoinButton { get; }
     public GameObject OptionsButton { get; }
     public GameObject BackButton { get; }
@@ -94,15 +100,19 @@ internal sealed class CoopMenu
         string restoredNote = null;
         if (!AutoTest.IsEnabled && !SteamProbe.Enabled)
         {
-            CoopSaves.DropOrphanPairs();
-            var restored = CoopSaves.RestoreUnreadable();
+            var restored = new List<string>();
+            foreach (var mode in new[] { CoopGameMode.FreeBuild, CoopGameMode.Career })
+            {
+                CoopSaves.DropOrphanPairs(mode);
+                restored.AddRange(CoopSaves.RestoreUnreadable(mode));
+            }
             if (restored.Count > 0)
                 restoredNote = $"The latest save of {string.Join(", ", restored.Select(n => $"\"{n}\""))} couldn't be read (the game may have closed while saving). " +
                     "Its previous save was put back.";
         }
 
         // Main list: "Co-op" (a copy of Options) just above Options. It follows Free Build's start-up fade.
-        Entry = Panel(settings, list, "Button4a-Coop", "Co-op", "Play Free Build with a friend", () => ShowCoop());
+        Entry = Panel(settings, list, "Button4a-Coop", "Co-op", "Play Career or Free Build with a friend", () => ShowCoop());
         Entry.transform.SetSiblingIndex(settings.GetSiblingIndex());
         _freeBuildGroup = freeBuild.GetComponent<CanvasGroup>();
         _entryGroup = Entry.GetComponent<CanvasGroup>();
@@ -122,11 +132,17 @@ internal sealed class CoopMenu
         _coopGroup = _coopList.gameObject.AddComponent<CanvasGroup>();
         _titleGroup = AddTitle(_coopList, freeBuild, settings);
 
-        var host = Panel(freeBuild, _coopList, "CoopHost", "Host Co-op", "Play your co-op worlds with a friend", null);
+        // Career above Free Build, as on the game's own main list.
+        var career = Panel(freeBuild, _coopList, "CoopHostCareer", "Host Career", "Run the repair shop together", null);
+        var careerRect = career.GetComponent<RectTransform>();
+        CareerContinueButton = SubButton(career.transform, "ContinueFreebuild", "Continue", () => Dialog.StartHost(HostStart.ContinueIn(CoopGameMode.Career)));
+        CareerLoadButton = SubButton(career.transform, "LoadGame", "Load Game", () => Dialog.Open(CoopDialog.Mode.Load, careerRect, CoopGameMode.Career));
+        CareerNewGameButton = SubButton(career.transform, "NewGame", "New Game", () => Dialog.Open(CoopDialog.Mode.NewWorld, careerRect, CoopGameMode.Career));
+        var host = Panel(freeBuild, _coopList, "CoopHost", "Host Free Build", "Build PCs together in your co-op worlds", null);
         var hostRect = host.GetComponent<RectTransform>();
         ContinueButton = SubButton(host.transform, "ContinueFreebuild", "Continue", () => Dialog.StartHost(HostStart.Continue));
-        LoadButton = SubButton(host.transform, "LoadGame", "Load Game", () => Dialog.Open(CoopDialog.Mode.Load, hostRect));
-        NewGameButton = SubButton(host.transform, "NewGame", "New Game", () => Dialog.Open(CoopDialog.Mode.NewWorld, hostRect));
+        LoadButton = SubButton(host.transform, "LoadGame", "Load Game", () => Dialog.Open(CoopDialog.Mode.Load, hostRect, CoopGameMode.FreeBuild));
+        NewGameButton = SubButton(host.transform, "NewGame", "New Game", () => Dialog.Open(CoopDialog.Mode.NewWorld, hostRect, CoopGameMode.FreeBuild));
         JoinButton = Panel(settings, _coopList, "CoopJoin", "Join a Friend", "Accept a Steam invite, or join by IP",
             () => Dialog.Open(CoopDialog.Mode.Join, JoinButton.GetComponent<RectTransform>()));
         OptionsButton = Panel(settings, _coopList, "CoopOptions", "Co-op Options", "Steam or LAN, and the LAN port",
@@ -135,7 +151,7 @@ internal sealed class CoopMenu
         Ui.SetText(Ui.Child(BackButton.transform, "QuitButton/HeaderText"), "Back");
         BackButton.transform.Find("QuitButton/QuitIcon")?.gameObject.SetActive(false);
         _panels.Add(_titleGroup);
-        foreach (var p in new[] { host, JoinButton, OptionsButton, BackButton }) _panels.Add(p.GetComponent<CanvasGroup>() ?? p.AddComponent<CanvasGroup>());
+        foreach (var p in new[] { career, host, JoinButton, OptionsButton, BackButton }) _panels.Add(p.GetComponent<CanvasGroup>() ?? p.AddComponent<CanvasGroup>());
 
         _extrasGroup = extras.gameObject.GetComponent<CanvasGroup>() ?? extras.gameObject.AddComponent<CanvasGroup>();
         (_youTubeGroup, _gitHubGroup, _gitHubRect, _version) = AddGitHub(extras);
@@ -250,13 +266,18 @@ internal sealed class CoopMenu
         }
     }
 
-    /// <summary>Continue and Load Game show only when there is a co-op world, as Free Build's do for its saves.</summary>
+    /// <summary>Continue and Load Game show only when there is a co-op world of that row's mode, as the game's own rows
+    /// do for their saves.</summary>
     public void RefreshWorlds()
     {
-        var has = CoopSaves.HasCoopWorld();
+        var has = CoopSaves.HasCoopWorld(CoopGameMode.FreeBuild);
         ContinueButton.SetActive(has);
         LoadButton.SetActive(has);
         NewGameButton.SetActive(true);
+        var careers = CoopSaves.HasCoopWorld(CoopGameMode.Career);
+        CareerContinueButton.SetActive(careers);
+        CareerLoadButton.SetActive(careers);
+        CareerNewGameButton.SetActive(true);
     }
 
     public void Update()
@@ -371,7 +392,8 @@ internal sealed class CoopMenu
     }
 
     /// <summary>
-    /// Six entries and the bottom row don't fit a 16:9 screen at full size (the game's five just do). Scale both lists
+    /// The co-op list's entries and the bottom row don't fit a 16:9 screen at full size (the game's five just do). Scale both lists
+
     /// by the same amount, just enough to fit, keeping their top-left corner where the game put it.
     /// </summary>
     private void Fit()
