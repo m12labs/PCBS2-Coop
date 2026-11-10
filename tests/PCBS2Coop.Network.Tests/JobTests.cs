@@ -7,6 +7,7 @@ internal sealed class FakeJobNative : IJobNative
     public InboxUpdate? Last;
     public void Updated(in MutationContext ctx, InboxUpdate update) { Last = update; Calls.Add($"update {update.Jobs.Count} {update.Native.Length} local={ctx.FromLocalPlayer}"); }
     public void Acted(in MutationContext ctx, JobAct act, int job, int value) => Calls.Add($"{act} {job} {value} local={ctx.FromLocalPlayer}");
+    public void MailActed(in MutationContext ctx, MailFact mail) => Calls.Add($"mail {mail.Kind} {mail.Cost} local={ctx.FromLocalPlayer}");
 }
 
 /// <summary>Phase 17b: the host's jobs and inbox, and either player's job actions.</summary>
@@ -22,6 +23,7 @@ internal static class JobTests
     {
         Model(t);
         Sync(t);
+        Mails(t);
     }
 
     private static bool Throws(Action a) { try { a(); return false; } catch (InvalidDataException) { return true; } }
@@ -60,6 +62,77 @@ internal static class JobTests
     }
 
     private static bool ThrowsFormat(Action a) { try { a(); return false; } catch (FormatException) { return true; } }
+
+    private static readonly MailFact Rent = new(MailKind.Rent, 638_000_000_000_000_001, 450), Power = new(MailKind.Utility, 638_000_000_000_000_002, 80),
+        Shop = new(MailKind.Renovation, 638_000_000_000_000_003, 25_000);
+
+    private static void Mails(Checker t)
+    {
+        t.Section("Jobs: either player pays a bill or orders the shop renovation (phase 17d)");
+        var update = new InboxUpdate(Start, new byte[] { 1, 2, 3 }) { Mails = new[] { Rent, Power, Shop } };
+        var back = InboxUpdate.Decode(update.Encode());
+        t.Check(back.Mails.SequenceEqual(update.Mails) && back.Jobs.SequenceEqual(Start), "the bills and the renovation offer travel with the inbox update");
+        var twice = new InboxUpdate(Start, new byte[] { 1 }) { Mails = new[] { Rent, Rent with { Cost = 1 } } };
+        var negative = new InboxUpdate(Start, new byte[] { 1 }) { Mails = new[] { Rent with { Cost = -1 } } };
+        t.Check(ThrowsFormat(() => InboxUpdate.Decode(twice.Encode())) && ThrowsFormat(() => InboxUpdate.Decode(negative.Encode())),
+            "an e-mail listed twice or with a negative cost is refused");
+
+        var activity = new ActivityWorld(new ObjectWorld());
+        var w = new JobWorld(activity, new FakeJobNative());
+        w.BindHost(Start, new[] { Rent, Shop });
+        var s = new NetDataWriter(); w.Write(s);
+        var copy = new JobWorld(activity, new FakeJobNative());
+        copy.Read(new NetDataReader(s.CopyData()));
+        t.Check(copy.Mails.OrderBy(m => m.Time).SequenceEqual(new[] { Rent, Shop }), "the e-mails travel with snapshots and saves");
+        var old = new NetDataWriter();
+        old.Put(true); old.Put(3); old.Put(1); old.Put(1); old.Put((byte)JobState.New); old.Put(0);
+        copy.Read(new NetDataReader(old.CopyData()));
+        t.Check(copy.Bound && copy.Revision == 3 && copy.Jobs.Count == 1 && copy.Mails.Count == 0, "a 0.63 or 0.64 save without e-mails still loads");
+        t.Check(Throws(() => w.BindHost(Start, new[] { Rent, Rent })), "an e-mail bound twice is refused");
+
+        var l = new FakeLink(); var ha = new ActivityWorld(new ObjectWorld()); var ga = new ActivityWorld(new ObjectWorld());
+        var hn = new FakeJobNative(); var gn = new FakeJobNative();
+        var hw = new JobWorld(ha, hn); var gw = new JobWorld(ga, gn);
+        string? broke = null;
+        hw.MailCheck = m => broke;
+        l.Host.RegisterState(ha); l.Guest.RegisterState(ga);
+        l.Host.RegisterState(hw, optional: true); l.Guest.RegisterState(gw, optional: true);
+        l.Host.Register(CommandTypes.ActorActivity, ha); l.Guest.Register(CommandTypes.ActorActivity, ga);
+        l.Host.Register(CommandTypes.Jobs, hw); l.Guest.Register(CommandTypes.Jobs, gw);
+        l.Host.BeginGeneration("mails");
+        void Send(WorldSync world, byte[] payload, ushort type = CommandTypes.Jobs) { world.Submit(type, payload, out _); l.Flush(); }
+        Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, PlayerId.New()), CommandTypes.ActorActivity);
+        Send(l.Host, ActivityWorld.Presence(ActorSlot.Guest, PlayerId.New()), CommandTypes.ActorActivity);
+        hw.BindHost(Start, new[] { Rent, Power, Shop });
+        l.Join();
+        ulong H() => ha.Get(ActorSlot.Host)!.Epoch; ulong G() => ga.Get(ActorSlot.Guest)!.Epoch;
+        t.Check(gw.Mails.Count == 3, "a joining guest gets the host's bills and offers with the world");
+
+        Send(l.Guest, JobWorld.Mail(G(), Rent));
+        t.Check(hn.Calls.Last() == "mail Rent 450 local=False" && gn.Calls.Last() == "mail Rent 450 local=True" && hw.MailActed(Rent) && hw.AnyActed,
+            "the guest's Pay reaches the host's game, which pays the bill");
+        var before = l.GuestRejected.Count;
+        Send(l.Guest, JobWorld.Mail(G(), Rent));
+        Send(l.Host, JobWorld.Mail(H(), Rent));
+        t.Check(l.GuestRejected.Count == before + 1 && l.GuestRejected.Last().Text.Contains("already handling") && l.HostRejected.Last().Text.Contains("already handling"),
+            "a bill is paid once even if both players press Pay");
+
+        before = l.GuestRejected.Count;
+        Send(l.Guest, JobWorld.Mail(G(), Power with { Cost = 81 }));
+        Send(l.Guest, JobWorld.Mail(G(), Shop with { Time = 4 }));
+        broke = "not enough money";
+        Send(l.Guest, JobWorld.Mail(G(), Power));
+        broke = null;
+        t.Check(l.GuestRejected.Count == before + 3 && l.GuestRejected[^3].Text.Contains("no unpaid bill") && l.GuestRejected[^2].Text.Contains("no renovation offer") &&
+                l.GuestRejected[^1].Text.Contains("not enough money"),
+            "an e-mail the host's list doesn't show, or one the host's game can't act on, is refused");
+        Send(l.Guest, JobWorld.Mail(G(), Shop));
+        t.Check(hn.Calls.Last() == "mail Renovation 25000 local=False", "the guest can order the shop renovation");
+
+        foreach (var p in JobWorld.Submissions(H(), new InboxUpdate(Start, new byte[] { 9 }) { Mails = new[] { Power } })) l.Host.Submit(CommandTypes.Jobs, p, out _);
+        l.Flush();
+        t.Check(gw.Mails.SequenceEqual(new[] { Power }) && !gw.AnyActed && !hw.AnyActed && l.InStep, "the host's next update lists what is still unpaid and frees the actions");
+    }
 
     private static void Sync(Checker t)
     {

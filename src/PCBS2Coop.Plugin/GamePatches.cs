@@ -17,6 +17,8 @@ internal static class GamePatches
             game.PatchAll(typeof(CoopController.PlusAutosaveGuard));
             game.PatchAll(typeof(CoopController.CurrentGameSaveGuard));
             game.PatchAll(typeof(CoopController.ShopRenovationGuard));
+            game.PatchAll(typeof(CoopController.RenovationLoad));
+            game.PatchAll(typeof(CoopController.RenovationPeripherals));
             CareerGuards.Apply(new Harmony(Plugin.Guid + ".career"));
             CommerceHooks.Apply(new Harmony(Plugin.Guid + ".commerce"));
             PackageHooks.Apply(new Harmony(Plugin.Guid + ".packages"));
@@ -197,6 +199,8 @@ internal static class GamePatches
     {
         private static bool Prefix(ref string filename, ref string OverrideName)
         {
+            // Phase 17d: the shop renovation saves the game's current file (""); in co-op that is the world's autosave.
+            if (CoopController.RenovationRunning && CoopSaves.Current == CoopSaves.Mode.Host) { filename = CoopSaves.AutosaveName; OverrideName = ""; }
             try { CoopSaves.RedirectAutosave(ref filename, ref OverrideName); CoopSaves.RedirectShownName(ref filename, ref OverrideName); }
             catch (Exception e) { Plugin.Logger.LogError(e); }
             // Only the host saves the co-op world (owner decision, phase 8); a guest's file would be thrown away anyway.

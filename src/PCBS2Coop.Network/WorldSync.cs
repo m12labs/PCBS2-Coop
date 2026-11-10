@@ -47,6 +47,13 @@ public interface ICommandHandler
 
 /// <summary>Optional host construction of the accepted payload. Validation and canonicalization must not mutate
 /// world facts. Propose IDs from the allocator; commit them only in Apply. Duplicate requests skip this path.</summary>
+/// <summary>Sees every applied change after its handler, on both peers in host order (for example, the day model
+/// noticing that the guest started something). Must only change its own state and must not throw.</summary>
+public interface IChangeObserver
+{
+    void Applied(ushort type, in MutationContext ctx, byte[] payload);
+}
+
 public interface ICanonicalCommandHandler : ICommandHandler
 {
     byte[] Canonicalize(in CommandContext ctx, NetDataReader request);
@@ -97,6 +104,7 @@ public sealed class WorldSync
     private const long MaxHeldBytes = 32L * 1024 * 1024;
 
     private readonly Dictionary<ushort, ICommandHandler> _handlers = new();
+    private readonly List<IChangeObserver> _observers = new();
     private readonly List<IWorldState> _states = new();
     private readonly HashSet<string> _optionalStates = new();
     private readonly List<(MessageType Type, byte[] Body)> _held = new();
@@ -166,6 +174,9 @@ public sealed class WorldSync
         _states.Add(state);
         if (optional) _optionalStates.Add(state.Name);
     }
+
+    /// <summary>Add a model that sees every applied change after its handler (<see cref="IChangeObserver"/>).</summary>
+    public void Observe(IChangeObserver observer) => _observers.Add(observer ?? throw new ArgumentNullException(nameof(observer)));
 
     public void Register(ushort type, ICommandHandler handler)
     {
@@ -502,7 +513,7 @@ public sealed class WorldSync
         var ctx = new MutationContext(op, Generation, revision, op.Actor == Local);
         Revision = revision;
         ChainHash = Chain(ChainHash, Generation, revision, op, type, payload);
-        ApplyHandler(handler, ctx, payload);
+        ApplyHandler(type, handler, ctx, payload);
 
         if (Linked)
         {
@@ -623,7 +634,7 @@ public sealed class WorldSync
         var op = new OperationId(actor, seq);
         Revision = revision;
         ChainHash = Chain(ChainHash, gen, revision, op, type, payload);
-        ApplyHandler(handler, new MutationContext(op, gen, revision, actor == Local), payload);
+        ApplyHandler(type, handler, new MutationContext(op, gen, revision, actor == Local), payload);
         if (ChainHash != hostHash) Diverge($"World change hash mismatch at revision {revision}.");
 
         if (actor == Local)
@@ -669,12 +680,13 @@ public sealed class WorldSync
         foreach (var s in seqs) { Stats.Rejected++; Rejected?.Invoke(new OperationId(Local, s), RejectReason.Abandoned, why); }
     }
 
-    private void ApplyHandler(ICommandHandler handler, in MutationContext ctx, byte[] payload)
+    private void ApplyHandler(ushort type, ICommandHandler handler, in MutationContext ctx, byte[] payload)
     {
         try
         {
             handler.Apply(ctx, new NetDataReader(payload));
             Stats.Applied++;
+            foreach (var o in _observers) o.Applied(type, ctx, payload);
         }
         catch (Exception e)
         {

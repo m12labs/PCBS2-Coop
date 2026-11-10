@@ -9,7 +9,8 @@ namespace PCBS2Coop;
 /// player's desktop mirrors here never acts: the clicking game sends it. Each hooked native function is distinct
 /// (decompile RVAs: Job/MultiJob OnAccept E4B8F0/E64770, OnCollected E4C370/E64BD0, DoQuit E445D0/E63250, OnRejected
 /// E4D3D0/E652A0, OnPositiveAction E4CBA0/E64E10, OnNegativeAction E4CA30/E64D10, the quit confirmation E52DD0,
-/// ShowResult E4DBA0, RemoveJobItem A879A0, the tutorial pop-up 703090).
+/// ShowResult E4DBA0, RemoveJobItem A879A0, the tutorial pop-up 703090; phase 17d: EmailBill.OnPositiveAction E40780,
+/// ShopUpgradeEmail.OnPositiveAction 677190).
 /// </summary>
 internal static class JobHooks
 {
@@ -100,6 +101,33 @@ internal static class JobHooks
     [HarmonyPatch(typeof(MultiJob), nameof(MultiJob.OnRejected))]
     internal static class MultiReject { private static bool Prefix(MultiJob __instance) => Run(__instance, JobAct.Reject, 0); }
 
+    /// <summary>Phase 17d: a bill's Pay or the renovation offer's accept. On a deleted e-mail the button only restores
+    /// it (decompile: both test <c>m_removed</c> first), which stays on this game.</summary>
+    private static bool RunMail(Email mail)
+    {
+        if (!NativeCareer.InCareer || NativeProjection.Active || NativeJobs.HostRunning || mail == null || mail.m_removed) return true;
+        if (NativeDesktopInput.Injecting)
+        {
+            Plugin.Logger.LogInfo("[jobs] the other player's mirrored e-mail click stays on their game.");
+            return false;
+        }
+        var jobs = NativeJobs.Current;
+        if (jobs == null) return true;
+        try
+        {
+            if (CoopSaves.Current == CoopSaves.Mode.Host) return jobs.AllowHostOwnMail(mail);
+            jobs.RequestMail(mail);
+        }
+        catch (System.Exception e) { Plugin.Logger.LogError("[jobs] e-mail hook failed: " + e); }
+        return false;
+    }
+
+    [HarmonyPatch(typeof(EmailBill), nameof(EmailBill.OnPositiveAction))]
+    internal static class PayBill { private static bool Prefix(EmailBill __instance) => RunMail(__instance); }
+
+    [HarmonyPatch(typeof(ShopUpgradeEmail), nameof(ShopUpgradeEmail.OnPositiveAction))]
+    internal static class OrderRenovation { private static bool Prefix(ShopUpgradeEmail __instance) => RunMail(__instance); }
+
     /// <summary>The host running the guest's action shows no result screen (the guest's game shows its own).</summary>
     [HarmonyPatch(typeof(Job), "ShowResult")]
     internal static class NoResultScreen { private static bool Prefix() => !NativeJobs.HostRunning; }
@@ -131,7 +159,7 @@ internal static class JobHooks
     {
         foreach (var t in new[] { typeof(Positive), typeof(MultiPositive), typeof(Negative), typeof(MultiNegative), typeof(Accept), typeof(MultiAccept), typeof(Collect), typeof(MultiCollect), typeof(QuitConfirm),
                      typeof(Quit), typeof(MultiQuit), typeof(Reject), typeof(MultiReject), typeof(NoResultScreen), typeof(NoTutorialPopUp),
-                     typeof(RemovedJobPc) })
+                     typeof(RemovedJobPc), typeof(PayBill), typeof(OrderRenovation) })
             h.PatchAll(t);
     }
 }

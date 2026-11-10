@@ -96,7 +96,7 @@ internal sealed partial class CoopController
 
     private void ResetSync()
     {
-        _sync = SyncStep.None; _syncMenuAt = -1; _syncRequestUntil = -1; _syncFile = null; _syncSaving = false; _syncGuestLeft = false; _switch = null;
+        _sync = SyncStep.None; _syncMenuAt = -1; _syncRequestUntil = -1; _syncFile = null; _syncSaving = false; _syncGuestLeft = false; _switch = null; _renovating = false;
         _guestSync = false; _guestSyncMenuAt = -1; _faultAnnounced = false; _projectionFault = null;
     }
 
@@ -211,7 +211,7 @@ internal sealed partial class CoopController
                 if (now > _syncDeadline) { FailSync("the world didn't settle for saving"); return; }
                 if (!_readiness.Ready || Workstations?.Settled == false || _pairWrites.Count > 0 || _pendingFile != null || SaveLoadSystem.WaitingOnThread()) return;
                 if (!Objects.Assembly.PrepareReload()) return;
-                if (_switch != null) SaveForSwitch(); else SaveForSync();
+                if (_renovating) SaveForRenovation(); else if (_switch != null) SaveForSwitch(); else SaveForSync();
                 return;
             case SyncStep.Pairing:
                 if (now > _syncDeadline) { FailSync("the save took too long"); return; }
@@ -223,7 +223,7 @@ internal sealed partial class CoopController
                     if (!File.Exists(_syncFile + ".coop")) { FailSync("the co-op save wasn't paired"); return; }
                 }
                 _sync = SyncStep.ToMenu; _syncMenuAt = -1; _syncDeadline = now + SyncMenuTimeout;
-                AddChat(_switch == null ? "Sync: saved. Reloading the world." : _switch.Reset ? "Resetting the world to the default build." : $"Loading \"{CoopSaves.DisplayName(_switch.File)}\".");
+                AddChat(_renovating ? "Renovation saved. Loading the renovated workshop." : _switch == null ? "Sync: saved. Reloading the world." : _switch.Reset ? "Resetting the world to the default build." : $"Loading \"{CoopSaves.DisplayName(_switch.File)}\".");
                 var loader = Object.FindObjectOfType<NewLoadingScreen>();
                 if (loader == null) { FailSync("no loading screen was found"); return; }
                 loader.LoadScene(CoopRunner.MenuScene, false);
@@ -242,7 +242,8 @@ internal sealed partial class CoopController
                 {
                     _sync = SyncStep.None;
                     _faultAnnounced = false;
-                    var what = _switch == null ? "Sync: the world is reloaded." : _switch.Reset ? "The world is reset." : "The world is loaded.";
+                    var what = _renovating ? "The renovated workshop is ready." : _switch == null ? "Sync: the world is reloaded." : _switch.Reset ? "The world is reset." : "The world is loaded.";
+                    if (_renovating) { _renovating = false; _saveAfterRenovation = true; }
                     AddChat(Session.IsJoined ? what + " Sending it to Client." : what);
                     Plugin.Logger.LogInfo($"[sync] host reloaded at generation {Session.World.Generation} ({_hostWorldKind}).");
                     _switch = null;
@@ -348,6 +349,7 @@ internal sealed partial class CoopController
     /// ending the session. The next generation start restores its facts. A world switch loads its target instead.</summary>
     private void ReloadForSync()
     {
+        if (_renovating) { ReloadForRenovation(); return; }
         if (_switch is { } target) { ReloadForSwitch(target); return; }
         var fileName = Path.GetFileName(_syncFile);
         var bare = fileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? fileName[..^4] : fileName;
@@ -384,8 +386,8 @@ internal sealed partial class CoopController
     {
         Plugin.Logger.LogWarning("[sync] failed: " + why);
         _sync = SyncStep.None;
-        AddChat($"{(_switch == null ? "Sync" : "Loading the world")} failed: {why}." + (_syncGuestLeft ? " Client reloads your current world instead." : ""));
-        _switch = null;
+        AddChat($"{(_renovating ? "The shop renovation" : _switch == null ? "Sync" : "Loading the world")} failed: {why}." + (_syncGuestLeft ? " Client reloads your current world instead." : ""));
+        _switch = null; _renovating = false;
         Session.SendChat(ChatKind.System, $"The host's sync failed ({why}). Reloading the host's current world instead.");
         _syncGuestLeft = false;
     }
@@ -398,6 +400,7 @@ internal sealed partial class CoopController
         _guestSyncDeadline = Time.realtimeSinceStartup + GuestSyncTimeout;
         _guestLoading = false;
         if (by == GuestDayReload) AddChat("The host finished the day: loading the host's world for the new day.");
+        else if (by == GuestRenovation) AddChat("The host's shop is being renovated: returning to the menu, then loading the renovated workshop.");
         else AddChat(by.StartsWith("the host is", StringComparison.Ordinal)
             ? $"The host is {(by.Contains("resetting") ? "resetting the world" : "loading another world")}: returning to the menu, then loading it."
             : $"Host is syncing both games ({by}): returning to the menu, then loading the host's world.");

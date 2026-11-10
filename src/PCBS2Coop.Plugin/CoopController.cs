@@ -318,7 +318,7 @@ internal sealed partial class CoopController
     {
         var campaign = CoopSaves.Campaign ?? throw new InvalidOperationException("No co-op run is being hosted.");
         var scene = CoopRunner.Instance?.Scene;
-        return scene != campaign.Scene && CoopCampaign.Supports(campaign.Mode, scene) ? campaign.InScene(scene) : campaign;
+        return RenovationCampaign(scene != campaign.Scene && CoopCampaign.Supports(campaign.Mode, scene) ? campaign.InScene(scene) : campaign);
     }
 
     public bool Join(string address, int port, out string error)
@@ -402,7 +402,7 @@ internal sealed partial class CoopController
         Session.Stop(toPeer);
         SteamBootstrap.Service?.Cancel();
         Objects.Reset();
-        Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; Workstations = null; Career = null; Commerce = null; Packages = null; Jobs = null; _notice = null; ResetAutosave(); ResetDayEnd();
+        Activity?.Reset(); _nativeActivity = null; Lifecycle = null; Transfers = null; Workstations = null; Career = null; Commerce = null; Packages = null; Jobs = null; Day = null; _notice = null; ResetAutosave(); ResetDayEnd(); ResetRenovation();
         DestroyView();
         _pointers.Reset(); _localCursor = default;
         _lastRemoteAt = -1;
@@ -457,7 +457,7 @@ internal sealed partial class CoopController
         else if (Session.Role == Role.Client) UpdateGuest(inWorkshop);
         SteamBootstrap.Service?.SetHostReady(IsSteamHost && _hostWorldStarted && WorldReady && Session.World is { Admitted: true });
 
-        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Simulation?.Update(); ToolBenches?.Update(); Customization?.Update(); Workshop?.Update(); Career?.Update(); Commerce?.Update(); Packages?.Update(); Jobs?.Update(); Replays.Update(); if (Session.Role == Role.Host) { UpdateAutosave(); UpdateDayEnd(); } }
+        if (inWorkshop) { _nativeActivity?.Update(); Lifecycle?.Update(); Transfers?.Update(); Workstations?.Update(); Mechanisms?.Update(); Panels?.Update(); Edits?.Update(); Bios?.Update(); Software?.Update(); Desktop?.Update(); Repair?.Update(); Simulation?.Update(); ToolBenches?.Update(); Customization?.Update(); Workshop?.Update(); Career?.Update(); Commerce?.Update(); Packages?.Update(); Jobs?.Update(); Day?.Update(); Replays.Update(); if (Session.Role == Role.Host) { UpdateAutosave(); UpdateDayEnd(); } }
         else if (Replays.Busy) Replays.Reset();
 
         UpdateRejoinPosition(inWorkshop);
@@ -493,6 +493,7 @@ internal sealed partial class CoopController
                 Commerce.BindHost();
                 Packages.BindHost();
                 Jobs.BindHost();
+                Day.BindHost();
                 // Saved work/reservations belong to the previous session. Preserve committed objects only.
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Guest, default), out _);
                 Session.World.Submit(CommandTypes.ActorActivity, ActivityWorld.Presence(ActorSlot.Host, Session.LocalIdentity.Player), out _);
@@ -536,6 +537,7 @@ internal sealed partial class CoopController
                 Commerce?.BindGuest();
                 Packages?.BindGuest();
                 Jobs?.BindGuest();
+                Day?.BindGuest();
                 Plugin.Logger.LogInfo($"[world] entered the host's world with {Objects.Model.Pcs.Count} bound PCs.");
                 OnGuestSyncAdmitted();
             }
@@ -656,6 +658,7 @@ internal sealed partial class CoopController
     {
         if (Session.Role != Role.Host || string.IsNullOrEmpty(path) || _saveCapture == null) return;
         Plugin.Logger.LogInfo($"[world] host saved '{path}'.");
+        if (RenovationRunning) _renovationSave = path;
         _pairWrites.Enqueue((path, _saveCapture.Value.Position, _saveCapture.Value.Carriers, CurrentCampaign()));
         HostSaveWritten(_saveCapture.Value.Position.Revision);
         _saveCapture = null;
@@ -852,6 +855,7 @@ internal sealed partial class CoopController
         Commerce = new NativeCommerce(this, world, Career.Handler);
         Packages = new NativePackages(this, world, Career.Handler);
         Jobs = new NativeJobs(this, world);
+        Day = new NativeDay(this, world);
         // Career (phase 15c): an install names its exact owned item; the host refuses one that's gone or in use.
         Edits.Handler.ItemCheck = CheckCareerItem;
         Lifecycle.Handler.ItemCheck = CheckCareerCase;
@@ -888,6 +892,10 @@ internal sealed partial class CoopController
         world.Register(CommandTypes.Jobs, Jobs.Handler);
         // Optional: Free Build worlds and careers before 0.63 have no job state; the host binds it at generation start.
         world.RegisterState(Jobs.Handler, optional: true);
+        world.Register(CommandTypes.Day, Day.Handler);
+        // Optional: Free Build worlds and careers before 0.65 have no day state; the host binds it at generation start.
+        world.RegisterState(Day.Handler, optional: true);
+        world.Observe(Day.Handler);
 
         world.RegisterState(Software.Handler, optional: true);
         // Optional: saves from before 0.24 have no workshop state (lights, seasonal decoration, pictures).

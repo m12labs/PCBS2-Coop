@@ -156,6 +156,8 @@ public static class CommandTypes
     public const ushort Packages = 20;
     /// <summary>Phase 17b: the host's jobs and inbox, and either player's job actions (<see cref="JobWorld"/>).</summary>
     public const ushort Jobs = 21;
+    /// <summary>Phase 17d: the guest's ready mark for ending the day (<see cref="DayWorld"/>).</summary>
+    public const ushort Day = 22;
 }
 
 /// <summary>One actor's pointer on a shared PC monitor. Coordinates are fractions of that PC's desktop

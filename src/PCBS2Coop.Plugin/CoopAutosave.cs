@@ -22,9 +22,9 @@ namespace PCBS2Coop;
 /// games: <c>SaveLoadSystem.AutoSave</c> / <c>AutoSaveNGP</c> (decompile callers: the day iterator
 /// <c>CareerStatus.AdvanceDay</c>, <c>GameController.ExitGame</c>, <c>Manifest.OnBack</c>, first-day and shop-front
 /// onboarding steps) and <c>SaveCurrentGame</c> (after a workshop load; for Career it calls <c>CreateSaveGame</c>
-/// directly). The extra host save after each finished day comes with the shared day transition (phase 17d).
-/// The native shop renovation (<c>CareerStatus.UpgradeShop</c>) saves and reloads the workshop itself; it is refused in
-/// co-op until phase 17d makes it a host-controlled world change.</para>
+/// directly). The host saves after each finished day itself (<see cref="UpdateDayEnd"/>). The native shop renovation
+/// (<c>CareerStatus.UpgradeShop</c>) saves and reloads the workshop itself; since 0.65 the host runs it as a world
+/// change (<see cref="SaveForRenovation"/>).</para>
 /// </summary>
 internal sealed partial class CoopController
 {
@@ -61,6 +61,8 @@ internal sealed partial class CoopController
         if (SaveLoadSystem.WaitingOnThread() || _pairWrites.Count > 0 || _pendingFile != null) return "the previous save is still being written";
         if (_sync != SyncStep.None || Session.GuestNeedsWorld) return "a sync or a joining player's world copy is in progress";
         if (_initialSave != null) return "the new world's first save is still pending";
+        // Phase 17d: the day end marked the shop upgraded; only the renovation's own save may record that.
+        if (_renovationDue) return "the shop renovation is waiting to run";
         if (OutOfSync != null) return "this game is out of sync";
         if (Workstations?.Settled == false || Workshop?.Settled == false || !NativeAssembly.CanCapture) return "a change is still being shown";
         // Phase 16d: a PC the host's game made by itself gets its shared IDs first (the save refuses unshared PCs).
@@ -179,19 +181,6 @@ internal sealed partial class CoopController
     internal static class CurrentGameSaveGuard
     {
         private static bool Prefix() => AllowGameAutosave();
-    }
-
-    /// <summary>The native shop renovation: refused in a co-op world until it is shared (phase 17d).</summary>
-    [HarmonyPatch(typeof(CareerStatus), nameof(CareerStatus.UpgradeShop))]
-    internal static class ShopRenovationGuard
-    {
-        private static bool Prefix()
-        {
-            if (CoopSaves.Current == CoopSaves.Mode.None) return true;
-            Instance?.Notice("The shop renovation isn't shared in co-op yet.", 10f);
-            Plugin.Logger.LogWarning("[career] refused the native shop renovation (CareerStatus.UpgradeShop): it reloads the workshop outside a shared world change.");
-            return false;
-        }
     }
 
 

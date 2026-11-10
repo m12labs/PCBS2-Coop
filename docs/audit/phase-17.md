@@ -128,3 +128,63 @@ The only objective input that wasn't shared was dust. Spend-type objectives keep
 7. A job whose objectives the guest's game shows met but the host's doesn't: the guest's Collect shows the notice, not the invoice.
 8. Build, boot, benchmark, BIOS and software objectives the guest completes tick on the host's game too (spot-check two or three job types).
 9. Startup logs no `[hooks]` error.
+
+## Owner decisions for 17d (November 10, 2026)
+
+- **New change un-readies:** once Client presses End Day or Skip Work it is ready, until it starts something new (an edit, a PC or package moved, a tool table, decorating, a purchase, a job or e-mail action), leaves or rejoins. It then presses End Day again.
+- **Host presses again:** the host's End Day or Skip Work is refused with a notice naming Client while Client isn't ready. When Client becomes ready the host is told and presses End Day again, through the game's own warnings and door walk.
+- **Renovation by either player:** either player may accept the shop renovation e-mail. Client's accept is sent to the host, whose game pays and schedules it. The renovation itself runs on the host at the day end.
+- **Bills by either player:** either player may pay a rent or utility bill. Client's Pay is sent to the host, whose game pays it once.
+
+## Day and renovation trace (17d)
+
+Read from the game binary's disassembly with `tools/decompile/trace_rva.py` and `metadata_slots.py`.
+
+| Path | What the game does | Consequence for co-op |
+| --- | --- | --- |
+| End Day | `DaySummary.OnEndDay` (78C420) warns about an unbought basket or uncollected jobs, then its Yes (`<OnEndDay>b__29_0`) runs `EndDay`, which plays the door sound and calls `AdvanceDay(false)`. | Hooked at the button. The guest's marks it ready. The host's is refused early while it must wait. `AdvanceDay` keeps its prefix as a backstop. |
+| Skip Work | `DaySummary.OnSkipWork` (78C680) is a tail jump to `AdvanceDay(true)`. | Hooked like End Day. |
+| Day iterator | `CareerStatus.AdvanceDay` runs `Calendar.FinishDay`, `DoDustAccumulation` and `GenerateTodaysOffers`. It invokes `s_onDayEnd`, then `AutoSave` (skipped in co-op), then `s_onDayEndPostSave`. | The post-save callbacks still run in co-op. |
+| Renovation offer | `ShopUpgradeEmail.OnPositiveAction` (677190) on a deleted e-mail only restores it. Otherwise it calls `SpendCash(m_cost)`, sets `scheduledShopUpgrade` and `m_paidForShopUpgrade`, adds `DoBuild` to `s_onDayEnd` and tells the onboarding (`OnShopUpgradeQueued`). | Either player, through the host (`JobWorld` step Mail). |
+| Build | `ShopUpgradeEmail.DoBuild` sets `m_upgradedShop` and adds `CareerStatus.UpgradeShop` to `s_onDayEndPostSave`. | Before 0.65, co-op refused only `UpgradeShop`. The career was left marked upgraded in the old shop. |
+| Renovation | `CareerStatus.UpgradeShop` (D29670) removes itself from the post-save list and adds `PostShopRennovation` to `SceneManager.sceneLoaded`. It updates the apps on the bench PCs and reschedules the rent. It then saves with `CreateSaveGame("", true, "")` and `BlockForPendingSaves`, and calls `LoadGameFromDir(save, "Stage_02_Workshop")`. | The host runs it as a world change (below). |
+| After the load | `PostShopRennovation` removes itself and calls `PeripheralSlot.TrySpawnPerif` on every peripheral slot (the new workstations). | It waits for the workshop scene, because the co-op reload passes the main menu first. |
+| Bills | `EmailBill.OnPositiveAction` (E40780) on a deleted e-mail only restores it. Otherwise it calls `PayRent` or `PayUtility` with `m_cost` (`SpendCash`, plus a thank-you e-mail) and removes the e-mail. | Either player, through the host. |
+
+## 0.65 implementation: End Day, bills and the renovation (17d)
+
+**Status:** coded with model tests on November 10, 2026. Release built with zero warnings or errors and all 890 automated checks passed. No game was launched. Nothing here is verified in the running game.
+
+| Area | What 0.65 does |
+| --- | --- |
+| Ready model | Command 22 `DayWorld`. The guest's End Day or Skip Work sends Ready with the day its game shows. The host's game refuses it for another day, or while the guest has a claim or an edit running, carries a PC, a package or a note, uses a tool table or decorates. The mark is for that day only, and both games see it. |
+| Taking it back | `DayWorld` sees every applied change in host order (`WorldSync.Observe`). The guest's own changes take the mark back, and so does its leaving or rejoining. Automatic requests don't count: missing pictures, repairs, results sent at the end of a change, desktop input and the lighting clock. |
+| Host End Day | `EndDayBlocker` waits for edits, replays, tool tables, job and e-mail actions still running, a sync, Client still loading, and a ready Client. The host's press asks Client in chat (at most every 15 seconds) and shows "Waiting for Client to end the day. Press End Day again once Client is ready." When Client is ready, the host's chat and notice say so. A Client that isn't in the world isn't waited for. |
+| Bills and the renovation offer | `JobWorld` step Mail names an unpaid bill or the renovation offer by its kind, the game's creation time stamp and its cost. The host's inbox update lists them. One action per e-mail until the next update. The host's game runs the e-mail's own button. If the money doesn't change hands, Client is told in chat and can try again. |
+| Renovation | The host's game holds `UpgradeShop` when the day end queues it, and saves wait meanwhile. Once the day settles, it runs like /sync. Client leaves to its menu. `UpgradeShop` saves to the world's autosave, paired with the renovated scene, and its own load is skipped. The host returns to its menu and loads that save in `Stage_02_Workshop`. That load binds the shared IDs afresh from the game, as a new career does, because the bench keys include each bench's place in the scene. The host then saves the renovated world, and Client is admitted from a fresh snapshot. |
+| Save format | 0.65 reads 0.16–0.65 saves. The job state gains an optional e-mail list and the day state is optional, so 0.63 and 0.64 careers load. |
+
+### Not covered by 0.65
+
+- The day change itself stays with the host's game. Client still takes the new day, dust build-up, expiry and new offers by reloading the host's world (phase 15c).
+- The renovation's fresh binding drops co-op facts tied to the old shared IDs. Mainly that is the custom desktop pictures shared before the renovation: Client sees them again once the host sets them again. The lights and seasonal decoration are read from the host's game again.
+- If the host's game stops between the renovation's save and the first save in the renovated workshop, Continue may refuse that save, because its pairing belongs to the old shop. The backup of the save from before the renovation is kept.
+- The onboarding steps of the renovation (`OnShopUpgradeQueued`) and of bills run on the host's game only (17e).
+- On a deleted bill or renovation e-mail, the button only restores it, and only on that game (17e: e-mail flags, tags and deletes).
+
+### Runtime checks for the gameplay sweep
+
+1. The host presses End Day while Client works: the press is refused with the "Waiting for Client" notice, and Client's chat asks it to end the day.
+2. Client presses End Day: both chats say Client is ready, and Client's tablet doesn't walk out the door. The host presses End Day: the day ends, and Client reloads for the new day.
+3. Client presses End Day, then picks up a PC or starts an edit: Client's notice says it's no longer ready, and the host's End Day waits again.
+4. Client presses End Day while carrying a PC: refused with "put down the PC you're carrying first".
+5. Skip Work on either side behaves as End Day.
+6. Client pays a rent bill: the host's cash drops once, and both inboxes lose the bill. Both players press Pay together: it's paid once.
+7. Client accepts the renovation e-mail: the host's chat says so, and the cash drops on both games.
+8. End that day:
+   - Client leaves to its menu.
+   - The host saves, returns to its menu and loads the renovated workshop (log `[career] host loads … after the shop renovation`).
+   - The new workstations get their peripherals (log `the game sets up its workstations`).
+   - Client then joins the renovated workshop.
+9. Save, exit and Continue the renovated career on both games: the host loads `Stage_02_Workshop` with the PCs, storage and cash it had.
+10. Startup logs no `[hooks]` error for the five new hooks.

@@ -25,6 +25,10 @@ namespace PCBS2Coop;
 /// runs the game's own action without its result screen or tutorial pop-ups: <c>Job.OnAccept</c>; collect drops the
 /// "return the PC" objectives then <c>OnCollected</c> (as <c>OnPositiveAction</c> does); quit charges the fee the
 /// guest's confirmation showed, then <c>DoQuit</c>; turn down is <c>OnRejected</c>.</item>
+/// <item>Phase 17d: either player pays a bill (<c>EmailBill.OnPositiveAction</c>: <c>PayRent</c> or <c>PayUtility</c>,
+/// then the e-mail is removed) or orders the shop renovation (<c>ShopUpgradeEmail.OnPositiveAction</c>: pays, then
+/// queues the build for the day end). The guest's click is sent to the host, whose game runs the e-mail's own button.
+/// The e-mail's button on a deleted e-mail only restores it, which stays on each game (17e).</item>
 /// <item>Collecting, quitting or turning down a job removes its PC on the host's game (<c>SaveLoadSystem.RemoveJobItem</c>):
 /// the host shares that removal (<see cref="PcRemoval.Game"/>). Its package and note follow the host's benches (16c).</item>
 /// </list>
@@ -49,18 +53,26 @@ internal sealed class NativeJobs : IJobNative
     private (JobAct Act, int Job)? _sending;
     /// <summary>Host: guest actions accepted, run on the next frame (outside command apply).</summary>
     private readonly Queue<(JobAct Act, int Job, int Value)> _forGuest = new();
+    /// <summary>Guest: e-mail actions waiting for the host's answer. Host: the guest's accepted ones, run next frame.</summary>
+    private readonly Dictionary<OperationId, (MailFact Mail, float At)> _mailPending = new();
+    private readonly Queue<MailFact> _mailForGuest = new();
+    private MailFact _mailSending;
     /// <summary>Host: shared PCs its game removed by itself, to share.</summary>
     private readonly List<NetObjectId> _removed = new();
 
     public NativeJobs(CoopController coop, WorldSync world)
     {
         _coop = coop; _world = world;
-        Handler = new JobWorld(coop.Activity, this) { ActCheck = CheckAct };
+        Handler = new JobWorld(coop.Activity, this) { ActCheck = CheckAct, MailCheck = CheckMail };
         world.GenerationStarted += (uint _, string _) => Clear();
         world.Rejected += OnRejected;
     }
 
-    private void Clear() { _shared = null; _pending.Clear(); _forGuest.Clear(); _removed.Clear(); _dayHoldUntil = 0; }
+    private void Clear() { _shared = null; _pending.Clear(); _forGuest.Clear(); _mailPending.Clear(); _mailForGuest.Clear(); _removed.Clear(); _dayHoldUntil = 0; }
+
+    /// <summary>A job or e-mail action is waiting for the host's answer or waiting to run on the host: End Day waits
+    /// for it (phase 17d).</summary>
+    internal bool Busy => _forGuest.Count > 0 || _mailForGuest.Count > 0 || _pending.Count > 0 || _mailPending.Count > 0;
 
     private bool Active => NativeCareer.InCareer && Handler.Bound && _world.Admitted && _world.Divergence == null && _coop.WorldReady;
     private ulong Epoch => _coop.Activity.Get(_world.Local)?.Epoch ?? 0;
@@ -105,6 +117,41 @@ internal sealed class NativeJobs : IJobNative
             else Plugin.Logger.LogWarning($"[jobs] job {job.m_id} (status {(int)job.m_status}) can't be shared; its buttons work on the host only.");
         }
         return facts.Take(InboxUpdate.MaxJobs).ToList();
+    }
+
+    /// <summary>The inbox e-mails whose buttons change the shared career (phase 17d): unpaid bills and an unordered
+    /// shop renovation offer, each once.</summary>
+    private static List<(MailFact Fact, Email Mail)> ReadMails(CareerStatus.State d)
+    {
+        var found = new List<(MailFact, Email)>();
+        var seen = new HashSet<(MailKind, long)>();
+        foreach (var list in new[] { d.m_messages, d.m_todaysMessages, d.m_flaggedMsgs })
+        {
+            if (list == null) continue;
+            foreach (var e in list)
+            {
+                if (e == null || e.m_removed || MailOf(e, d) is not { } fact || !fact.IsValid || !seen.Add((fact.Kind, fact.Time))) continue;
+                found.Add((fact, e));
+                if (found.Count == InboxUpdate.MaxMails) return found;
+            }
+        }
+        return found;
+    }
+
+    /// <summary>The shared name of an e-mail whose button changes the career, or null for any other e-mail.</summary>
+    private static MailFact MailOf(Email e, CareerStatus.State d)
+    {
+        if (e.TryCast<EmailBill>() is { } bill)
+            return new MailFact(bill.m_type == EmailBill.Type.RENT ? MailKind.Rent : MailKind.Utility, e.m_creationTime, bill.m_cost);
+        if (e.TryCast<ShopUpgradeEmail>() is { } offer && !d.m_paidForShopUpgrade && !d.m_upgradedShop)
+            return new MailFact(MailKind.Renovation, e.m_creationTime, offer.m_cost);
+        return null;
+    }
+
+    private static Email FindMail(MailFact fact)
+    {
+        var d = Data;
+        return d == null ? null : ReadMails(d).Where(x => x.Fact == fact).Select(x => x.Mail).FirstOrDefault();
     }
 
     /// <summary>What the guest's screens show of the jobs and inbox: a change here is worth sharing.</summary>
@@ -158,6 +205,7 @@ internal sealed class NativeJobs : IJobNative
         if (d.m_jobTags != null) foreach (var t in d.m_jobTags) if (t != null) b.Append(',').Append(t.JobId);
         b.Append("|n").Append(d.m_nextJobId).Append('.').Append(d.m_numberJobsCompleted).Append('.').Append(d.m_quitJobs).Append('.')
          .Append(d.m_fiveStarJobs).Append('.').Append(d.m_lastJobID);
+        b.Append("|u").Append(d.m_paidForShopUpgrade ? 'p' : '-').Append(d.m_upgradedShop ? 'u' : '-');
         return b.ToString();
     }
 
@@ -258,7 +306,7 @@ internal sealed class NativeJobs : IJobNative
         Clear();
         var d = Data ?? throw new InvalidDataException("the career isn't loaded");
         var facts = ReadFacts(d);
-        Handler.BindHost(facts);
+        Handler.BindHost(facts, ReadMails(d).Select(x => x.Fact));
         // The guest loads this game's save, which already holds these lists.
         _shared = Fingerprint(d);
         Plugin.Logger.LogInfo($"[jobs] host bound {facts.Count} job(s).");
@@ -279,12 +327,20 @@ internal sealed class NativeJobs : IJobNative
         var now = Time.realtimeSinceStartup;
         foreach (var (op, p) in _pending.ToList())
             if (now - p.At > PendingTimeout) { _pending.Remove(op); Plugin.Logger.LogWarning($"[jobs] {p.Act} of job {p.Job} wasn't answered; continuing."); }
+        foreach (var (op, p) in _mailPending.ToList())
+            if (now - p.At > PendingTimeout) { _mailPending.Remove(op); Plugin.Logger.LogWarning($"[jobs] the {p.Mail.Kind} e-mail action wasn't answered; continuing."); }
         if (_world.Local != ActorSlot.Host) return;
         while (_forGuest.Count > 0)
         {
             var (act, job, value) = _forGuest.Dequeue();
             try { RunForGuest(act, job, value); }
             catch (Exception e) { _coop.ProjectionFailed($"The client's job action ({act}) could not be run", e); }
+        }
+        while (_mailForGuest.Count > 0)
+        {
+            var mail = _mailForGuest.Dequeue();
+            try { RunMailForGuest(mail); }
+            catch (Exception e) { _coop.ProjectionFailed($"The client's e-mail action ({mail.Kind}) could not be run", e); }
         }
         ShareRemoved();
         if (now < _nextObserve || now < _dayHoldUntil || _coop.DayEnding) return;
@@ -306,7 +362,7 @@ internal sealed class NativeJobs : IJobNative
         IReadOnlyList<byte[]> payloads; InboxUpdate update;
         try
         {
-            update = new InboxUpdate(ReadFacts(d), Pack(d));
+            update = new InboxUpdate(ReadFacts(d), Pack(d)) { Mails = ReadMails(d).Select(x => x.Fact).ToList() };
             var host = _coop.Activity.Get(ActorSlot.Host) ?? throw new InvalidDataException("the host isn't in the shared world");
             payloads = JobWorld.Submissions(host.Epoch, update);
         }
@@ -364,8 +420,79 @@ internal sealed class NativeJobs : IJobNative
         Plugin.Logger.LogInfo($"[jobs] asked the host to {Verb(act)} job {job.m_id} (value {value}).");
     }
 
+    private static string MailVerb(MailKind kind) => kind == MailKind.Renovation ? "order the shop renovation" : "pay that bill";
+
+    /// <summary>Guest: ask the host to run this e-mail's button (pay the bill, order the renovation).</summary>
+    internal void RequestMail(Email mail)
+    {
+        if (!Active) { _coop.Notice("The inbox isn't shared yet; try again in a moment."); return; }
+        var d = Data;
+        var fact = d == null ? null : MailOf(mail, d);
+        if (fact == null) return;
+        if (_mailPending.Values.Any(p => p.Mail == fact)) { _coop.Notice("Still waiting for the host about that e-mail."); return; }
+        if (!Handler.Mails.Contains(fact)) { _coop.Notice("The host's inbox doesn't show that e-mail like this; try again in a moment."); return; }
+        _mailSending = fact;
+        try
+        {
+            if (!_world.Submit(CommandTypes.Jobs, JobWorld.Mail(Epoch, fact), out var op)) { _coop.Notice("Not connected to the host."); return; }
+            if (_world.Local != ActorSlot.Host) _mailPending[op] = (fact, Time.realtimeSinceStartup);
+        }
+        finally { _mailSending = null; }
+        Plugin.Logger.LogInfo($"[jobs] asked the host to {MailVerb(fact.Kind)} ({fact.Cost}).");
+    }
+
+    /// <summary>Host: may its own click run this e-mail's button (the guest isn't already handling it)?</summary>
+    internal bool AllowHostOwnMail(Email mail)
+    {
+        if (!Active) return true;
+        var d = Data;
+        if (d == null || MailOf(mail, d) is not { } fact) return true;
+        if (!Handler.MailActed(fact) && !_mailForGuest.Contains(fact)) return true;
+        _coop.Notice("The other player is already handling that e-mail.");
+        return false;
+    }
+
+    private string CheckMail(MailFact fact)
+    {
+        try
+        {
+            if (FindMail(fact) == null) return fact.Kind == MailKind.Renovation ? "The shop renovation was already ordered, or the offer is gone." : "That bill was already paid, or is gone.";
+            if (_mailForGuest.Contains(fact)) return "The other player is already handling that e-mail.";
+            return null;
+        }
+        catch (Exception e) { return "The e-mail could not be checked: " + e.Message; }
+    }
+
+    private void RunMailForGuest(MailFact fact)
+    {
+        var mail = FindMail(fact);
+        if (mail == null) { Plugin.Logger.LogWarning($"[jobs] the {fact.Kind} e-mail changed before the client's action ran; skipped."); return; }
+        HostRunning = true;
+        try { mail.OnPositiveAction(); }
+        finally { HostRunning = false; }
+        var done = FindMail(fact) == null;
+        if (done) _coop.AddChat(fact.Kind == MailKind.Renovation ? "Client ordered the shop renovation: it happens at the end of the day." : $"Client paid a bill ({fact.Cost}).");
+        else
+        {
+            _coop.AddChat($"Client tried to {MailVerb(fact.Kind)}; your game didn't (not enough money?).");
+            _coop.Session.SendChat(ChatKind.System, $"The host's game couldn't {MailVerb(fact.Kind)} (not enough money?).");
+        }
+        Plugin.Logger.LogInfo($"[jobs] ran the client's {fact.Kind} e-mail action ({fact.Cost}): {(done ? "done" : "not done")}.");
+        // An update even when nothing changed: it frees the e-mail for another try.
+        Observe(force: !done);
+    }
+
     private void OnRejected(OperationId op, RejectReason reason, string text)
     {
+        MailFact refused = null;
+        if (_mailPending.Remove(op, out var mp)) refused = mp.Mail;
+        else if (op.Actor == _world.Local && _mailSending != null) refused = _mailSending;
+        if (refused != null)
+        {
+            _coop.Notice($"The host couldn't {MailVerb(refused.Kind)}: {text}");
+            Plugin.Logger.LogInfo($"[jobs] the {refused.Kind} e-mail action was refused: {text}");
+            return;
+        }
         if (!_pending.Remove(op, out var p))
         {
             if (op.Actor != _world.Local || _sending is not { } s) return;
@@ -572,5 +699,13 @@ internal sealed class NativeJobs : IJobNative
         if (_world.Local != ActorSlot.Host || ctx.Op.Actor == ActorSlot.Host) return;
         // Run outside command apply: the game's job code reaches paths that share their own changes.
         _forGuest.Enqueue((act, job, value));
+    }
+
+    public void MailActed(in MutationContext ctx, MailFact mail)
+    {
+        if (ctx.FromLocalPlayer && _mailPending.Remove(ctx.Op))
+            _coop.Notice(mail.Kind == MailKind.Renovation ? "Shop renovation ordered: it happens at the end of the day." : "Bill paid.");
+        if (_world.Local != ActorSlot.Host || ctx.Op.Actor == ActorSlot.Host) return;
+        _mailForGuest.Enqueue(mail);
     }
 }
