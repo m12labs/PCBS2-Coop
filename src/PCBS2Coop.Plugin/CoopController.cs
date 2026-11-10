@@ -34,7 +34,7 @@ internal sealed partial class CoopController
     private string _hostWorldKind;
     private (uint Id, SnapshotPurpose Purpose, string Path, float Deadline)? _pendingFile;
     private readonly Queue<string> _copiesToSend = new();
-    private readonly Queue<(string Path, SnapshotPosition Position, IReadOnlyList<CarrierPayload> Carriers, CoopCampaign Campaign)> _pairWrites = new();
+    private readonly Queue<(string Path, SnapshotPosition Position, IReadOnlyList<CarrierPayload> Carriers, CoopCampaign Campaign, bool Rebind)> _pairWrites = new();
     private (SnapshotPosition Position, IReadOnlyList<CarrierPayload> Carriers)? _saveCapture;
     private SaveMetadata _loadingPair;
     private (SnapshotPosition Position, IReadOnlyList<CarrierPayload> Carriers)? _snapshotPair;
@@ -233,6 +233,14 @@ internal sealed partial class CoopController
                 if (_loadingPair.Campaign.Problem(start.Mode) is { } wrong) throw new InvalidDataException(wrong);
                 if (NativeModeProblem(name, start.Mode) is { } native) throw new InvalidDataException(native);
                 CoopSaves.SetCampaign(_loadingPair.Campaign);
+                if (_loadingPair.Rebind)
+                {
+                    // Phase 18a: the game stopped between the shop renovation's save and the renovated shop's first save.
+                    // Bind the shared IDs from the game, as the renovation's own reload does, and save once loaded.
+                    Plugin.Logger.LogWarning($"[saves] '{name}' is the shop renovation's save: its shared IDs are bound afresh in the renovated workshop.");
+                    _loadingPair = null;
+                    _saveAfterRenovation = true;
+                }
             }
             LoadExact(name, CoopSaves.Campaign); return true;
         }
@@ -661,7 +669,8 @@ internal sealed partial class CoopController
         if (Session.Role != Role.Host || string.IsNullOrEmpty(path) || _saveCapture == null) return;
         Plugin.Logger.LogInfo($"[world] host saved '{path}'.");
         if (RenovationRunning) _renovationSave = path;
-        _pairWrites.Enqueue((path, _saveCapture.Value.Position, _saveCapture.Value.Carriers, CurrentCampaign()));
+        // The renovation's save keeps the old shop's bench bindings; a load of it binds afresh (phase 18a).
+        _pairWrites.Enqueue((path, _saveCapture.Value.Position, _saveCapture.Value.Carriers, CurrentCampaign(), RenovationRunning));
         HostSaveWritten(_saveCapture.Value.Position.Revision);
         _saveCapture = null;
     }
@@ -716,7 +725,7 @@ internal sealed partial class CoopController
             {
                 var file = File.Exists(p.Path + ".zip") ? p.Path + ".zip" : p.Path;
                 var bytes = File.ReadAllBytes(file);
-                CoopSavePair.WriteSidecar(file, bytes, CoopSavePair.Create(bytes, p.Position, p.Carriers, p.Campaign));
+                CoopSavePair.WriteSidecar(file, bytes, CoopSavePair.Create(bytes, p.Position, p.Carriers, p.Campaign, p.Rebind));
                 _saveError = null;
                 Plugin.Logger.LogInfo($"[saves] paired identities with '{file}'.");
                 if (Session.GuestState == GuestState.InWorld) _copiesToSend.Enqueue(file);

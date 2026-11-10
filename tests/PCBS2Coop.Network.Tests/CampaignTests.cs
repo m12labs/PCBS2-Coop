@@ -57,7 +57,7 @@ internal static class CampaignTests
     }
 
     /// <summary>This version's layout with a campaign written by hand (to test what reading refuses).</summary>
-    private static byte[] CampaignLayout(byte mode, string scene)
+    private static byte[] CampaignLayout(byte mode, string scene, byte[]? tail = null)
     {
         var w = new NetDataWriter();
         w.Put(0x3352494150324350UL); w.Put(ModVersion.Value);
@@ -65,6 +65,7 @@ internal static class CampaignTests
         w.Put(Native.Length); w.Put(SHA256.HashData(Native));
         w.Put(Position.Generation); w.Put(Position.Revision); w.Put(Position.ChainHash);
         Protocol.WriteBlob(w, Protocol.PackState(Position.State)); w.Put(0);
+        if (tail != null) w.Put(tail);
         return w.CopyData();
     }
 
@@ -93,6 +94,18 @@ internal static class CampaignTests
         var (native, received) = CoopSavePair.Unpack(bundle);
         t.Check(native.SequenceEqual(Native) && received.Campaign == career,
             "the snapshot a guest receives names the host's mode, run and scene (the guest loads it in that mode)");
+
+        t.Section("Career: the shop renovation's save binds afresh (phase 18a)");
+        var renovated = career.InScene(CoopCampaign.CareerRenovatedScene);
+        var marked = CoopSavePair.Create(Native, Position, Array.Empty<CarrierPayload>(), renovated, rebind: true);
+        t.Check(CoopSavePair.Decode(CoopSavePair.Encode(marked)).Rebind && CoopSavePair.Unpack(CoopSavePair.Pack(Native, marked)).Metadata.Rebind &&
+                !back.Rebind, "the renovation's pair keeps its mark in the file and in a copy; other pairs don't have it");
+        t.Check(!CoopSavePair.Decode(CampaignLayout(2, CoopCampaign.CareerStartScene)).Rebind &&
+                CoopSavePair.Decode(CampaignLayout(2, CoopCampaign.CareerRenovatedScene, new byte[] { 1 })).Rebind,
+            "a pair from 0.66 (no flag byte) restores its IDs; the flag byte is read when present");
+        t.Check(Throws(() => CoopSavePair.Decode(CampaignLayout(2, CoopCampaign.CareerStartScene, new byte[] { 2 }))) &&
+                Throws(() => CoopSavePair.Decode(CampaignLayout(2, CoopCampaign.CareerStartScene, new byte[] { 0, 0 }))),
+            "an unknown flag or extra bytes are refused");
     }
 
     private static void Folders(Checker t)

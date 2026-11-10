@@ -64,6 +64,8 @@ internal sealed partial class CoopController
         // Phase 17d: the day end marked the shop upgraded; only the renovation's own save may record that.
         if (_renovationDue) return "the shop renovation is waiting to run";
         if (OutOfSync != null) return "this game is out of sync";
+        // Phase 18a: an accepted job, bill or inbox action of Client's that the host's game hasn't run yet.
+        if (Jobs?.Busy == true) return "a job or e-mail action is still being run";
         if (Workstations?.Settled == false || Workshop?.Settled == false || !NativeAssembly.CanCapture) return "a change is still being shown";
         // Phase 16d: a PC the host's game made by itself gets its shared IDs first (the save refuses unshared PCs).
         if (UnsharedGamePcs) return "a PC the game made is still being shared";

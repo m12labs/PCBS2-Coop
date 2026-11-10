@@ -54,6 +54,7 @@ The owner passed the two-instance component-edit checklist and built a PC from s
 - [ ] Clean a PC that has dust, host and guest each: the other player waits on that PC and sees "Cleaning" under the name; after the cleaning mode closes, both games show the same dust amount (0.64; see the [phase 17 checks](audit/phase-17.md#064-implementation-objectives-and-cleaning-17c))
 - [ ] Career End Day with both players: the host's End Day waits until the guest presses End Day, and a new change takes the guest's mark back; either player pays a bill once; a renovation ordered by the guest reloads both games in the renovated workshop at the day end (0.65; see the [phase 17 checks](audit/phase-17.md#065-implementation-end-day-bills-and-the-renovation-17d))
 - [ ] Career inbox and tutorials with both players: the guest's flags, tags, deletes and read marks show on the host; a tutorial step either player does moves both; the guest's job collect earns no achievement on the host's account (0.66; see the [phase 17 checks](audit/phase-17.md#066-implementation-inbox-tutorials-and-achievements-17e))
+- [ ] Career recovery: a host save during the client's job action waits for it; Continue after the host's game stopped mid-renovation loads the renovated shop; a client that drops right after Buy, Collect or Pay finds one result after Rejoin (0.67; see the [phase 18 checks](audit/phase-18.md#runtime-checks-for-the-gameplay-sweep))
 
 ## Delid table ([phase 9](audit/phase-9.md))
 

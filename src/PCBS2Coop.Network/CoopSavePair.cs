@@ -9,7 +9,12 @@ public sealed record CarrierPayload(NetObjectId Pc, byte[] NativePc);
 /// <summary>A save pair's metadata. <see cref="Campaign"/> names the mode, run and scene (0.58); older pairs read as
 /// <see cref="CoopCampaign.Legacy"/>.</summary>
 public sealed record SaveMetadata(int NativeLength, byte[] NativeHash, SnapshotPosition Position, IReadOnlyList<CarrierPayload> Carriers,
-    CoopCampaign Campaign);
+    CoopCampaign Campaign)
+{
+    /// <summary>The save's shared IDs belong to another workshop layout (the shop renovation's save, phase 18a): a host
+    /// load binds them afresh from the game, as the renovation's own reload does, instead of restoring them.</summary>
+    public bool Rebind { get; init; }
+}
 
 /// <summary>A native save and its exact mod state. Disk uses a SHA-256-bound sidecar; transfer bundles both.
 /// A crash between the game's save and sidecar publication leaves a detectable mismatch, never silently minted IDs.</summary>
@@ -24,6 +29,7 @@ public static class CoopSavePair
     /// <summary>From 0.58: <see cref="PackedMagic"/>'s layout with the world's <see cref="CoopCampaign"/> after the version.</summary>
     private const ulong CampaignMagic = 0x3352494150324350; // PC2PAIR3
     private const ulong BundleMagic = 0x31454C444E423250;
+    [Flags] private enum Flags : byte { None = 0, Rebind = 1 }
     private const int MaxMetadataBytes = Protocol.MaxPackedStateBytes + 2 * MaxCarrierBytes + 4096;
     /// <summary>Earlier versions whose co-op saves this build reads: 0.18's BIOS changes live in the native PC record,
     /// and 0.19's software transfer state is optional. 0.17 changed edit progress and host save timing only; 0.20 added
@@ -56,8 +62,9 @@ public static class CoopSavePair
     /// 0.60 adds the optional shop state (carts and job baskets; older pairs load without it).
     /// 0.61 adds the optional package state and the delivery box as an owned-item list (older pairs load without them).
     /// 0.62 adds PCs adopted from the host's own game (an origin the object state already had).
+    /// 0.67 adds an optional flag byte at the end (the renovation's save binds afresh); older pairs read without it.
     /// The world state is the same across those builds.</summary>
-    private static readonly string[] SameFormat = { "0.65", "0.64", "0.63", "0.62", "0.61", "0.60", "0.59", "0.58", "0.57", "0.56", "0.55", "0.54", "0.53", "0.52", "0.51", "0.50", "0.49", "0.48", "0.47", "0.46", "0.45", "0.44", "0.43", "0.42", "0.41", "0.40", "0.39", "0.38", "0.37", "0.36", "0.35", "0.34", "0.33", "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
+    private static readonly string[] SameFormat = { "0.66", "0.65", "0.64", "0.63", "0.62", "0.61", "0.60", "0.59", "0.58", "0.57", "0.56", "0.55", "0.54", "0.53", "0.52", "0.51", "0.50", "0.49", "0.48", "0.47", "0.46", "0.45", "0.44", "0.43", "0.42", "0.41", "0.40", "0.39", "0.38", "0.37", "0.36", "0.35", "0.34", "0.33", "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);
@@ -87,9 +94,11 @@ public static class CoopSavePair
 
     /// <param name="campaign">The world's mode, run and scene. Plugin callers always pass it; tests may leave it out
     /// for a legacy Free Build pair.</param>
-    public static SaveMetadata Create(byte[] native, SnapshotPosition position, IReadOnlyList<CarrierPayload> carriers, CoopCampaign? campaign = null)
+    /// <param name="rebind">See <see cref="SaveMetadata.Rebind"/>.</param>
+    public static SaveMetadata Create(byte[] native, SnapshotPosition position, IReadOnlyList<CarrierPayload> carriers, CoopCampaign? campaign = null,
+        bool rebind = false)
     {
-        var metadata = new SaveMetadata(native.Length, SHA256.HashData(native), position, carriers, campaign ?? CoopCampaign.Legacy);
+        var metadata = new SaveMetadata(native.Length, SHA256.HashData(native), position, carriers, campaign ?? CoopCampaign.Legacy) { Rebind = rebind };
         Validate(metadata); return metadata;
     }
     public static void Verify(byte[] native, SaveMetadata metadata)
@@ -108,6 +117,7 @@ public static class CoopSavePair
         Protocol.WriteBlob(w, Protocol.PackState(metadata.Position.State));
         w.Put(metadata.Carriers.Count);
         foreach (var carrier in metadata.Carriers.OrderBy(x => x.Pc.Value)) { carrier.Pc.Write(w); Protocol.WriteBlob(w, carrier.NativePc); }
+        w.Put((byte)(metadata.Rebind ? Flags.Rebind : Flags.None));
         return w.CopyData();
     }
     public static SaveMetadata Decode(byte[] data)
@@ -134,8 +144,12 @@ public static class CoopSavePair
             var carriers = new CarrierPayload[n];
             for (var i = 0; i < n; i++) carriers[i] = new(NetObjectId.Read(r),
                 Protocol.ReadBlob(r, MaxCarrierBytes, out _) ?? throw new InvalidDataException("Invalid carried PC payload length."));
+            // From 0.67 the campaign layout ends with a flag byte.
+            var flags = magic == CampaignMagic && r.AvailableBytes == 1 ? (Flags)r.GetByte() : Flags.None;
+            if ((flags & ~Flags.Rebind) != 0) throw new InvalidDataException("Unknown co-op save flags.");
             if (r.AvailableBytes != 0) throw new InvalidDataException("Trailing co-op save bytes.");
-            var metadata = new SaveMetadata(size, hash, new(generation, revision, chain, state), Array.AsReadOnly(carriers), campaign);
+            var metadata = new SaveMetadata(size, hash, new(generation, revision, chain, state), Array.AsReadOnly(carriers), campaign)
+                { Rebind = (flags & Flags.Rebind) != 0 };
             Validate(metadata); return metadata;
         }
         catch (Exception e) when (Protocol.IsReadError(e)) { throw new InvalidDataException("Malformed co-op save state.", e); }

@@ -168,7 +168,7 @@ Read from the game binary's disassembly with `tools/decompile/trace_rva.py` and 
 
 - The day change itself stays with the host's game. Client still takes the new day, dust build-up, expiry and new offers by reloading the host's world (phase 15c).
 - The renovation's fresh binding drops co-op facts tied to the old shared IDs. Mainly that is the custom desktop pictures shared before the renovation: Client sees them again once the host sets them again. The lights and seasonal decoration are read from the host's game again.
-- If the host's game stops between the renovation's save and the first save in the renovated workshop, Continue may refuse that save, because its pairing belongs to the old shop. The backup of the save from before the renovation is kept.
+- If the host's game stops between the renovation's save and the first save in the renovated workshop, Continue may refuse that save, because its pairing belongs to the old shop. The backup of the save from before the renovation is kept. 0.67 binds that save afresh instead ([phase 18a](phase-18.md#067-implementation-fault-and-save-recovery-sweep-18a)).
 - The onboarding steps of the renovation (`OnShopUpgradeQueued`) and of bills run on the host's game only (17e).
 - On a deleted bill or renovation e-mail, the button only restores it, and only on that game (17e: e-mail flags, tags and deletes).
 
