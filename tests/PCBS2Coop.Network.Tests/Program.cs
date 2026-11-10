@@ -35,6 +35,7 @@ CommerceTests.Run(t);
 PackageTests.Run(t);
 JobTests.Run(t);
 DayTests.Run(t);
+OnboardingTests.Run(t);
 AcceptanceTests.Run(t);
 LoopbackTests.Run(t);
 return t.Finish();

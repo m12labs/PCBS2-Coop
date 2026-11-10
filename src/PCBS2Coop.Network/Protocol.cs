@@ -158,6 +158,8 @@ public static class CommandTypes
     public const ushort Jobs = 21;
     /// <summary>Phase 17d: the guest's ready mark for ending the day (<see cref="DayWorld"/>).</summary>
     public const ushort Day = 22;
+    /// <summary>Phase 17e: tutorial progress either player moves (<see cref="OnboardingWorld"/>).</summary>
+    public const ushort Onboarding = 23;
 }
 
 /// <summary>One actor's pointer on a shared PC monitor. Coordinates are fractions of that PC's desktop

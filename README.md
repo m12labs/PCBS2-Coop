@@ -18,8 +18,8 @@ Build PCs together in **PC Building Simulator 2**. This unofficial co-op mod let
 | Joining | **LAN/direct IP** or optional **Steam invites** |
 | Epic Games invites | **Coming soon™** (planned) |
 | Free Build gameplay | **[90/90 applicable checks passed](docs/needs_testing.md)** at version 0.57 |
-| Automated checks | **[890 passed](docs/audit/phase-17.md#065-implementation-end-day-bills-and-the-renovation-17d)** for version 0.65 |
-| Development version | **[0.65](Directory.Build.props)** |
+| Automated checks | **[907 passed](docs/audit/phase-17.md#066-implementation-inbox-tutorials-and-achievements-17e)** for version 0.66 |
+| Development version | **[0.66](Directory.Build.props)** |
 | Reference game | **1.17.02 · Windows x64** |
 
 Follow development in the [roadmap](plan.md).
@@ -93,7 +93,7 @@ To remove the loader again, run `.\scripts\Uninstall-Loader.ps1`. It restores or
 Launch PCBS2 through Epic Games Launcher, then open `<GameDir>\BepInEx\LogOutput.log` and look for:
 
 ```text
-[Info   :PCBS2 Coop] PCBS2 Coop 0.65 loaded.
+[Info   :PCBS2 Coop] PCBS2 Coop 0.66 loaded.
 ```
 
 The main menu also gains a **Co-op** entry above Options, and a GitHub icon with the mod version in the bottom row.
@@ -113,7 +113,7 @@ LAN/direct-IP joining works without Steam. Dependency and App ID notes are in [t
 
 The guest can join at any time while the host is in the workshop, and can leave and rejoin. For LAN, `127.0.0.1` only reaches the same PC; allow the game through Windows Firewall on your private network if prompted, or forward the UDP port for direct-IP play outside your LAN.
 
-**Saves.** Free Build worlds use `<GameDir>\Saves\Coop`; Career worlds use `<GameDir>\Saves\Coop\Career`. Each native save needs its matching `.coop` sidecar. The 0.65 development build reads co-op pairs written by versions 0.16 through 0.65; for an older save, start a fresh co-op world.
+**Saves.** Free Build worlds use `<GameDir>\Saves\Coop`; Career worlds use `<GameDir>\Saves\Coop\Career`. Each native save needs its matching `.coop` sidecar. The 0.66 development build reads co-op pairs written by versions 0.16 through 0.66; for an older save, start a fresh co-op world.
 
 The host saves on an interval (Co-op Options, default 5 minutes), on Exit and from the Save screen; the game's own autosaves are skipped in co-op. If a save is interrupted, Continue restores a readable backup or selects the newest readable save, with a notice. The guest uses a temporary folder and keeps the host's latest save in that mode's `Joined` subfolder. Guests can't save, load or reset the world. Solo saves stay separate.
 

@@ -8,6 +8,8 @@ internal sealed class FakeJobNative : IJobNative
     public void Updated(in MutationContext ctx, InboxUpdate update) { Last = update; Calls.Add($"update {update.Jobs.Count} {update.Native.Length} local={ctx.FromLocalPlayer}"); }
     public void Acted(in MutationContext ctx, JobAct act, int job, int value) => Calls.Add($"{act} {job} {value} local={ctx.FromLocalPlayer}");
     public void MailActed(in MutationContext ctx, MailFact mail) => Calls.Add($"mail {mail.Kind} {mail.Cost} local={ctx.FromLocalPlayer}");
+    public void InboxActed(in MutationContext ctx, InboxAction a) =>
+        Calls.Add($"inbox {a.Act} {(a.OnJob ? "job " + a.Job : $"mail {a.List}/{a.Index}")}{(a.Tag.Length > 0 ? " " + a.Tag : "")} local={ctx.FromLocalPlayer}");
 }
 
 /// <summary>Phase 17b: the host's jobs and inbox, and either player's job actions.</summary>
@@ -24,6 +26,58 @@ internal static class JobTests
         Model(t);
         Sync(t);
         Mails(t);
+        Inbox(t);
+    }
+
+    private static void Inbox(Checker t)
+    {
+        t.Section("Jobs: either player organizes the shared inbox (phase 17e)");
+        var flag = InboxAction.ForMail(InboxAct.Flag, 0, 3, 638_000_000_000_000_010);
+        t.Check(flag.Problem() == null && InboxAction.ForJob(InboxAct.Delete, 2).Problem() == null && InboxAction.NewTag("Urgent", 0xFF0000FF).Problem() == null &&
+                InboxAction.Delivered(new byte[] { 1, 2 }).Problem() == null && InboxAction.ForMail(InboxAct.AddTag, 1, 0, 5, "Urgent").Problem() == null,
+            "reads, flags, tags, deletes, new tags and a tutorial's e-mail are well formed");
+        t.Check(InboxAction.ForMail(InboxAct.AddTag, 0, 0, 5).Problem() != null && InboxAction.ForMail(InboxAct.Flag, 0, 0, 5, "x").Problem() != null &&
+                InboxAction.ForMail(InboxAct.Flag, 5, 0, 5).Problem() != null && InboxAction.ForJob(InboxAct.Restore, 2).Problem() != null &&
+                InboxAction.Delivered(Array.Empty<byte>()).Problem() != null && InboxAction.NewTag(new string('t', InboxAction.MaxTag + 1), 0).Problem() != null &&
+                (flag with { Act = (InboxAct)42 }).Problem() != null,
+            "a tag action without a tag, a tag on another action, an unknown list or action, a job restore, an empty e-mail or an overlong tag is refused");
+
+        var l = new FakeLink(); var ha = new ActivityWorld(new ObjectWorld()); var ga = new ActivityWorld(new ObjectWorld());
+        var hn = new FakeJobNative(); var gn = new FakeJobNative();
+        var hw = new JobWorld(ha, hn); var gw = new JobWorld(ga, gn);
+        string? gone = null;
+        hw.InboxCheck = a => gone;
+        l.Host.RegisterState(ha); l.Guest.RegisterState(ga);
+        l.Host.RegisterState(hw, optional: true); l.Guest.RegisterState(gw, optional: true);
+        l.Host.Register(CommandTypes.ActorActivity, ha); l.Guest.Register(CommandTypes.ActorActivity, ga);
+        l.Host.Register(CommandTypes.Jobs, hw); l.Guest.Register(CommandTypes.Jobs, gw);
+        l.Host.BeginGeneration("inbox");
+        void Send(WorldSync world, byte[] payload, ushort type = CommandTypes.Jobs) { world.Submit(type, payload, out _); l.Flush(); }
+        Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, PlayerId.New()), CommandTypes.ActorActivity);
+        Send(l.Host, ActivityWorld.Presence(ActorSlot.Guest, PlayerId.New()), CommandTypes.ActorActivity);
+        hw.BindHost(Start);
+        l.Join();
+        ulong H() => ha.Get(ActorSlot.Host)!.Epoch; ulong G() => ga.Get(ActorSlot.Guest)!.Epoch;
+
+        Send(l.Guest, JobWorld.Inbox(G(), flag));
+        Send(l.Guest, JobWorld.Inbox(G(), InboxAction.ForJob(InboxAct.AddTag, 2, "Urgent")));
+        t.Check(hn.Calls[^2] == "inbox Flag mail 0/3 local=False" && hn.Calls[^1] == "inbox AddTag job 2 Urgent local=False" && gn.Calls[^1].EndsWith("local=True"),
+            "the client's flag and tag reach the host's game, which repeats them");
+        Send(l.Guest, JobWorld.Inbox(G(), flag));
+        t.Check(hn.Calls[^1] == "inbox Flag mail 0/3 local=False" && !hw.AnyActed, "inbox actions don't hold the e-mail or job for one player");
+
+        var before = l.GuestRejected.Count;
+        Send(l.Guest, JobWorld.Inbox(G(), InboxAction.ForJob(InboxAct.Read, 99)));
+        gone = "That e-mail isn't in the host's inbox (any more).";
+        Send(l.Guest, JobWorld.Inbox(G(), flag));
+        gone = null;
+        Send(l.Host, JobWorld.Inbox(H(), InboxAction.Delivered(new byte[] { 1 })));
+        Send(l.Guest, JobWorld.Inbox(G(), flag with { Index = -1 }));
+        t.Check(l.GuestRejected.Count == before + 3 && l.GuestRejected[^3].Text.Contains("isn't on the host's list") && l.GuestRejected[^2].Text.Contains("any more") &&
+                l.GuestRejected[^1].Text.Contains("Invalid") && l.HostRejected.Last().Text.Contains("Only the client"),
+            "an unknown job, an e-mail the host's game can't find or a malformed action is refused; only the client delivers a tutorial's e-mail");
+        Send(l.Guest, JobWorld.Inbox(G(), InboxAction.Delivered(new byte[] { 7, 7 })));
+        t.Check(hn.Calls[^1] == "inbox Deliver mail 0/0 local=False", "the client's tablet tutorial e-mail goes to the host");
     }
 
     private static bool Throws(Action a) { try { a(); return false; } catch (InvalidDataException) { return true; } }

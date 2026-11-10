@@ -188,3 +188,60 @@ Read from the game binary's disassembly with `tools/decompile/trace_rva.py` and 
    - Client then joins the renovated workshop.
 9. Save, exit and Continue the renovated career on both games: the host loads `Stage_02_Workshop` with the PCs, storage and cash it had.
 10. Startup logs no `[hooks]` error for the five new hooks.
+
+## Owner decisions for 17e (November 10, 2026)
+
+The Career decisions of November 8 already said: saved inbox flags, tags and notes are shared, while selection, scroll and focus stay local; achievements belong to the account doing the action, and replication never writes to the other player's account. On November 10 the owner added:
+
+- **Read marks shared:** when either player opens an e-mail, it is read for both.
+- **Tutorials together:** the host and Client progress through the tutorials together. Whoever completes a step, it counts for both.
+- **Milestones for both:** business milestones (cash, level, star rating, jobs completed) count on both accounts. Action achievements go only to the player who did the action, and the host's game never earns for Client's actions.
+
+## Inbox, tutorial and achievement trace (17e)
+
+| Path | What the game does | Consequence for co-op |
+| --- | --- | --- |
+| E-mail buttons | `Email.OnFlagAction`/`OnRemoveFlagAction` call `CareerStatus.FlagEmailMessage`/`UnflagEmailMessage` and set `m_flagged`. `Remove` calls `RemoveEmailMessage` (into Deleted). `OnNegativeAction` on a deleted e-mail calls `RemoveEmailMessagePermanent`. `Restore` calls `AddEmailMessage`. `AddTag`/`RemoveTag` edit the e-mail's `m_tags`. | All of these change lists the 0.63 inbox update already carries. The acting game sends the action; the host's game repeats it. |
+| Read | `Email.OnRead` shares its code with four other methods (731CC0). `Job.OnRead` sets NEW to READ. | E-mails are seen after `EmailApp.OnClickRow`; jobs at `Job.OnRead`. |
+| Job deletes | `Job.OnNegativeAction` switches on the status: READ calls `OnRejected` (slot 36), ACCEPTED and EXPIRED call `OnQuit` (38), COLLECTED and REJECTED call `DoDiscard` (40), DELETED calls `DoRemove` (41). | `DoDiscard` and `DoRemove` are new shared actions. The others have been job actions since 0.63. |
+| Tags | `EmailApp.GenerateTag` calls `CareerStatus.AddTag(name, colour, core)`. | A new tag is a shared action. |
+| Notes app | `NotesAppCloud` keeps its notes in memory; `SetDataFromSaveGame` has no callers, so the notes are never saved. | Left on each game. The shared notes are the physical job notes (0.61). |
+| Tutorials | `JobTutorialHintUi.onboardingClasses` (Career) and `freebuildOnboardingClasses` hold every tutorial. Each has a state (`State` +0x10, set by `SetOnboardingActive`/`Complete`/`Inactive`, which only notify empty observers) and a `progress` enum, read and written by reflection (`getOnboardingProgress`, `GetEnumProperty`). Steps move in each type's event methods (for example `FirstDayProgressionOnboardings.SetFirstDayProgress` sets the step and shows the action-bar prompt). Button blocks (`AllowExitButton`, `AllowPowerButton`) read the step. | Shared by state and step (command 23). |
+| Tutorial effects | Only `TabletOnboarding.OnTabletTickState` adds e-mails (the theme offers, `NewThemeEmail`). `AddItemToInventory` is called from `CWCGpuOnboardings.StartOnboarding`, `CloneOSOnboarding.OnJobAccepted`, `RepairPCOnboarding.SetupOnboarding` and `WaterCooledGPUOnboardings.OnLoadFromSave`. | The guest's theme offers go to the host's inbox. The item gifts start from job accepts, which run on the host. |
+| Achievements | Every `Achievements.On…` entry reports to the platform. Milestones come from `AddCash`/`SpendCash`/`CollectCash` (`OnCash`), `AddKudos` (`OnLevel(GetZeroIndexedLevel(kudos))`), `AddReview` (`OnStarRating`) and `OnCollect` (`OnJobComplete(m_numberJobsCompleted)`). | Held while a game shows or runs the other player's action. Each game checks the milestones from the shared numbers. |
+
+## 0.66 implementation: inbox, tutorials and achievements (17e)
+
+**Status:** coded with model tests on November 10, 2026. Release built with zero warnings or errors and all 907 automated checks passed. No game was launched. Nothing here is verified in the running game.
+
+| Area | What 0.66 does |
+| --- | --- |
+| Inbox actions | `JobWorld` step Inbox carries an `InboxAction`: read, flag, unflag, add or remove a tag, delete, erase, restore, a new tag, or a tutorial's e-mail. It names a job by its ID, or an e-mail by its list, its place and its time stamp. The acting game does it at once. Client's action is sent, and the host's game repeats it with the game's own method, checking the state Client saw first, so a repeated delete never erases. The host's next inbox update brings both games in line. Mirrored desktop clicks never act on the watching game, except opening an e-mail. |
+| Fingerprint | The inbox fingerprint includes tag names, so a tag swap is shared. |
+| Tutorial e-mails | On Client, the tablet tutorial's theme offers are serialized and added to the host's inbox instead of Client's. |
+| Tutorials | Command 23 `OnboardingWorld` holds each tutorial's state and step. Four times a second each game sends a tutorial its own player moved, as a move from the shared value. The first move wins; the other game sets its tutorial the game's own way and clears that step's stale action-bar prompt. Free Build tutorials work the same way. |
+| Achievements | `NativeAchievements.Guard` holds every `Achievements.On…` call while the game shows a projection, replays an edit, receives mirrored desktop input or runs Client's job, bill or renovation action. Each game in a Career calls `OnCash`, `OnLevel`, `OnStarRating` and `OnJobComplete` when the shared numbers change. |
+| Save format | 0.66 reads 0.16–0.66 saves. The tutorial state is optional. |
+
+### Not covered by 0.66
+
+- When a tutorial step moves because of the other player, this game clears that step's prompt, but the new step's prompt only appears if that game's tutorial code shows it (often on its next event). Highlights a step turns on stay with the game that ran the step.
+- A tutorial step whose own code changes the world runs only on the game whose player did the step. The traced ones are covered: theme offers go to the host, and item gifts start from job accepts on the host. `WaterCooledGPUOnboardings.OnLoadFromSave` still gives its part on each game's load.
+- Tutorial pop-ups seen (`m_seenTutorial`, `m_seenJobTutorials`) are kept by each game until the next reload.
+- Inbox buttons act on the acting game first. Until the host's next update (about a second), the two games can briefly differ.
+- Achievement progress values the platform keeps aren't compared between accounts.
+
+### Runtime checks for the gameplay sweep
+
+1. Client flags, tags, deletes, restores and permanently deletes e-mails and old jobs. Within a second or two, the host's inbox shows the same, and after the day reload too.
+2. Client opens a new e-mail: it's read on the host's game too.
+3. Client makes a new tag and puts it on an e-mail: the host sees the tag.
+4. Both delete the same e-mail at once: it ends in Deleted, not erased.
+5. A new co-op career:
+   - The host does the first tutorial step and Client's step moves too.
+   - Client does the next step and the host's step moves (log `[tutorial] … follows the other player`).
+   - The exit and power buttons the tutorial blocks free up on both games.
+6. Client opens the tablet first in a new career: the theme offers appear in both inboxes (log `the tablet tutorial's e-mail goes to the host's inbox`).
+7. Client collects a job: the host's log shows `[achievements] OnJobComplete held`. Both accounts get the jobs-completed milestone, and only the player who applied a sticker gets the sticker achievement.
+8. Free Build: a tutorial step done by one player moves the other's.
+9. Startup logs no `[hooks]` error for the new inbox, tutorial and achievement hooks.

@@ -53,6 +53,7 @@ The owner passed the two-instance component-edit checklist and built a PC from s
 - [x] Cleaning mode shows "Cleaning isn't shared in co-op yet" (0.33, November 5, 2026. The host selected Compressed Air from the real Tools inventory.) Superseded in 0.64, which shares cleaning.
 - [ ] Clean a PC that has dust, host and guest each: the other player waits on that PC and sees "Cleaning" under the name; after the cleaning mode closes, both games show the same dust amount (0.64; see the [phase 17 checks](audit/phase-17.md#064-implementation-objectives-and-cleaning-17c))
 - [ ] Career End Day with both players: the host's End Day waits until the guest presses End Day, and a new change takes the guest's mark back; either player pays a bill once; a renovation ordered by the guest reloads both games in the renovated workshop at the day end (0.65; see the [phase 17 checks](audit/phase-17.md#065-implementation-end-day-bills-and-the-renovation-17d))
+- [ ] Career inbox and tutorials with both players: the guest's flags, tags, deletes and read marks show on the host; a tutorial step either player does moves both; the guest's job collect earns no achievement on the host's account (0.66; see the [phase 17 checks](audit/phase-17.md#066-implementation-inbox-tutorials-and-achievements-17e))
 
 ## Delid table ([phase 9](audit/phase-9.md))
 

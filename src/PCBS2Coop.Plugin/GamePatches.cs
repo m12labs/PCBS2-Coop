@@ -23,6 +23,8 @@ internal static class GamePatches
             CommerceHooks.Apply(new Harmony(Plugin.Guid + ".commerce"));
             PackageHooks.Apply(new Harmony(Plugin.Guid + ".packages"));
             JobHooks.Apply(new Harmony(Plugin.Guid + ".jobs"));
+            InboxHooks.Apply(new Harmony(Plugin.Guid + ".inbox"));
+            new Harmony(Plugin.Guid + ".achievements").PatchAll(typeof(NativeAchievements.Guard));
             game.PatchAll(typeof(CoopController.ExitSave));
             var menus = new Harmony(Plugin.Guid + ".save-menus");
             menus.PatchAll(typeof(CoopController.PauseLoad));

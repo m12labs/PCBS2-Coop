@@ -33,7 +33,7 @@ namespace PCBS2Coop;
 /// the host shares that removal (<see cref="PcRemoval.Game"/>). Its package and note follow the host's benches (16c).</item>
 /// </list>
 /// </summary>
-internal sealed class NativeJobs : IJobNative
+internal sealed partial class NativeJobs : IJobNative
 {
     private const float ObserveEvery = 1f, PendingTimeout = 20f, DayHold = 90f;
     private const byte Layout = 1;
@@ -63,12 +63,12 @@ internal sealed class NativeJobs : IJobNative
     public NativeJobs(CoopController coop, WorldSync world)
     {
         _coop = coop; _world = world;
-        Handler = new JobWorld(coop.Activity, this) { ActCheck = CheckAct, MailCheck = CheckMail };
+        Handler = new JobWorld(coop.Activity, this) { ActCheck = CheckAct, MailCheck = CheckMail, InboxCheck = CheckInbox };
         world.GenerationStarted += (uint _, string _) => Clear();
         world.Rejected += OnRejected;
     }
 
-    private void Clear() { _shared = null; _pending.Clear(); _forGuest.Clear(); _mailPending.Clear(); _mailForGuest.Clear(); _removed.Clear(); _dayHoldUntil = 0; }
+    private void Clear() { _shared = null; _pending.Clear(); _forGuest.Clear(); _mailPending.Clear(); _mailForGuest.Clear(); _inboxForGuest.Clear(); _removed.Clear(); _dayHoldUntil = 0; }
 
     /// <summary>A job or e-mail action is waiting for the host's answer or waiting to run on the host: End Day waits
     /// for it (phase 17d).</summary>
@@ -172,7 +172,7 @@ internal sealed class NativeJobs : IJobNative
             b.Append('|').Append(j.m_id).Append(':').Append(master).Append(':').Append((int)j.m_status)
              .Append(j.m_flagged ? 'f' : '-').Append(j.m_permanentDelete ? 'p' : '-').Append(j.m_isSpam ? 's' : '-')
              .Append(j.m_deliveryDay).Append('/').Append(j.m_reviewDay).Append('/').Append(j.m_cashReward).Append('/')
-             .Append(j.m_pcStatus).Append('/').Append(j.m_tags?.Count ?? -1);
+             .Append(j.m_pcStatus).Append('/').Append(TagNames(j.m_tags));
             if (j.m_objectives != null)
                 foreach (var o in j.m_objectives)
                     if (o != null)
@@ -187,7 +187,7 @@ internal sealed class NativeJobs : IJobNative
             foreach (var e in l)
                 if (e != null)
                     b.Append(',').Append(e.m_creationTime).Append(e.m_unread ? 'u' : '-').Append(e.m_removed ? 'r' : '-')
-                     .Append(e.m_flagged ? 'f' : '-').Append(e.m_inbox ? 'i' : '-').Append(e.m_permanentDelete ? 'p' : '-').Append(e.m_tags?.Count ?? -1);
+                     .Append(e.m_flagged ? 'f' : '-').Append(e.m_inbox ? 'i' : '-').Append(e.m_permanentDelete ? 'p' : '-').Append(TagNames(e.m_tags));
         }
         Mails(d.m_messages, 'M'); Mails(d.m_todaysMessages, 'N'); Mails(d.m_deletedMsgs, 'Q'); Mails(d.m_flaggedMsgs, 'G'); Mails(d.m_spamMessages, 'P');
         b.Append("|r").Append(d.m_reviews?.Count ?? -1).Append("|t").Append(d.m_emailTags?.Count ?? -1).Append('.').Append(d.m_emailTagNames?.Count ?? -1);
@@ -342,6 +342,7 @@ internal sealed class NativeJobs : IJobNative
             try { RunMailForGuest(mail); }
             catch (Exception e) { _coop.ProjectionFailed($"The client's e-mail action ({mail.Kind}) could not be run", e); }
         }
+        RunInboxQueue();
         ShareRemoved();
         if (now < _nextObserve || now < _dayHoldUntil || _coop.DayEnding) return;
         _nextObserve = now + ObserveEvery;

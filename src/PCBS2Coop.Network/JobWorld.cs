@@ -23,6 +23,54 @@ public sealed record MailFact(MailKind Kind, long Time, int Cost)
     internal static MailFact Read(NetDataReader r) => new((MailKind)r.GetByte(), r.GetLong(), r.GetInt());
 }
 
+/// <summary>A player organizing the shared inbox (phase 17e): read, flags, tags, a delete (into Deleted), a permanent
+/// delete (<see cref="Erase"/>, from Deleted) and a restore, a new tag, and an e-mail the guest's tutorial made.</summary>
+public enum InboxAct : byte { Read = 1, Flag = 2, Unflag = 3, AddTag = 4, RemoveTag = 5, Delete = 6, Restore = 7, CreateTag = 8, Deliver = 9, Erase = 10 }
+
+/// <summary>
+/// One inbox action. The target is a job by its ID, or an e-mail by the list it is in (the game's message lists in a
+/// fixed order), its place there and its creation time stamp. The guest's inbox is a copy of the host's, so the host
+/// finds the same e-mail; the time stamp decides when the place has shifted. <see cref="Tag"/> names a tag
+/// (<see cref="Color"/> is a new tag's colour); <see cref="Mail"/> is a serialized e-mail for <see cref="InboxAct.Deliver"/>.
+/// </summary>
+public sealed record InboxAction(InboxAct Act, int Job, byte List, int Index, long Time, string Tag, uint Color, byte[] Mail)
+{
+    public const int MaxTag = 64, MaxLists = 5, MaxIndex = 100_000, MaxMail = 12 * 1024;
+
+    public static InboxAction ForJob(InboxAct act, int job, string tag = "") => new(act, job, 0, 0, 0, tag, 0, Array.Empty<byte>());
+    public static InboxAction ForMail(InboxAct act, byte list, int index, long time, string tag = "") => new(act, 0, list, index, time, tag, 0, Array.Empty<byte>());
+    public static InboxAction NewTag(string tag, uint color) => new(InboxAct.CreateTag, 0, 0, 0, 0, tag, color, Array.Empty<byte>());
+    public static InboxAction Delivered(byte[] mail) => new(InboxAct.Deliver, 0, 0, 0, 0, "", 0, mail);
+
+    public bool OnJob => Job > 0;
+    private bool Tagged => Act is InboxAct.AddTag or InboxAct.RemoveTag or InboxAct.CreateTag;
+
+    /// <summary>Why this action is malformed, or null.</summary>
+    public string? Problem()
+    {
+        if (!Enum.IsDefined(Act) || Tag == null || Mail == null) return "Invalid inbox action.";
+        if (Tagged != (Tag.Length > 0) || Tag.Length > MaxTag) return "Invalid tag.";
+        if (Act is InboxAct.CreateTag or InboxAct.Deliver)
+            return Job != 0 || List != 0 || Index != 0 || Time != 0 || (Act == InboxAct.Deliver) != (Mail.Length > 0) || Mail.Length > MaxMail ? "Invalid inbox action." : null;
+        if (Color != 0 || Mail.Length != 0 || Job < 0) return "Invalid inbox action.";
+        if (OnJob) return List != 0 || Index != 0 || Time != 0 || Act == InboxAct.Restore ? "Invalid inbox action." : null;
+        return List >= MaxLists || Index is < 0 or > MaxIndex ? "Invalid inbox action." : null;
+    }
+
+    internal void Write(NetDataWriter w)
+    {
+        w.Put((byte)Act); w.Put(Job); w.Put(List); w.Put(Index); w.Put(Time); w.Put(Tag, MaxTag); w.Put(Color); Protocol.WriteBlob(w, Mail);
+    }
+
+    internal static InboxAction Read(NetDataReader r)
+    {
+        var act = (InboxAct)r.GetByte(); var job = r.GetInt(); var list = r.GetByte(); var index = r.GetInt(); var time = r.GetLong();
+        var tag = r.GetString(MaxTag); var color = r.GetUInt();
+        var mail = Protocol.ReadBlob(r, MaxMail, out _) ?? throw new FormatException("Invalid inbox e-mail.");
+        return new InboxAction(act, job, list, index, time, tag, color, mail);
+    }
+}
+
 /// <summary>One job as the host's game holds it: its ID, status and the multi-job it belongs to (0 for none).</summary>
 public sealed record JobFact(int Id, JobState State, int Master)
 {
@@ -97,6 +145,9 @@ public interface IJobNative
     /// <summary>A player's bill payment or renovation order is accepted (phase 17d). The host's game runs the
     /// e-mail's own button.</summary>
     void MailActed(in MutationContext ctx, MailFact mail);
+    /// <summary>A player's inbox action is accepted (phase 17e). The acting game already shows it; the host's game
+    /// repeats it on its own inbox, and its next update brings everyone in line.</summary>
+    void InboxActed(in MutationContext ctx, InboxAction action);
 }
 
 /// <summary>
@@ -111,12 +162,15 @@ public interface IJobNative
 /// <item>Phase 17d: either player pays a bill or orders the shop renovation with a <b>Mail</b> naming the e-mail as
 /// the host's last update listed it. One action per e-mail until the next update; the host's game checks the
 /// e-mail and the cash (<see cref="MailCheck"/>), then runs the e-mail's own button.</item>
+/// <item>Phase 17e: either player reads, flags, tags, deletes or restores an e-mail or a job, or makes a new tag, with
+/// an <b>Inbox</b> action (<see cref="InboxAction"/>). The host's game finds the same item (<see cref="InboxCheck"/>)
+/// and does the same; selection, scroll and the open folder stay on each game.</item>
 /// </list>
 /// Free Build leaves it unbound and refuses every command.
 /// </summary>
 public sealed class JobWorld : ICommandHandler, IWorldState
 {
-    private enum Step : byte { Chunk = 1, Commit = 2, Act = 3, Mail = 4 }
+    private enum Step : byte { Chunk = 1, Commit = 2, Act = 3, Mail = 4, Inbox = 5 }
     public const int MaxChunkBytes = 15 * 1024, MaxBytes = 8 * 1024 * 1024, MaxChunks = MaxBytes / MaxChunkBytes + 1, MaxValue = 100_000_000;
 
     private readonly ActivityWorld _activity;
@@ -135,6 +189,8 @@ public sealed class JobWorld : ICommandHandler, IWorldState
     public Func<JobAct, int, int, string?>? ActCheck { get; set; }
     /// <summary>Host: why its game can't run this e-mail's button now (gone, already paid, not enough cash), or null.</summary>
     public Func<MailFact, string?>? MailCheck { get; set; }
+    /// <summary>Host: why its game can't do this inbox action (the item or tag is gone), or null.</summary>
+    public Func<InboxAction, string?>? InboxCheck { get; set; }
 
     public bool Bound { get; private set; }
     /// <summary>The number of host updates taken in this generation.</summary>
@@ -202,9 +258,13 @@ public sealed class JobWorld : ICommandHandler, IWorldState
     /// <summary>A player's bill payment or renovation order (phase 17d).</summary>
     public static byte[] Mail(ulong epoch, MailFact mail) => Encode(w => { w.Put((byte)Step.Mail); w.Put(epoch); mail.Write(w); });
 
+    /// <summary>A player's inbox action (phase 17e).</summary>
+    public static byte[] Inbox(ulong epoch, InboxAction action) => Encode(w => { w.Put((byte)Step.Inbox); w.Put(epoch); action.Write(w); });
+
     private sealed record Command(Step Step, ulong Epoch, int Index, int Total, byte[] Data, int Length, byte[] Hash)
     {
         public MailFact? Mail { get; init; }
+        public InboxAction? Inbox { get; init; }
         public JobAct Act { get; init; }
         public int Job { get; init; }
         public int Value { get; init; }
@@ -245,6 +305,9 @@ public sealed class JobWorld : ICommandHandler, IWorldState
                 c = new(step, epoch, 0, 0, Array.Empty<byte>(), 0, Array.Empty<byte>()) { Mail = mail };
                 break;
             }
+            case Step.Inbox:
+                c = new(step, epoch, 0, 0, Array.Empty<byte>(), 0, Array.Empty<byte>()) { Inbox = InboxAction.Read(r) };
+                break;
             default: throw new FormatException("Unknown job step.");
         }
         if (r.AvailableBytes != 0) throw new FormatException("Trailing job bytes.");
@@ -281,6 +344,15 @@ public sealed class JobWorld : ICommandHandler, IWorldState
     {
         var c = Parse(payload);
         if (!Bound) return CommandVerdict.Reject("Jobs are shared only in a co-op career.");
+        if (c.Step == Step.Inbox)
+        {
+            if (_activity.Get(ctx.Op.Actor) is not { } actor || actor.Epoch != c.Epoch) return CommandVerdict.Reject("Actor presence changed.");
+            var a = c.Inbox!;
+            if (a.Problem() is { } bad) return CommandVerdict.Reject(bad);
+            if (a.Act == InboxAct.Deliver && ctx.Op.Actor != ActorSlot.Guest) return CommandVerdict.Reject("Only the client sends the host an e-mail its game made.");
+            if (a.OnJob && Job(a.Job) == null) return CommandVerdict.Reject("That job isn't on the host's list (any more).");
+            return InboxCheck?.Invoke(a) is { } inboxWhy ? CommandVerdict.Reject(inboxWhy) : CommandVerdict.Accept;
+        }
         if (c.Step == Step.Mail)
         {
             if (_activity.Get(ctx.Op.Actor) is not { } actor || actor.Epoch != c.Epoch) return CommandVerdict.Reject("Actor presence changed.");
@@ -324,6 +396,9 @@ public sealed class JobWorld : ICommandHandler, IWorldState
             case Step.Mail:
                 _mailActed.Add((c.Mail!.Kind, c.Mail.Time));
                 _native.MailActed(ctx, c.Mail);
+                return;
+            case Step.Inbox:
+                _native.InboxActed(ctx, c.Inbox!);
                 return;
             case Step.Chunk:
                 // A guest that joined halfway through an update can't assemble it; the snapshot it loaded already has it.

@@ -26,6 +26,8 @@ internal sealed partial class CoopController
     public NativeJobs Jobs { get; private set; }
     /// <summary>Phase 17d: the guest's ready mark for ending the day.</summary>
     public NativeDay Day { get; private set; }
+    /// <summary>Phase 17e: tutorials both players go through together.</summary>
+    public NativeOnboarding Onboarding { get; private set; }
 
     /// <summary>Host: its day finished and the day-end save and guest reload are still running.</summary>
     internal bool DayEnding => _day != DayStep.None;
