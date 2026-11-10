@@ -1,5 +1,7 @@
 # PCBS2 Co-op synchronization progress
 
+**November 9, 2026 — job objectives and cleaning, version 0.64 (not run in game).** Cleaning is shared, in Free Build and Career: the PC is reserved while one player vacuums, and the other game sets each part's dust when they stop. Every other job objective already reads things both games share, so objectives agree once the PC does. Each game keeps checking objectives itself, and the host's result decides; the guest's Collect waits with a notice while the host's game doesn't show the job finished. All 860 automated checks passed. [Phase 17c implementation](audit/phase-17.md#064-implementation-objectives-and-cleaning-17c)
+
 **November 9, 2026 — shared jobs and inbox, version 0.63 (not run in game).** Either player can accept, collect, quit or turn down a job; the host's game runs it and one result wins a race. The guest's inbox, job lists, reviews and calendar follow the host's during the day instead of waiting for the day-end reload. A job's PC leaves both games when the job is collected, quit or turned down. All 852 automated checks passed. [Phase 17b implementation](audit/phase-17.md#063-implementation-shared-jobs-and-the-inbox-17b)
 
 **November 9, 2026 — PC Bay, shares, shop-front prices and game-made PCs, version 0.62 (not run in game).** Either player can buy from PC Bay and buy shares; the host's game buys. Shop-front sale prices are shared. PCs the host's game makes by itself are now shared on both games: PC Bay purchases, customers' job PCs arriving in the morning and onboarding PCs. Before this, such a PC stopped the host's saves and the guest's day-end reload. Phase 16 is coded. All 826 automated checks passed. [Phase 16d implementation](audit/phase-16.md#062-implementation-pc-bay-shares-shop-front-prices-and-game-made-pcs-16d)
@@ -41,7 +43,7 @@
 **November 2, 2026 — phase 9 paste and tool tables, version 0.22 (code and model tests only, not run in game).** [Phase 9 audit](audit/phase-9.md); the owner answered its eight questions the same day.
 - Thermal paste: putting paste on or taking it off with the Q-tip on a shared PC asks the host first; the other player waits on that PC, sees "Applying thermal paste" under your name, and their game sets the paste the same way when you close the tool.
 - Delidding and water-cooling tables: one player at a time ("Someone is using the delidding table."), with "Delidding" or "Water cooling" under the user's name. Only the result is shared: the delidded CPU or water-cooled part goes into both inventories, and installing it on either game installs that same kind of item.
-- Refused in co-op with a notice: cleaning (until career co-op) and case modding (until phase 11).
+- Refused in co-op with a notice: cleaning (until 0.64, which shares it) and case modding (until phase 11).
 - **654/654** checks; Release 0/0; deployed. 0.22 loads 0.21 co-op saves.
 
 **November 2, 2026 — phase 8 tested in two games (owned runs, owner away).** Every phase 8 path tried passed in two games on one PC: Rejoin after a dropped connection and the guest coming back where it stood, the host's pause-menu Load and Reset reloading both games, the guest's Save/Load/Reset refused, the hidden backup restoring a broken save, a game closed in the middle of a save, and a fresh-process Continue keeping power and GPU Tuner values. Eight bugs found on the way are fixed:
@@ -289,7 +291,7 @@ Detailed evidence: [HW-001–078](audit/hardware-and-building.md).
 | PC/case/part identity, topology, installed/removed/held state | | | ✅ | Host-ordered creation, removal, transfers and part edits. Two-game builds, teardown, interrupted edits and cold restore passed for the tested hardware. |
 | Component variants, compatibility and blockers | | | ✅ | Native fit and blocker checks, delidded and water-cooled variants, and refused edits were exercised in game. |
 | Screws/standoffs/socket/RAM/PCI locks/covers/hinges | | | ✅ | Native latches, levers, clips, covers and panels passed. The guest's manual GPU screw step waited and finished on both games, followed by a successful save. |
-| Paste/Q-tip/dust/cleaning/delid/varnish/pads | | ✅ | | Paste and finished delidding and water-cooling items passed. Tables are exclusive. Cleaning is deferred to Career. |
+| Paste/Q-tip/dust/cleaning/delid/varnish/pads | | ✅ | | Paste and finished delidding and water-cooling items passed. Tables are exclusive. Cleaning is shared since 0.64 (not run in game). |
 | Cable endpoints/connectors/custom colours/pins/routing | | ✅ | | Native standard cables, custom colours, manual and automatic PSU splitters and power passed. Cold Continue and guest admission kept the automatic splitter and its leads. Hand routing has no native caller in this build. |
 | Water loops/pipes/fittings/coolant/fill/drain/pump/run/direction | | | ✅ | Supported pipe, coolant, water part and cold-restore cases passed. The peer reloads the finished PC. Specialist table results are shared through inventory. |
 | Case themes/paint/material/stickers/brush strokes/transforms | | ✅ | | Both players shared finished case designs from the exclusive table. Painting input stays with the editor. |
@@ -324,7 +326,7 @@ The focused static audits are recorded for phases [15](audit/phase-15.md), [16](
 | Feature | Not synced | Partially synced | Synced | Comments |
 | --- | :---: | :---: | :---: | --- |
 | Modes/config and generated/pregenerated jobs/PCs | ✅ | | | Type presence does not prove selectable shipped modes. |
-| Jobs/objectives/subjobs/diagnosis/budget/deadline/collection | ✅ | | | 52 direct Objective subclasses inventoried; one settlement. 0.63 (not run in game): either player accepts, collects, quits and turns down jobs through the host; objectives are 17c. |
+| Jobs/objectives/subjobs/diagnosis/budget/deadline/collection | ✅ | | | 52 direct Objective subclasses inventoried; one settlement. 0.63 (not run in game): either player accepts, collects, quits and turns down jobs through the host. 0.64: objectives follow the shared PC, cleaning is shared, the host's result decides. |
 | Inventory quantities/provenance/owned/stored/sale PCs | ✅ | | | Identity across install/carry/store/sell/load. |
 | Shop stock/price/cart/discount/checkout/shipping/order | ✅ | | | Separate quote/commit/payment/delivery-option factors. |
 | Delivery/package/items/opening/returns/refund boundaries | ✅ | | | Exactly-once transfers; undocumented mechanics not assumed. |

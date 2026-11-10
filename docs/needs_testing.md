@@ -50,7 +50,8 @@ The owner passed the two-instance component-edit checklist and built a PC from s
 - [x] Take paste off with the Q-tip, host and guest each (check whether the other game's paste goes away too). Both games reported paste off after the host's wipe in 0.33 and the guest's wipe in 0.34 on November 5, 2026.
 - [x] The other player is refused on that PC and sees "Applying thermal paste" under the name (guest refusal in 0.33, host saw the guest's label in 0.34 on November 5, 2026)
 - [x] Run the PC after pasting: no overheat on either game (0.39, November 6, 2026. The CPU pasted in the earlier owned run finished the real OCCT automatic test on both games.)
-- [x] Cleaning mode shows "Cleaning isn't shared in co-op yet" (0.33, November 5, 2026. The host selected Compressed Air from the real Tools inventory.)
+- [x] Cleaning mode shows "Cleaning isn't shared in co-op yet" (0.33, November 5, 2026. The host selected Compressed Air from the real Tools inventory.) Superseded in 0.64, which shares cleaning.
+- [ ] Clean a PC that has dust, host and guest each: the other player waits on that PC and sees "Cleaning" under the name; after the cleaning mode closes, both games show the same dust amount (0.64; see the [phase 17 checks](audit/phase-17.md#064-implementation-objectives-and-cleaning-17c))
 
 ## Delid table ([phase 9](audit/phase-9.md))
 

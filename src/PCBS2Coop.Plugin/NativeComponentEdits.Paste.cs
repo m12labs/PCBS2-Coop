@@ -12,8 +12,7 @@ namespace PCBS2Coop;
 /// in place the game's own way: <c>Paste.SetDefaultPaste</c> for paste on, <c>SetApplied(false)</c> and
 /// <c>ClearPaste</c> for paste off, then <c>Case.UpdateGameStatus</c> as the tool's own exit does. The game doesn't save
 /// the paste picture, so the other game shows its default paste, as after a load.
-/// <para>Cleaning (the vacuum) is refused in co-op: dust only builds up when a career day passes, so it waits for
-/// career co-op (owner decision).</para>
+/// <para>Cleaning (the vacuum) follows the same pattern since 0.64 (<c>NativeComponentEdits.Clean.cs</c>).</para>
 /// </summary>
 internal sealed partial class NativeComponentEdits
 {
@@ -162,20 +161,5 @@ internal sealed partial class NativeComponentEdits
         var changed = SetPastes(mesh, edit.Result!.Pastes!);
         Plugin.Logger.LogInfo($"[paste] the other player's thermal paste edit {edit.Token} on PC {pc.Id}: {changed} paste(s) set here.");
         if (_world.IsAuthority) _ready.Add(edit.Token);
-    }
-
-    /// <summary>The vacuum (work mode CLEAN): refused in co-op until career co-op.</summary>
-    [HarmonyPatch(typeof(WorkingOnComputerState), "VacuumTick")]
-    internal static class VacuumRefusal
-    {
-        private static float s_last = -10f;
-        private static bool Prefix()
-        {
-            if (WireBypass) return true;
-            var now = Time.realtimeSinceStartup;
-            if (now - s_last > 1f) CoopController.Instance?.Notice("Cleaning isn't shared in co-op yet; it comes with career co-op.");
-            s_last = now;
-            return false;
-        }
     }
 }

@@ -101,7 +101,7 @@ internal static class JobTests
         Send(l.Guest, JobWorld.Act(G(), JobAct.Accept, 3));
         Send(l.Guest, JobWorld.Act(G(), JobAct.Quit, 10, 5));
         Send(l.Guest, JobWorld.Act(G(), JobAct.Accept, 99));
-        t.Check(l.GuestRejected.Count == before + 4 && l.GuestRejected[^4].Text.Contains("isn't finished") && l.GuestRejected[^3].Text.Contains("can't be accepted") &&
+        t.Check(l.GuestRejected.Count == before + 4 && l.GuestRejected[^4].Text.Contains("finished yet") && l.GuestRejected[^3].Text.Contains("can't be accepted") &&
                 l.GuestRejected[^2].Text.Contains("isn't in progress") && l.GuestRejected[^1].Text.Contains("isn't on the host's list"),
             "an action the job's status doesn't allow, or an unknown job, is refused");
 

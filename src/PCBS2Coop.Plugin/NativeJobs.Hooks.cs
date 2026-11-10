@@ -46,10 +46,19 @@ internal static class JobHooks
     }
 
     [HarmonyPatch(typeof(Job), nameof(Job.OnPositiveAction))]
-    internal static class Positive { private static bool Prefix(Job __instance) => NotMirrored(__instance, "job"); }
+    internal static class Positive { private static bool Prefix(Job __instance) => NotMirrored(__instance, "job") && MayCollect(__instance); }
 
     [HarmonyPatch(typeof(MultiJob), nameof(MultiJob.OnPositiveAction))]
-    internal static class MultiPositive { private static bool Prefix(MultiJob __instance) => NotMirrored(__instance, "job"); }
+    internal static class MultiPositive { private static bool Prefix(MultiJob __instance) => NotMirrored(__instance, "job") && MayCollect(__instance); }
+
+    /// <summary>Guest: a finished job's Collect shows the invoice only when the host's game also shows it finished
+    /// (phase 17c).</summary>
+    private static bool MayCollect(Job job)
+    {
+        if (!NativeCareer.InCareer || NativeProjection.Active || NativeJobs.HostRunning || CoopSaves.Current == CoopSaves.Mode.Host) return true;
+        try { return NativeJobs.Current?.GuestMayCollect(job) ?? true; }
+        catch (System.Exception e) { Plugin.Logger.LogError("[jobs] collect check failed: " + e); return true; }
+    }
 
     [HarmonyPatch(typeof(Job), nameof(Job.OnNegativeAction))]
     internal static class Negative { private static bool Prefix(Job __instance) => NotMirrored(__instance, "decline/quit"); }

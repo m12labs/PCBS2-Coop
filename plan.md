@@ -73,6 +73,8 @@ The owner confirmed these choices on October 25, 2026. Use this table as the cur
 | Phase 17 day change | The guest keeps getting the new day by reloading the host's world after the host's day ends (the 0.59 hand-off). Phase 17d adds the settle gate, the ready check and the renovation, not a live day projection. | 17 |
 | Phase 17 End Day ready check | The day ends only when both players are ready. The guest's End Day or Skip Work marks it ready and tells the host. The host's End Day waits, with a notice naming who it waits for, until the guest is ready. | 17 |
 | Phase 17 cleaning | Shared as a result, like thermal paste: the PC is reserved while one player vacuums, and the other game updates that PC's dust when the tool is put away. | 17 |
+| Phase 17 objective checks | Each game keeps checking a job's objectives itself (instant ticks and sounds). The host's result decides; the guest's Collect waits with a notice while the host's game doesn't show the job finished. Owner, November 9, 2026. | 17 |
+| Phase 17 cleaning in Free Build | Shared cleaning works in Free Build and Career; the 0.22 Free Build refusal is removed. Owner, November 9, 2026. | 17 |
 | Phase 15 testing | Code and model tests only. Runtime-only questions are recorded as checks for the gameplay sweep after phase 17. | 15 |
 
 Any UI placement or flow not settled by these answers remains a phase-start question under the repository's working rules.
@@ -646,7 +648,7 @@ Order follows data integrity and dependencies first, usable standard Free Build 
 
 #### 9d. Cleaning
 
-- **Status:** Implemented as a refusal (owner decision 2); sharing dust moves to career co-op (phases 15–17), where dust builds up (HW-017, PW-034).
+- **Status:** Implemented as a refusal (owner decision 2) until 0.64. Since 0.64 cleaning is shared as a result in Free Build and Career (17c, [0.64](docs/audit/phase-17.md#064-implementation-objectives-and-cleaning-17c)); dust build-up stays with the day end (17d, PW-034).
 
 #### 9e. Inventory items with their own data
 
@@ -847,7 +849,7 @@ Implement the statically evidenced Career sync across 15–17 and run the build 
 | --- | --- |
 | **17a. Focused jobs and day audit** | **Static pass recorded; owner questions answered November 9, 2026.** [Phase 17 audit](docs/audit/phase-17.md) ties job, day and cleaning paths to the existing pipeline, with the [job callback trace](docs/audit/phase-17.md#job-callback-trace-17b). Resolve the remaining objective bindings and day coroutine hooks in 17c–17d. |
 | **17b. Job lifecycle and settlement** | **Coded in 0.63, not run in game.** [0.63 implementation](docs/audit/phase-17.md#063-implementation-shared-jobs-and-the-inbox-17b), with the live inbox, job lists and calendar (owner decision). CP-002, 004–006, 039–041, 063–067. Bind generated job and multi-job identity, customer PC/package/note references, job actions, results and rewards. Complete after both actors can accept and collect, one reward wins a race, and day/rejoin preserves job state. |
-| **17c. Objectives and cleaning** | CP-003–005, 062, HW-017. Wire shipped objective families to accepted PC, tool, spend and simulation results. Share cleaned per-part filth, with dust accumulation in 17d. Complete when required, optional, hidden, multi-job, failure and deadline cases show the same outcomes on both games. |
+| **17c. Objectives and cleaning** | **Coded in 0.64, not run in game.** [0.64 implementation](docs/audit/phase-17.md#064-implementation-objectives-and-cleaning-17c) and the [objective trace](docs/audit/phase-17.md#objective-trace-17c): every shipped objective type reads the PC record or shared case, package and calendar data, which earlier phases share; dust was the gap. Cleaning is command 9 gesture `Clean` (each part's dust when the vacuum stops), in Free Build too. Each game keeps checking objectives; the host's result decides. CP-003–005, 062, HW-017. Dust build-up stays with the day end (17d). |
 | **17d. Day transition and shop renovation** | CP-012, 018, 028, 033–036, 042, 065–067. Gate host End Day on settled work and project one accepted day, bills, debt/charges, deliveries, dust, deadlines, offers, jobs and emails. Include the native renovation's charge, save and generation change in the transition. Complete after a day-edge race, interrupted day restore and both peers' arrival in the renovated workshop pass. |
 | **17e. Inbox, notes, onboarding and account boundaries** | CP-019–021, 029, 061, 070. Project saved flags/tags/notes and physical references while keeping UI selection local. Wire shared onboarding from eligible actors and guard personal Steam/account effects. Include first-day onboarding, native skip where supported and reconnect in acceptance. |
 

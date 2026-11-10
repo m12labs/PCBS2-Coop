@@ -36,8 +36,11 @@ with (root / "indexes" / "methods.tsv").open(encoding="utf-8-sig", newline="") a
         by_rva[int(row["rva"], 16)].append(row)
 
 
-def names(entries):
-    return " | ".join(dict.fromkeys(f'{r["type"]} {r["signature"]}' for r in entries))
+def names(entries, limit=3):
+    found = list(dict.fromkeys(f'{r["type"]} {r["signature"]}' for r in entries))
+    if len(found) > limit:
+        return " | ".join(found[:limit]) + f" | (+{len(found) - limit} more share this code)"
+    return " | ".join(found)
 
 
 address = int(args.address, 0)

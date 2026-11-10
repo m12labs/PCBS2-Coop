@@ -206,7 +206,7 @@ public sealed class JobWorld : ICommandHandler, IWorldState
         if (!Allows(c.Act, job.State)) return c.Act switch
         {
             JobAct.Accept => "That job can't be accepted now.",
-            JobAct.Collect => "That job isn't finished, or its payment was already collected.",
+            JobAct.Collect => "The host's game doesn't show that job as finished yet, or its payment was already collected.",
             JobAct.Quit => "That job isn't in progress.",
             _ => "That job can't be turned down now.",
         };

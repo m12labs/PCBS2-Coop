@@ -9,8 +9,10 @@ namespace PCBS2Coop.Network;
 /// which may also add a splitter), unplugging one (<c>Unplug</c>) and the power button (<c>Power</c>). Phase 10 adds
 /// <c>Water</c>: any custom water-cooling change (a pipe, coolant, a block, pump or reservoir), shown on the other game by
 /// reloading the finished PC (owner decision, October 29, 2026). Phase 9 adds <c>Paste</c>: putting thermal paste on or
-/// taking it off with the Q-tip, shown on the other game by setting the paste in place (owner decision, November 2, 2026).</summary>
-public enum EditGesture : byte { Install = 1, Remove = 2, RemoveDirect = 3, Connect = 4, Unplug = 5, Power = 6, Water = 7, Paste = 8 }
+/// taking it off with the Q-tip, shown on the other game by setting the paste in place (owner decision, November 2, 2026).
+/// Phase 17c adds <c>Clean</c>: the vacuum, shared as each part's dust when the player stops cleaning (owner decisions,
+/// November 9, 2026).</summary>
+public enum EditGesture : byte { Install = 1, Remove = 2, RemoveDirect = 3, Connect = 4, Unplug = 5, Power = 6, Water = 7, Paste = 8, Clean = 9 }
 public enum AccessoryKind : byte { Splitter = 1, Adapter = 2 }
 
 /// <summary>One cable as the game saves it (<c>CableSave</c>): connector IDs at both ends, cable and connector types,
@@ -31,6 +33,16 @@ public sealed record PasteFact(string Path, bool Applied)
 {
     public const int MaxPastes = 32, MaxPath = 1024;
 }
+/// <summary>One part's dust after a cleaning edit (phase 17c): where its dust component sits in the case (names from the
+/// case down) and the part's saved dust amount (<c>PartInstance.m_filth</c>). The dust picture is rebuilt from it.</summary>
+public sealed record DustFact(string Path, float Filth)
+{
+    public const int MaxParts = 128, MaxPath = 1024;
+    public const float MaxFilth = 1000f;
+}
+/// <summary>A cleaning edit's result: every dusty part afterwards, and the PC's saved dust totals
+/// (<c>ComputerSave.SetDust</c>).</summary>
+public sealed record DustResult(IReadOnlyList<DustFact> Parts, float Current, float Total);
 
 /// <summary>A water-cooling edit's result: the editor's finished PC record (sent before the commit in chunks, compressed)
 /// by length and SHA-256, and whether that PC is on.</summary>
@@ -144,6 +156,9 @@ public sealed record EditResult(EditOutcome Outcome, float Degrees, bool Flipped
     /// <summary>A paste edit's result (phase 9): every paste of the PC afterwards.</summary>
     public static EditResult Pasted(IReadOnlyList<PasteFact> pastes) => Done() with { Pastes = pastes };
     public IReadOnlyList<PasteFact>? Pastes { get; init; }
+    /// <summary>A cleaning edit's result (phase 17c).</summary>
+    public static EditResult Cleaned(DustResult dust) => Done() with { Dust = dust };
+    public DustResult? Dust { get; init; }
     /// <summary>An install: the installed item's variant (see <see cref="EditStart.Variant"/>).</summary>
     public string Variant { get; init; } = "";
     /// <summary>An install in Career: the owned item it used (see <see cref="EditStart.Item"/>).</summary>
@@ -164,6 +179,8 @@ public sealed record ComponentEdit(OperationId Token, ActorSlot Actor, ulong Epo
     public bool Rebuilt => Gesture == EditGesture.Water;
     /// <summary>A thermal paste edit: the other game sets the paste in place.</summary>
     public bool Pasted => Gesture == EditGesture.Paste;
+    /// <summary>A cleaning edit: the other game sets each part's dust.</summary>
+    public bool Cleaned => Gesture == EditGesture.Clean;
     public bool WholePc => ComponentEditWorld.IsWholePc(Gesture);
     public EditStage Stage { get; init; } = EditStage.Running;
     public EditResult? Result { get; init; }
@@ -222,8 +239,8 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
     { _objects = objects; _activity = activity; _native = native; }
     public string Name => "component-edit";
     public static bool IsWiring(EditGesture g) => g is EditGesture.Connect or EditGesture.Unplug or EditGesture.Power;
-    /// <summary>Gestures whose claim covers the whole PC: cables, power, water cooling and thermal paste.</summary>
-    public static bool IsWholePc(EditGesture g) => IsWiring(g) || g is EditGesture.Water or EditGesture.Paste;
+    /// <summary>Gestures whose claim covers the whole PC: cables, power, water cooling, thermal paste and cleaning.</summary>
+    public static bool IsWholePc(EditGesture g) => IsWiring(g) || g is EditGesture.Water or EditGesture.Paste or EditGesture.Clean;
     public IReadOnlyList<ComponentEdit> Edits => _edits;
     /// <summary>Career (phase 15c): checks an owned item an install names, given the items other edits hold
     /// (<see cref="CareerWorld.CheckUse"/>). Null in Free Build.</summary>
@@ -256,6 +273,12 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         if (result.Pastes is { } pastes) { w.Put(pastes.Count); foreach (var p in pastes) { w.Put(p.Path); w.Put(p.Applied); } }
         w.Put(result.Variant ?? "");
         w.Put(result.Item);
+        w.Put(result.Dust != null);
+        if (result.Dust is { } dust)
+        {
+            w.Put(dust.Current); w.Put(dust.Total); w.Put(dust.Parts.Count);
+            foreach (var d in dust.Parts) { w.Put(d.Path); w.Put(d.Filth); }
+        }
     });
     /// <summary>Editor, before a water-cooling commit: chunk <paramref name="index"/> of <paramref name="total"/> of its
     /// finished record.</summary>
@@ -326,8 +349,17 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
                 }
                 var variant = r.GetString(1024);
                 var item = r.GetULong();
+                DustResult? dust = null;
+                if (r.GetBool())
+                {
+                    var current = r.GetFloat(); var total = r.GetFloat(); var count = r.GetInt();
+                    if (count is < 0 or > DustFact.MaxParts) throw new FormatException("Invalid dust count.");
+                    var parts = new DustFact[count];
+                    for (var i = 0; i < count; i++) parts[i] = new(r.GetString(DustFact.MaxPath), r.GetFloat());
+                    dust = new(parts, current, total);
+                }
                 c = new(step, epoch, default, default, 0, default, "", default, token,
-                    new(outcome, degrees, flipped, mode, selected, inventory, type, connector, pins) { Wiring = wiring, Rebuild = rebuild, Pastes = pastes, Variant = variant, Item = item });
+                    new(outcome, degrees, flipped, mode, selected, inventory, type, connector, pins) { Wiring = wiring, Rebuild = rebuild, Pastes = pastes, Variant = variant, Item = item, Dust = dust });
                 break;
             }
             case Step.Cancel:
@@ -379,6 +411,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
             if (!c.Slot.IsNone || c.Version != 0 || !c.Component.IsNone || c.Part.Length == 0 || !Text(c.Part)) return "Invalid cable or power change.";
             if (c.Gesture == EditGesture.Power && c.Part is not ("on" or "off")) return "Invalid power change.";
             if (c.Gesture == EditGesture.Paste && c.Part is not ("apply" or "remove")) return "Invalid thermal paste change.";
+            if (c.Gesture == EditGesture.Clean && c.Part != "clean") return "Invalid cleaning.";
             return null;
         }
         slot = pc.Resources.SingleOrDefault(r => r.Id == c.Slot);
@@ -410,6 +443,7 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
         if (_edits.FirstOrDefault(e => e.Pc == pc && e.Actor != requester) is { } running)
             return running.Rebuilt ? "The other player is building water cooling on that PC."
                 : running.Pasted ? "The other player is working on the thermal paste of that PC."
+                : running.Cleaned ? "The other player is cleaning that PC."
                 : "The other player is changing a part of that PC.";
         foreach (var other in _activity.Actors)
             if (other.Pending is { } p && p.Pc == pc)
@@ -422,7 +456,15 @@ public sealed class ComponentEditWorld : ICanonicalCommandHandler
 
     private string? CheckResult(ComponentEdit edit, EditResult r)
     {
-        if (edit.Wired != (r.Wiring != null) || edit.Rebuilt != (r.Rebuild != null) || edit.Pasted != (r.Pastes != null)) return "Invalid edit result.";
+        if (edit.Wired != (r.Wiring != null) || edit.Rebuilt != (r.Rebuild != null) || edit.Pasted != (r.Pastes != null) || edit.Cleaned != (r.Dust != null))
+            return "Invalid edit result.";
+        if (r.Dust is { } dust)
+        {
+            static bool Amount(float f) => float.IsFinite(f) && f is >= 0 and <= DustFact.MaxFilth;
+            if (r.Outcome != EditOutcome.Done || dust.Parts.Count is < 1 or > DustFact.MaxParts || !Amount(dust.Current) || !Amount(dust.Total) ||
+                dust.Parts.Any(d => d.Path.Length is 0 or > DustFact.MaxPath || d.Path.Any(char.IsControl) || !Amount(d.Filth)) ||
+                dust.Parts.Select(d => d.Path).Distinct(StringComparer.Ordinal).Count() != dust.Parts.Count) return "Invalid cleaning result.";
+        }
         if (r.Pastes is { } pastes)
         {
             if (r.Outcome != EditOutcome.Done || pastes.Count is < 1 or > PasteFact.MaxPastes) return "Invalid thermal paste result.";

@@ -335,6 +335,19 @@ internal sealed class NativeJobs : IJobNative
     }
 
     /// <summary>Guest: ask the host to run <paramref name="act"/> on <paramref name="job"/>.</summary>
+    /// <summary>Guest: a click on a finished job's Collect, before the game shows its invoice. Each game checks the
+    /// objectives itself (owner decision, November 9, 2026), but the host's result decides: while the host's last
+    /// update doesn't show the job finished, the click only explains that.</summary>
+    internal bool GuestMayCollect(Job job)
+    {
+        if (job == null || job.m_status != Job.Status.FINISHED) return true;
+        var fact = Handler.Job(job.m_id);
+        if (fact == null || fact.State == JobState.Finished) return true;
+        _coop.Notice("The host's game doesn't show that job as finished yet. Check the job's objectives on the host's PC, or try again in a moment.");
+        Plugin.Logger.LogInfo($"[jobs] job {job.m_id} is finished here but {fact.State} on the host's game; collect waits.");
+        return false;
+    }
+
     internal void Request(JobAct act, Job job, int value)
     {
         if (!Active) { _coop.Notice("Jobs aren't shared yet; try again in a moment."); return; }

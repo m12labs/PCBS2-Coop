@@ -112,7 +112,7 @@ internal static class GamePatches
             desktop.PatchAll(typeof(NativeDesktopInput.MonitorPowerOff));
             desktop.PatchAll(typeof(NativeDesktopInput.StartMenuShutdownScope));
             var tools = new Harmony(Plugin.Guid + ".tools");
-            tools.PatchAll(typeof(NativeComponentEdits.VacuumRefusal));
+            tools.PatchAll(typeof(NativeComponentEdits.VacuumGate));
             tools.PatchAll(typeof(NativeToolBenches.DelidDestroyTrace));
             tools.PatchAll(typeof(NativeToolBenches.WaterDestroyTrace));
             tools.PatchAll(typeof(NativeToolBenches.CaseModDestroyTrace));

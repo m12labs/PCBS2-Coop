@@ -49,7 +49,7 @@ internal static class ComponentEditTests
     /// <summary>The host's game after the edit: an installed stick (one new part, its own screw) or a removed card.</summary>
     private static PcFact Edited(PcFact pc, ComponentEdit edit, NetObjectIdAllocator allocator)
     {
-        if (edit.Pasted) return pc; // a paste changes no parts
+        if (edit.Pasted || edit.Cleaned) return pc; // a paste or a cleaning changes no parts
         if (edit.Rebuilt)
         {
             // The host's game after reloading the editor's finished PC: a new water block in the free RAM slot.
@@ -134,7 +134,8 @@ internal static class ComponentEditTests
             (e.Result is { } r ? $"{r.Outcome}|{r.Degrees}|{r.Flipped}|{r.Mode}|{r.Selected}|{r.FromInventory}|{r.CableType}|{r.CableConnector}|{string.Join(",", r.Pins)}|" +
                 (r.Wiring is { } wr ? Convert.ToHexString(WiringBytes(wr)) : "") +
                 (r.Rebuild is { } rb ? $"|{rb.Length}|{Convert.ToHexString(rb.Hash.ToArray())}|{rb.Powered}" : "") +
-                (r.Pastes is { } ps ? "|" + string.Join(",", ps.Select(p => p.Path + "=" + p.Applied)) : "") + $"|{r.Variant}" : "") + $"|{e.Start}|{e.PartStep}";
+                (r.Pastes is { } ps ? "|" + string.Join(",", ps.Select(p => p.Path + "=" + p.Applied)) : "") +
+                (r.Dust is { } du ? $"|{du.Current}/{du.Total}:" + string.Join(",", du.Parts.Select(d => d.Path + "=" + d.Filth)) : "") + $"|{r.Variant}" : "") + $"|{e.Start}|{e.PartStep}";
         bool Same() => ho.ToBytes().SequenceEqual(go.ToBytes()) && Bytes(ha).SequenceEqual(Bytes(ga)) &&
             he.Edits.Select(Key).SequenceEqual(ge.Edits.Select(Key)) && l.InStep && l.Divergences.Count == 0;
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, host), CommandTypes.ActorActivity);
@@ -468,6 +469,38 @@ internal static class ComponentEditTests
         t.Check(l.GuestRejected.Last().Text.Contains("don't report progress"), "a paste edit reports no progress");
         Send(l.Guest, ComponentEditWorld.Cancel(G().Epoch, begin));
         t.Check(ge.Edits.Count == 0 && Same(), "a paste tool closed without a change is cancelled");
+
+        t.Section("Cleaning (phase 17c): each part's dust when the vacuum stops");
+        Send(l.Guest, Wire(G(), EditGesture.Clean, "vacuum"));
+        t.Check(l.GuestRejected.Last().Text.Contains("Invalid cleaning"), "a cleaning edit names the vacuum");
+        begin = Send(l.Guest, Wire(G(), EditGesture.Clean, "clean"));
+        t.Check(ge.Find(begin) is { Cleaned: true, WholePc: true, Targets.Count: 0 } && Same(), "a guest starts the vacuum on a PC: the claim covers the whole PC");
+        Send(l.Host, Remove(H(), 10, ho));
+        Send(l.Host, Wire(H(), EditGesture.Paste, "apply"));
+        t.Check(l.HostRejected.TakeLast(2).All(x => x.Text.Contains("cleaning that PC")), "the other player waits on that PC with the cleaning message");
+        var fan = new DustFact("Fans/Fan_Front/Fan", 0.25f);
+        DustResult D(params DustFact[] parts) => new(parts, 1.5f, 6f);
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Done()));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Cleaned(D())));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Cleaned(D(fan, fan))));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Cleaned(D(fan with { Filth = -0.5f }))));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Cleaned(D(fan with { Filth = float.NaN }))));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Cleaned(new DustResult(new[] { fan }, float.PositiveInfinity, 6f))));
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Pasted(new[] { lid })));
+        t.Check(l.GuestRejected.TakeLast(7).Select(x => x.Text).ToArray() is var cleanbad && cleanbad[0].Contains("Invalid edit result") &&
+            cleanbad[1..6].All(x => x.Contains("cleaning result")) && cleanbad[6].Contains("Invalid edit result"),
+            "a cleaning commit names at least one part, each once, with finite non-negative dust, and nothing else");
+        var cpu = new DustFact("Motherboard/Slot_CPU/CPU Cooler/Dust", 0f);
+        Send(l.Guest, ComponentEditWorld.Commit(G().Epoch, begin, EditResult.Cleaned(D(fan, cpu))));
+        t.Check(ge.Find(begin)?.Result?.Dust is { Parts.Count: 2, Current: 1.5f, Total: 6f } dust2 && dust2.Parts[0] == fan && dust2.Parts[1] == cpu &&
+            hn.Calls.Last() == "committed Done NaN local=False" && Same(), "the dust reaches the host's game to set in place");
+        Send(l.Host, ComponentEditWorld.Settle(begin));
+        t.Check(ge.Edits.Count == 0 && G().Pending == null && Same(), "the host settles it and the PC is free again");
+        begin = Send(l.Host, Wire(H(), EditGesture.Clean, "clean"));
+        Send(l.Guest, Wire(G(), EditGesture.Clean, "clean"));
+        t.Check(l.GuestRejected.Last().Text.Contains("cleaning that PC"), "two players can't clean one PC at once");
+        Send(l.Host, ComponentEditWorld.Cancel(H().Epoch, begin));
+        t.Check(he.Edits.Count == 0 && Same(), "a vacuum stopped without a change is cancelled");
 
         t.Section("Part variants (phase 9): a delidded CPU or a water-blocked card installs as itself");
         begin = Send(l.Guest, Install(G(), 9, go, "cpu"));

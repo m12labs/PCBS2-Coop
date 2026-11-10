@@ -31,6 +31,8 @@ internal sealed partial class NativeComponentEdits : IEditNative
         public bool PowerOn;
         /// <summary>Paste edits: the PC's pastes when the tool opened.</summary>
         public List<PasteFact> PastesBefore;
+        /// <summary>Cleaning edits: the PC's dust when the vacuum started.</summary>
+        public DustResult DustBefore;
     }
     /// <summary>The edit this player is running natively (one at a time).</summary>
     private sealed class Local
@@ -206,6 +208,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
         {
             Refuse(text);
             if (refused?.Gesture == EditGesture.Paste) PasteRefused(refused);
+            if (refused?.Gesture == EditGesture.Clean) CleanRefused(refused);
         }
     }
 
@@ -268,8 +271,8 @@ internal sealed partial class NativeComponentEdits : IEditNative
                 Plugin.Logger.LogInfo($"[edits] {what}: the other player is editing.");
                 return;
             }
-            // A paste tool is already open (the player may even have closed it again): follow it from here.
-            if (edit.Pasted ? request?.Mesh == null || !request.Mesh :
+            // A paste tool or the vacuum is already running (the player may even have stopped again): follow it from here.
+            if (edit.Pasted || edit.Cleaned ? request?.Mesh == null || !request.Mesh :
                 request?.Replay == null || request.Work == null || CurrentState?.Pointer != request.Work.Pointer || (!edit.WholePc && request.NativeSlot == null))
             {
                 Plugin.Logger.LogWarning($"[edits] {what}: this player's work state changed before the host answered; cancelling.");
@@ -280,6 +283,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
             if (edit.Wired) _local.Before = Snapshot(request.Mesh);
             if (edit.Rebuilt) _local.RecordBefore = RecordBytes(pc.Id);
             if (edit.Pasted) { Plugin.Logger.LogInfo($"[edits] {what}: the paste tool is open here."); return; }
+            if (edit.Cleaned) { Plugin.Logger.LogInfo($"[edits] {what}: cleaning here."); return; }
             NativeProjection.Run(request.Replay);
             Plugin.Logger.LogInfo($"[edits] {what}: running here.");
         }
@@ -344,6 +348,7 @@ internal sealed partial class NativeComponentEdits : IEditNative
             if (edit.Wired) { StartWireReplay(pc, edit); return; }
             if (edit.Rebuilt) { StartReload(pc, edit); return; }
             if (edit.Pasted) { ApplyPastes(pc, edit); return; }
+            if (edit.Cleaned) { ApplyDust(pc, edit); return; }
             if (_live.TryGetValue(token, out var live))
             {
                 // Already playing since the editor started: finish it the way the editor did.
@@ -557,6 +562,11 @@ internal sealed partial class NativeComponentEdits : IEditNative
         if (!_local.Done && _local.Request.Gesture == EditGesture.Paste)
         {
             PollPaste();
+            if (_local == null) return;
+        }
+        if (!_local.Done && _local.Request.Gesture == EditGesture.Clean)
+        {
+            PollClean();
             if (_local == null) return;
         }
         if (!ComponentEditWorld.IsWholePc(_local.Request.Gesture) && !SendProgress()) return;

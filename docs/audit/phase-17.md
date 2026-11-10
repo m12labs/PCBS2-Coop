@@ -53,7 +53,7 @@ Read from the game binary's disassembly; the ISIL dump truncates these methods. 
 
 - The host's game runs the guest's accept, so `Tutorial.OnAcceptJob`, achievements from collected jobs and other account effects happen on the host's account (17e). Only the immediate tutorial pop-ups are suppressed.
 - The guest's e-mail read, flag, tag and delete changes stay on its game until the host's next inbox update replaces them (17e). Its own onboarding e-mails are replaced the same way.
-- Objective inputs (cleaning is still refused; benchmark and boot status live on the PC record) are 17c. Day changes, expiry and End Day stay host-only (17d); the guest still reloads after the day.
+- Objective inputs and cleaning are 17c ([0.64](#064-implementation-objectives-and-cleaning-17c)). Day changes, expiry and End Day stay host-only (17d); the guest still reloads after the day.
 - The inbox is sent whole after each change. Its size in a long career is a runtime check.
 
 ### Runtime checks for the gameplay sweep
@@ -68,3 +68,63 @@ Read from the game binary's disassembly; the ISIL dump truncates these methods. 
 8. "Work on it" on a stored job PC moves the PC into the player's hands through the shared retrieval, on both games.
 9. A mirrored inbox click on a shared PC's desktop opens nothing on the other game.
 10. Startup logs no `[hooks]` error for the 16 new job hooks.
+
+## Owner decisions for 17c (November 9, 2026)
+
+- **Objective checks:** each game keeps checking a job's objectives itself, so the guest sees ticks and hears the sounds at once. The host's result still decides: its inbox update replaces the guest's, and the guest's Collect waits with a notice while the host's game doesn't show the job finished.
+- **Cleaning everywhere:** shared cleaning works in Free Build and Career. The vacuum is no longer refused in Free Build.
+
+## Objective trace (17c)
+
+Each game checks the objectives of the jobs whose PCs stand on its own benches, every frame: `BenchSlot.Update` → `UpdateStatus` → `JobStatus.UpdateJob` → the virtual `Job.UpdateCompletion` (class slot 42, through the vtable, so it doesn't show by name in ISIL). It finds the job's PC with `SaveLoadSystem.GetComputerForJob` (or the package with `GetPackageForJob`), runs `ComputerSave.CheckStatus`, then `Objective.UpdateSatisifiedBy` on each objective, and moves the job between ACCEPTED and FINISHED. A multi-job does the same for each part. So an objective agrees on both games once its input agrees.
+
+| Objective types | What the check reads | Shared by |
+| --- | --- | --- |
+| Parts, upgrades, replacements, RAM, storage, multi-GPU, brands, case, lights, AIO, custom water cooling, coolant, loop colour, cables, custom cables, all new parts, faulty parts | The PC record's parts, cables and water loop | Component, cable and water edits (phases 4–5, 10) |
+| Boot to OS, install software, clone OS, delete junk files, run scan | `ComputerCareerStatus.bootedToOS` and the PC's software; a scan checks the boot drive's software flag `m_needsScan` (through `GetBiosConfig`) | Mirrored desktop input and software sync (phase 6) |
+| Run benchmark, 3DMark and Cinebench scores | `ran3DMarkBenchMark`, `last3DMarkBenchMark` and the score functions | Mirrored apps; the host's result is copied (phase 6) |
+| Stable, case temperature, no thermal throttle, lower noise | Simulated failure times and temperatures | The host's simulation decides (phase 7) |
+| Overclock, voltages, RAM timings, fan mode | The PC's BIOS settings | Host-ordered BIOS Apply (phase 6) |
+| Thermal paste, delid | Pastes and the delid flag | Phase 9 |
+| Paint, stickers, theme, customise on glass | The saved case design (`CustomCaseManager`) | Case modding result (phase 11) |
+| Spend less than, meet budget | The PC's parts (`GetInvoiceValue`), not a running total | As parts |
+| Time limit | The calendar day | The host's calendar (17b) |
+| Procure parts | The job's package (`PackageCareerStatus`) | Packages (16c) |
+| Open case | `ComputerSave.miscCaseSlots` (the saved case panels) | Case access (phase 4) |
+| Diagnose | Whether the hidden repair objectives (replace part, run scan, clean, paste, faulty part; `IsHiddenByDiagnose`) are met | As those objectives |
+| **Clean** | `CleanObjective.TestSatisifiedBy` → `RecalculateDustValues` → `ComputerSave.GetCurrentDust`/`GetTotalDust` | **New in 0.64** |
+| Return PC | Removed by Collect (17b) | — |
+
+The only objective input that wasn't shared was dust. Spend-type objectives keep no running total of their own: `SpendLessThanObjective.m_spent` is a cache that `GetInvoiceValue` recomputes from the PC's parts at each check (and `FixForVersion` for old saves).
+
+## 0.64 implementation: objectives and cleaning (17c)
+
+**Status:** coded with model tests on November 9, 2026. Release built with zero warnings or errors and all 860 automated checks passed. No game was launched. Nothing here is verified in the running game.
+
+| Area | What 0.64 does |
+| --- | --- |
+| Cleaning model | Command 9 gesture `Clean` (whole-PC claim, part "clean"). Its commit carries each dusty part's `DustFact` (its dust component's place in the case and the part's `m_filth`) and the PC's two saved dust totals. A result without a part, with a part listed twice, or with a negative, infinite or oversized amount is refused. The other player sees "The other player is cleaning that PC." |
+| The vacuum | `WorkingOnComputerState.VacuumTick` runs each frame in the cleaning mode. Its first tick on a shared PC asks the host; this player's vacuum works at once. A refusal puts the dust back and tries again after two seconds, with a notice at most every five. When the player leaves the cleaning mode, the editor waits a second, then sends the dust, or cancels if nothing changed. |
+| The other game | Sets each changed part's dust (`PartInstance.SetFilth`), rebuilds its dust picture (`ComponentDust.RefreshDust`, a random pattern from the amount, as after a load) and sets the totals (`ComputerSave.SetDust`), which a cleaning objective reads. |
+| Free Build | Cleaning works there too (owner decision). The 0.22 refusal is gone. |
+| Collect | Each game keeps checking objectives (owner decision). A guest's Collect on a job its game shows finished, but the host's last update doesn't, shows a notice instead of the invoice screen. The host refuses such a collect with "The host's game doesn't show that job as finished yet". |
+| Status | The other player's status reads "Cleaning" while they vacuum. |
+
+### Not covered by 0.64
+
+- Dust build-up when a day passes (`WorkshopController.DoDustAccumulation` in `CareerStatus.AdvanceDay`) runs on the host's game. The guest takes it with the day-end reload until 17d.
+- Dust strokes and particles stay on the cleaning player's game. The other game's dust picture is a fresh pattern for the same amount.
+- Objective sounds and objective achievements play on each game that sees the objective met. The host's game also plays them for the guest's work (17e looks at account effects).
+- Expiry and deadlines change at the day end (17d).
+
+### Runtime checks for the gameplay sweep
+
+1. Vacuum a dusty PC as the guest: the host can't start a change on that PC meanwhile, and its status line says "Cleaning". After the guest leaves the cleaning mode, the host's PC shows the same dust amount (the picture may differ) and its cleaning objective ticks.
+2. The same as the host.
+3. Both players start the vacuum on one PC: the second sees "The other player is cleaning that PC." and its vacuum does nothing.
+4. Enter the cleaning mode and leave without vacuuming: nothing is sent (log `[clean] edit … changed no dust; cancelling`).
+5. Cleaning in Free Build on a PC that came with dust.
+6. Save and rejoin after cleaning: both games keep the cleaned dust.
+7. A job whose objectives the guest's game shows met but the host's doesn't: the guest's Collect shows the notice, not the invoice.
+8. Build, boot, benchmark, BIOS and software objectives the guest completes tick on the host's game too (spot-check two or three job types).
+9. Startup logs no `[hooks]` error.

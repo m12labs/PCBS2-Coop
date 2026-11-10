@@ -961,6 +961,7 @@ internal sealed partial class CoopController
             var other = world.Local == ActorSlot.Host ? ActorSlot.Guest : ActorSlot.Host;
             if (ToolBenches?.LabelOf(other) is { } table) return table;
             if (Workshop?.Handler.Decorator == other) return "Decorating";
+            if (Edits?.Handler.Edits.Any(e => e.Actor == other && e.Cleaned) == true) return "Cleaning";
             var paste = Edits?.Handler.Edits.FirstOrDefault(e => e.Actor == other && e.Pasted);
             return paste == null ? null : paste.Part == "remove" ? "Removing thermal paste" : "Applying thermal paste";
         }
