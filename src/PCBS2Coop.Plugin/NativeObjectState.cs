@@ -343,6 +343,9 @@ internal sealed class NativeObjectState : IWorldState
         NativeProjection.Run(() => mesh.OnPickup());
         var record = bench.GetComputer(true); // the record after the pickup side effects (runs SaveComputer)
         if (record?.caseID == null) throw new InvalidDataException("the bench PC has no save record");
+        // 0.68 (game run, November 10): a tutorial outline on the case stayed where the other player picked it up.
+        try { if (mesh.IsOutlined) NativeProjection.Run(() => mesh.SetOutline(false, 0, true, false)); }
+        catch (Exception e) { Plugin.Logger.LogWarning($"[objects] PC {pc.Id}: its outline could not be cleared before the pickup: {e.Message}"); }
         NativeProjection.Run(() => bench.DestroyComputer());
         UnbindMesh(pc.Id);
         HoldRemote(pc, carrier, record);
@@ -786,7 +789,14 @@ internal sealed class NativeObjectState : IWorldState
         var nativeAliases = new Dictionary<long, NetObjectId>(); var logicalAliases = new Dictionary<NetObjectId, long>();
         foreach (var (path, part) in parts)
         {
-            var link = pc.Links.SingleOrDefault(x => x.Path == path) ?? throw new InvalidDataException("Carried PC path mismatch.");
+            var link = pc.Links.SingleOrDefault(x => x.Path == path);
+            if (link == null)
+            {
+                var expected = pc.Links.Select(l => l.Path).ToHashSet(StringComparer.Ordinal);
+                var missing = expected.Except(parts.Keys).Take(4).Select(m => $"{m} ({pc.Parts.SingleOrDefault(x => x.Id == pc.Links.First(l => l.Path == m).Part)?.Sku})");
+                var extra = parts.Keys.Except(expected).Take(4).Select(m => $"{m} ({parts[m].GetPartId()})");
+                throw new InvalidDataException($"Carried PC path mismatch (shared only [{string.Join(", ", missing)}]; native only [{string.Join(", ", extra)}]).");
+            }
             var fact = pc.Parts.Single(x => x.Id == link.Part); var pointer = part.Pointer.ToInt64();
             if (fact.Sku != part.GetPartId() || fact.NativeType != part.GetIl2CppType().FullName ||
                 (nativeAliases.TryGetValue(pointer, out var alias) && alias != fact.Id) || (logicalAliases.TryGetValue(fact.Id, out var local) && local != pointer))
@@ -1031,12 +1041,20 @@ internal sealed class NativeObjectState : IWorldState
         }
         void Array(string path, IEnumerable items)
         { if (items == null) return; var i = 0; foreach (var item in items) Add(path + "[" + i++ + "]", (PartInstance)item); }
+        // 0.68: an adapter's index follows the case's adapter slot list, which differed between the two games by an
+        // empty (destroyed) slot. Name adapters by their order among the filled entries instead.
+        void Filled(string path, IEnumerable items)
+        { if (items == null) return; var i = 0; foreach (var item in items) if (item != null) Add(path + "[" + i++ + "]", (PartInstance)item); }
         // Native fields only: computed properties such as allStorageSlots repeat the same physical fields.
         foreach (var p in typeof(ComputerSave).GetProperties(BindingFlags.Instance | BindingFlags.Public).OrderBy(x => x.Name, StringComparer.Ordinal))
         {
             if (typeof(ComputerSave).GetField("NativeFieldInfoPtr_" + p.Name, BindingFlags.Static | BindingFlags.NonPublic) == null) continue;
             if (typeof(PartInstance).IsAssignableFrom(p.PropertyType)) Add(p.Name, (PartInstance)p.GetValue(pc));
-            else if (p.PropertyType.IsGenericType && p.PropertyType.GetGenericArguments().FirstOrDefault() == typeof(PartInstance)) Array(p.Name, p.GetValue(pc) as IEnumerable);
+            else if (p.PropertyType.IsGenericType && p.PropertyType.GetGenericArguments().FirstOrDefault() == typeof(PartInstance))
+            {
+                if (p.Name == nameof(ComputerSave.powerAdapterIDs)) Filled(p.Name, p.GetValue(pc) as IEnumerable);
+                else Array(p.Name, p.GetValue(pc) as IEnumerable);
+            }
         }
         if (pc.m_loops != null) for (var i = 0; i < pc.m_loops.Count; i++) Array($"m_loops[{i}].m_components", pc.m_loops[i]?.m_components);
         if (pc.LEDStripSaveList != null) for (var i = 0; i < pc.LEDStripSaveList.Count; i++)

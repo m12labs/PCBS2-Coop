@@ -102,6 +102,8 @@ internal sealed partial class NativeComponentEdits : IEditNative
     private bool Active => _world.Admitted && _world.Divergence == null && _coop.Objects.Initialized && _coop.Activity.Get(_world.Local) != null;
     /// <summary>An edit is waiting, running or being shown: saves and snapshots wait for it.</summary>
     internal bool Busy => Handler.Edits.Count > 0 || _pending.Count > 0 || _local != null || _ready.Count > 0 || _wireRuns.Count > 0 || _reloads.Count > 0;
+    /// <summary>0.73: an edit the other player started isn't shown here yet (it waits for their commit, or is being played).</summary>
+    internal bool ShowingOther => Handler.Edits.Any(e => e.Actor != _world.Local) || _ready.Count > 0 || _live.Values.Any(l => !l.Over) || _reloads.Count > 0;
     /// <summary>An edit claim this game's model holds for an edit in progress (activity must not release it).</summary>
     internal bool Holds(OperationId token) => Handler.Find(token) != null;
     private static State CurrentState => GameController.Get()?.GetCurrentState();
@@ -307,6 +309,13 @@ internal sealed partial class NativeComponentEdits : IEditNative
         }
         try
         {
+            // 0.69 (owner request, November 10, 2026): in Career the editor turns screws by hand, so the part would come
+            // off (or go in) here while they still work on it. Show it once their commit says it's done.
+            if (NativeCareer.InCareer)
+            {
+                Plugin.Logger.LogInfo($"[edits] {what}: started there; shown here once the other player has finished it.");
+                return;
+            }
             // The other player's game started this edit: play it here now, with the game's own animations. The replay
             // waits at the orientation step and before settling until their commit says how they finished it.
             var plan = Plan(pc, edit);

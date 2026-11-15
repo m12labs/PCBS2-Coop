@@ -143,7 +143,11 @@ internal sealed class NativeAssembly : IAssemblyNative
             if (mesh.GetComponentsInChildren<CPin>(true).Any(p => p != null && p.IsAnimating())) continue;
             try
             {
-                var record = _objects.CaptureRecord(pc.Id); NativeObjectState.CheckParts(pc, record); Bind(pc, mesh, record);
+                var record = _objects.CaptureRecord(pc.Id); NativeObjectState.CheckParts(pc, record);
+                // A freshly loaded PC shows its case panels as the game's save had them; the shared world decides.
+                var loaded = !(_bindings.TryGetValue(pc.Id, out var bound) && bound.Mesh != null && bound.Mesh.Pointer == mesh.Pointer);
+                if (loaded && MatchPanels(pc, mesh, record)) record = _objects.CaptureRecord(pc.Id);
+                Bind(pc, mesh, record);
                 _rebind.Remove(pc.Id);
             }
             catch (Exception e)
@@ -158,6 +162,32 @@ internal sealed class NativeAssembly : IAssemblyNative
         }
         try { BindMissing(); }
         catch (Exception e) { c.ProjectionFailed("A loaded PC's assembly manifest could not be published", e); }
+    }
+
+    /// <summary>0.69 (game run, November 10): the game's save doesn't always bring a case panel back the way it was. The
+    /// first Career job's PCI lock, removed on both games, came back fitted when the guest reloaded the PC from the host's
+    /// record. Panel presence is a shared fact (4d): after a native load, fit or remove panels to match the model. Panels
+    /// carried by a removed panel are left to it. Returns whether anything changed.</summary>
+    private bool MatchPanels(PcFact pc, Case mesh, ComputerSave save)
+    {
+        var dormant = AssemblyResources.Dormant(pc);
+        var panels = pc.Resources.Where(r => r.Kind == AssemblyResourceKind.Slot && r.IntegralHome != "" && !dormant.Contains(r.Id)).ToArray();
+        if (panels.Length == 0) return false;
+        var rows = new Dictionary<(NetObjectId, string), Row>();
+        foreach (var row in Scan(pc, mesh, save).Rows) rows.TryAdd((row.Parent, row.Key), row);
+        var changed = new List<string>();
+        foreach (var r in panels)
+        {
+            // A slot this game doesn't show is reported by the manifest check that follows.
+            if (!rows.TryGetValue((r.Parent, r.Binding), out var row) || row.Native.TryCast<Slot>() is not { } slot) continue;
+            var fitted = row.IntegralPart != "";
+            if (fitted == (r.IntegralPart != "")) continue;
+            NativeProjection.Run(() => { if (fitted) NativeCaseAccess.RemoveDirect(slot, inventory: false); else NativeCaseAccess.RefitDirect(slot, r.IntegralHome, inventory: false); });
+            changed.Add($"{slot.name} {(fitted ? "removed" : "fitted")}");
+        }
+        if (changed.Count == 0) return false;
+        Plugin.Logger.LogWarning($"[panels] PC {pc.Id} loaded with case panels that differ from the shared world; matched: {string.Join(", ", changed)}.");
+        return true;
     }
 
     internal HashSet<NetObjectId> ReplacedParts(PcFact pc, Case mesh)
@@ -221,12 +251,12 @@ internal sealed class NativeAssembly : IAssemblyNative
         MainThread();
         if (mesh == null || pc.Resources.Count == 0) return;
         var scan = Scan(pc, mesh, save);
-        Check(pc, scan.Templates);
+        Check(pc, scan.Templates, scan.Locks);
         CheckProfile(pc, save);
         if (!rebind && _bindings.TryGetValue(pc.Id, out var prior) && prior.Mesh != null && prior.Mesh.Pointer == mesh.Pointer)
         {
             var byKey = scan.Rows.ToDictionary(r => (r.Parent, r.Key));
-            var dormant = AssemblyResources.Dormant(pc);
+            var dormant = Ignored(pc, scan.Locks);
             foreach (var r in pc.Resources.Where(r => !dormant.Contains(r.Id)))
                 if (prior.Resources.TryGetValue(r.Id, out var old) && (old.Native == null ||
                     old.Native.Pointer != byKey[(r.Parent, r.Binding)].Native.Pointer || old.Occupant != byKey[(r.Parent, r.Binding)].OccupantMesh))
@@ -237,20 +267,51 @@ internal sealed class NativeAssembly : IAssemblyNative
     internal void Bind(PcFact pc, Case mesh, ComputerSave save)
     {
         MainThread(); if (mesh == null || pc.Resources.Count == 0) return;
-        var scan = Scan(pc, mesh, save); Check(pc, scan.Templates); CheckProfile(pc, save);
+        var scan = Scan(pc, mesh, save); Check(pc, scan.Templates, scan.Locks); CheckProfile(pc, save);
         var rows = scan.Rows.ToDictionary(r => (r.Parent, r.Key));
-        var dormant = AssemblyResources.Dormant(pc);
+        var dormant = Ignored(pc, scan.Locks);
         _bindings[pc.Id] = new(mesh, pc.Resources.Where(r => !dormant.Contains(r.Id)).ToDictionary(r => r.Id,
             r => (rows[(r.Parent, r.Binding)].Native, rows[(r.Parent, r.Binding)].OccupantMesh)));
     }
 
-    private static void Check(PcFact pc, IReadOnlyList<AssemblyTemplate> actual)
+    /// <summary>Model resources this game doesn't show: those on a removed panel (4d case access) and, since 0.71, bracket
+    /// screws and a fitted PCI lock's screws (manifests written before 0.71 still list them).</summary>
+    private static HashSet<NetObjectId> Ignored(PcFact pc, HashSet<(NetObjectId, string)> locks)
+    {
+        var ignored = AssemblyResources.Dormant(pc);
+        var byId = pc.Resources.ToDictionary(r => r.Id);
+        foreach (var r in pc.Resources)
+        {
+            if (r.Kind == AssemblyResourceKind.Screw && BracketScrew(LastSegment(r.Binding))) ignored.Add(r.Id);
+            if (r.Kind == AssemblyResourceKind.Slot && r.IntegralPart != "" && locks.Contains((r.Parent, r.Binding)))
+                foreach (var id in r.Carries) if (byId.TryGetValue(id, out var c) && c.Kind == AssemblyResourceKind.Screw) ignored.Add(id);
+        }
+        return ignored;
+    }
+
+    private static bool BracketScrew(string name) => name.StartsWith("screwStandoff", StringComparison.OrdinalIgnoreCase);
+    /// <summary>The native object name in a binding ("Screw:a[0]/b[1]/screwStandoff (1)[0]#0" -> "screwStandoff (1)[0]#0").</summary>
+    private static string LastSegment(string binding)
+    {
+        var slash = binding.LastIndexOf('/');
+        var colon = binding.IndexOf(':');
+        return binding[(Math.Max(slash, colon) + 1)..];
+    }
+
+    private static void Check(PcFact pc, IReadOnlyList<AssemblyTemplate> actual, HashSet<(NetObjectId, string)> locks)
     {
         // Resources on a removed panel stay in the model but are absent natively (4d case access).
-        var dormant = AssemblyResources.Dormant(pc);
+        var dormant = Ignored(pc, locks);
         var live = pc.Resources.Where(r => !dormant.Contains(r.Id)).ToArray();
         if (live.Length != actual.Count)
-            throw new InvalidDataException($"PC {pc.Id}: native assembly manifest changed ({actual.Count} native resources, {live.Length} shared).");
+        {
+            // 0.68: name what differs, so a game run shows which resources a Career gesture added or left out.
+            var shared = live.Select(r => (r.Parent, r.Binding)).ToHashSet();
+            var native = actual.Select(r => (r.Parent, r.Binding)).ToHashSet();
+            string Keys(IEnumerable<(NetObjectId Parent, string Binding)> keys) => string.Join(", ", keys.Take(24).Select(k => $"{k.Parent.Value}:{k.Binding}"));
+            throw new InvalidDataException($"PC {pc.Id}: native assembly manifest changed ({actual.Count} native resources, {live.Length} shared; " +
+                $"shared only [{Keys(shared.Except(native))}]; native only [{Keys(native.Except(shared))}]; {dormant.Count} on removed panels).");
+        }
         var byKey = live.ToDictionary(r => (r.Parent, r.Binding));
         var ids = actual.Select(r => byKey.TryGetValue((r.Parent, r.Binding), out var known) ? known.Id : default).ToArray();
         IEnumerable<NetObjectId> Live(IEnumerable<NetObjectId> list) => list.Where(id => !dormant.Contains(id));
@@ -281,7 +342,7 @@ internal sealed class NativeAssembly : IAssemblyNative
                 diff.Add($"coupled [{List(Live(expected.Coupled))}]/[{Natives(a.Coupled)}]");
             if (!Same(expected.LoadCloses, a.LoadCloses)) diff.Add("load-closed latches");
             // A fitted panel's home and carried resources are prefab facts; a removed one is remembered by the model only.
-            if (a.IntegralPart != "" && (expected.IntegralHome != a.IntegralHome || !expected.Carries.SequenceEqual(a.Carries.Select(j => ids[j]).OrderBy(x => x.Value))))
+            if (a.IntegralPart != "" && (expected.IntegralHome != a.IntegralHome || !Live(expected.Carries).SequenceEqual(a.Carries.Select(j => ids[j]).OrderBy(x => x.Value))))
                 diff.Add($"panel home/carried [{List(expected.Carries)}]/[{Natives(a.Carries)}]");
             if (diff.Count > 0)
                 throw new InvalidDataException($"PC {pc.Id}: unconfirmed assembly state at {a.Binding} (shared/native: {string.Join("; ", diff)}).");
@@ -366,7 +427,7 @@ internal sealed class NativeAssembly : IAssemblyNative
         return Convert.ToHexString(SHA256.HashData(w.CopyData()));
     }
 
-    private static (List<Row> Rows, IReadOnlyList<AssemblyTemplate> Templates) Scan(PcFact pc, Case mesh, ComputerSave save)
+    private static (List<Row> Rows, IReadOnlyList<AssemblyTemplate> Templates, HashSet<(NetObjectId, string)> Locks) Scan(PcFact pc, Case mesh, ComputerSave save)
     {
         if (mesh == null || !mesh || save?.caseID == null) throw new InvalidDataException("A native prefab/record is missing.");
         var parts = NativeObjectState.BindingParts(save, pc);
@@ -438,6 +499,22 @@ internal sealed class NativeAssembly : IAssemblyNative
             if (fitted != null && !Preview(fitted) && observed.m_slotType is Slot.SlotType.CASE_PART_REQUIRED or Slot.SlotType.CASE_PART_OPTIONAL && Integral(fitted) != "")
                 panels.Add(fitted.transform.Pointer);
         }
+        // 0.71 (owner decision, November 12, 2026): bracket screws aren't shared. The game makes the screws that hold a PCI
+        // card ("screwStandoff ...", Slot.InstantiatePCIScrews) and deletes the ones a fitted PCI lock covers
+        // (Slot.RemoveContainedScrews) only when a player fits a part, never when a PC loads, and moves them into a PCI lock
+        // shown the load way. So each game handles them, and the PCI lock's own screws, itself.
+        var locks = new HashSet<IntPtr>();
+        foreach (var observed in nativeSlots)
+        {
+            var fitted = observed.GetComponent();
+            if (fitted != null && panels.Contains(fitted.transform.Pointer) && fitted.UIName == CasePartName.PCILock) locks.Add(fitted.transform.Pointer);
+        }
+        bool UnderLock(Transform node)
+        {
+            for (var t = node.parent; t != null && t.Pointer != mesh.transform.Pointer; t = t.parent) if (locks.Contains(t.Pointer)) return true;
+            return false;
+        }
+        var unshared = new HashSet<IntPtr>();
         var rows = new List<Row>();
         var nativeScrews = mesh.GetComponentsInChildren<Screw>(true);
         var boardId = MotherboardId(pc);
@@ -473,7 +550,10 @@ internal sealed class NativeAssembly : IAssemblyNative
             Add(pin, pin.TryCast<AM3Slot>() != null || pin.TryCast<LGASlot>() != null ? AssemblyResourceKind.Socket : AssemblyResourceKind.Pin, default, 0, pin.IsOpen());
         }
         foreach (var screw in nativeScrews)
+        {
+            if (BracketScrew(screw.name) || UnderLock(screw.transform)) { unshared.Add(screw.Pointer); continue; }
             Add(screw, AssemblyResourceKind.Screw, default, 0, rotation: screw.m_rotation, offset: screw.m_offset);
+        }
         rows = rows.OrderBy(r => r.Parent.Value).ThenBy(r => r.Key, StringComparer.Ordinal).ToList();
         var indicesByPointer = rows.Select((r, i) => (r.Native.Pointer, Index: i)).ToDictionary(r => r.Pointer, r => r.Index);
         var ramGroups = mesh.GetComponentsInChildren<RAMSlot>(true).Where(ram => ram.ramSlot != null).ToLookup(ram => ram.ramSlot.Pointer);
@@ -490,6 +570,7 @@ internal sealed class NativeAssembly : IAssemblyNative
                     if (ram.pins != null) foreach (var pin in ram.pins) AddReference(pin);
                     return;
                 }
+                if (unshared.Contains(c.Pointer)) return;
                 if (!indicesByPointer.TryGetValue(c.Pointer, out var index))
                     throw new InvalidDataException($"Blocker {c.GetIl2CppType().FullName} '{c.name}' is outside this PC's resource manifest.");
                 if (index != self) found.Add(index);
@@ -545,7 +626,8 @@ internal sealed class NativeAssembly : IAssemblyNative
                     .Where(x => x.j != i && x.x.Native.transform.IsChildOf(r.Panel.transform)).Select(x => x.j).ToArray(),
             };
         }).ToArray();
-        return (rows, templates);
+        var lockSlots = rows.Where(r => r.Panel != null && locks.Contains(r.Panel.transform.Pointer)).Select(r => (r.Parent, r.Key)).ToHashSet();
+        return (rows, templates, lockSlots);
     }
 
     private static string RelativePath(Transform node, Transform root, HashSet<IntPtr> panels = null)

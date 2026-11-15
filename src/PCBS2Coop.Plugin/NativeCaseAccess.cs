@@ -11,6 +11,9 @@ namespace PCBS2Coop;
 /// integral case panel becomes a host-ordered request (the requester runs the game's own animated removal or install
 /// afterwards); every other install or removal is a component edit (<see cref="NativeComponentEdits"/>, task 4e). The other game shows a panel
 /// change directly, the way the game builds panels when it loads a save, so that player's own work state is untouched.
+/// 0.68 (owner decision, November 10, 2026): the request holds the PC while the requester's game runs the gesture,
+/// including Career's hand-turned screws. The requester then reports the panel finished (or taken back when the gesture
+/// stopped with the panel as it was), and only then does the other game show it.
 /// </summary>
 internal sealed class NativeCaseAccess : IPanelNative
 {
@@ -26,8 +29,21 @@ internal sealed class NativeCaseAccess : IPanelNative
     private readonly Dictionary<OperationId, Request> _pending = new();
     private Request _submitting;
     /// <summary>Accepted panel changes whose native work is still running on this game (the requester's own animated
-    /// edit starts as a coroutine and finishes seconds later): the PC is rebound once the slot shows the result.</summary>
-    private readonly List<(NetObjectId Pc, Slot Slot, bool Remove, float Until)> _finishing = new();
+    /// edit starts as a coroutine and finishes seconds later, or after its screws are turned by hand): the PC is rebound
+    /// once the slot shows the result. <see cref="Finishing.Token"/> is set on the requester's game, which then reports
+    /// the end to the host.</summary>
+    private sealed class Finishing
+    {
+        public NetObjectId Pc, SlotId;
+        public Slot Slot;
+        public bool Remove, SawEditing;
+        public OperationId? Token;
+        public float Started;
+    }
+    private readonly List<Finishing> _finishing = new();
+    /// <summary>The other player's accepted panel changes this game shows once they report them finished.</summary>
+    private readonly Dictionary<OperationId, (NetObjectId Pc, NetObjectId Slot)> _waiting = new();
+    /// <summary>The other game shows its result within this time; the requester's gesture must start within it.</summary>
     private const float FinishTimeout = 20f;
     public CasePanelWorld Handler { get; }
 
@@ -37,12 +53,14 @@ internal sealed class NativeCaseAccess : IPanelNative
         Handler = new CasePanelWorld(coop.Objects.Model, coop.Activity, this);
         world.Accepted += (OperationId op, ulong revision) => _pending.Remove(op);
         world.Rejected += OnRejected;
-        world.GenerationStarted += (uint generation, string reason) => { _pending.Clear(); _finishing.Clear(); };
+        world.GenerationStarted += (uint generation, string reason) => { _pending.Clear(); _finishing.Clear(); _waiting.Clear(); };
     }
 
     private bool Active => _world.Admitted && _world.Divergence == null && _coop.Objects.Initialized && _coop.Activity.Get(_world.Local) != null;
     /// <summary>A panel request is waiting for the host: saves and snapshots wait for it.</summary>
-    internal bool Busy => _pending.Count > 0 || _finishing.Count > 0;
+    internal bool Busy => _pending.Count > 0 || _finishing.Count > 0 || _waiting.Count > 0;
+    /// <summary>0.73: a panel change the other player started isn't shown here yet.</summary>
+    internal bool ShowingOther => _waiting.Count > 0;
 
     private static bool PanelSlot(Slot slot) => slot != null && slot.m_slotType is Slot.SlotType.CASE_PART_REQUIRED or Slot.SlotType.CASE_PART_OPTIONAL;
     private static State CurrentState => GameController.Get()?.GetCurrentState();
@@ -149,15 +167,23 @@ internal sealed class NativeCaseAccess : IPanelNative
         var what = $"{(c.Remove ? "removal" : "refit")} of panel {fact.Id} on PC {pc.Id}";
         try
         {
+            if (!ctx.FromLocalPlayer)
+            {
+                // The other player is still turning screws or watching the animation: show it once they report it done.
+                _waiting[ctx.Op] = (pc.Id, fact.Id);
+                Plugin.Logger.LogInfo($"[panels] {what} by {ctx.Op}: shown here once the other player has finished it.");
+                return;
+            }
             var slot = _coop.Objects.Assembly.NativeFor(pc.Id, fact.Id)?.TryCast<Slot>();
             if (slot == null)
             {
                 // Not shown here (a record-only PC): its next native load is checked against the model.
+                SubmitFinish(ctx.Op, pc.Id, fact.Id, done: true);
                 if (_coop.Objects.Projections.TryGet(pc.Id, out var mesh) && mesh != null) throw new InvalidDataException("the panel slot is not bound on this game");
                 return;
             }
-            // The requester runs the game's own gesture (animation, automatic screws, inventory) if its work state is
-            // unchanged; otherwise, and on the other game, the panel changes directly.
+            // The requester runs the game's own gesture (animation, screws, inventory) if its work state is unchanged;
+            // otherwise the panel changes directly.
             if (request?.Replay != null && request.Work != null && CurrentState?.Pointer == request.Work.Pointer)
             {
                 NativeProjection.Run(request.Replay);
@@ -166,12 +192,99 @@ internal sealed class NativeCaseAccess : IPanelNative
             else
             {
                 NativeProjection.Run(() => { if (c.Remove) RemoveDirect(slot); else RefitDirect(slot, c.Part); });
-                Plugin.Logger.LogInfo($"[panels] {what} by {ctx.Op} (projected).");
+                Plugin.Logger.LogInfo($"[panels] {what} by {ctx.Op} (shown directly).");
             }
-            _finishing.Add((pc.Id, slot, c.Remove, Time.realtimeSinceStartup + FinishTimeout));
+            _finishing.Add(new Finishing { Pc = pc.Id, SlotId = fact.Id, Slot = slot, Remove = c.Remove, Token = ctx.Op, Started = Time.realtimeSinceStartup });
             Update();
         }
         catch (Exception e) { _coop.ProjectionFailed($"The {what} was accepted, but this game could not show it", e); }
+    }
+
+    public void Finished(in MutationContext ctx, PcFact pc, AssemblyResource fact, OperationId token, bool done)
+    {
+        var remove = fact.IntegralPart == "";
+        var what = $"{(done == remove ? "removal" : "refit")} of panel {fact.Id} on PC {pc.Id} by {token}";
+        if (ctx.FromLocalPlayer)
+        {
+            Plugin.Logger.LogInfo($"[panels] {what}: {(done ? "finished" : "taken back")} here.");
+            return;
+        }
+        var waited = _waiting.Remove(token);
+        Show(pc, fact, $"{what}: {(done ? "finished" : "taken back")}", waited);
+    }
+
+    /// <summary>Make this game's panel match the shared world's (the other player finished, took back or left).</summary>
+    private void Show(PcFact pc, AssemblyResource fact, string what, bool waited)
+    {
+        var remove = fact.IntegralPart == "";
+        try
+        {
+            var slot = _coop.Objects.Assembly.NativeFor(pc.Id, fact.Id)?.TryCast<Slot>();
+            if (slot == null)
+            {
+                if (_coop.Objects.Projections.TryGet(pc.Id, out var mesh) && mesh != null) throw new InvalidDataException("the panel slot is not bound on this game");
+                return;
+            }
+            // A guest that joined meanwhile loaded the host's world as it was then; show whatever the model says now.
+            if (Shows(slot, remove))
+            {
+                Plugin.Logger.LogInfo($"[panels] {what}; this game already shows it.");
+                return;
+            }
+            ShowNative(pc.Id, slot, remove, fact.IntegralHome, what);
+            Plugin.Logger.LogInfo($"[panels] {what}; showing it here{(waited ? "" : " (it was not waiting)")}.");
+            _finishing.Add(new Finishing { Pc = pc.Id, SlotId = fact.Id, Slot = slot, Remove = remove, Started = Time.realtimeSinceStartup });
+            Update();
+        }
+        catch (Exception e) { _coop.ProjectionFailed($"The {what}, but this game could not show it", e); }
+    }
+
+    /// <summary>0.71 (owner decision, November 12, 2026): show the other player's finished panel change with the game's own
+    /// removal or install (animation, automatic screws), the way part edits are replayed, so both games run the same
+    /// code; the PCI lock's bracket screws, for one, depend on it. Falls back to the direct change if the replay fails.</summary>
+    private void ShowNative(NetObjectId pc, Slot slot, bool remove, string sku, string what)
+    {
+        void Direct(string why)
+        {
+            Plugin.Logger.LogWarning($"[panels] {what}: the game's own {(remove ? "removal" : "install")} couldn't be shown ({why}); changing the panel directly.");
+            try { NativeProjection.Run(() => { if (remove) RemoveDirect(slot); else RefitDirect(slot, sku); }); }
+            catch (Exception e) { _coop.ProjectionFailed($"The {what}, but this game could not show it", e); }
+        }
+        try
+        {
+            var plan = new NativeEditReplay.Plan
+            {
+                Label = $"panel {(remove ? "removal" : "refit")} at {slot.name}", Case = slot.GetCase(), Bench = _coop.Objects.FindBench(pc), Slot = slot,
+                Known = true, KnownAt = Time.realtimeSinceStartup, Mode = remove ? 0 : 1, Selected = remove ? 0 : 1,
+            };
+            if (plan.Case == null) throw new InvalidDataException("the PC is not shown on this game");
+            if (remove)
+            {
+                var comp = slot.GetComponent();
+                if (comp == null || NativeAssembly.IsPreview(comp)) throw new InvalidDataException("the panel isn't fitted here");
+                plan.Component = comp; plan.Direct = true;
+            }
+            else
+            {
+                // The game's install takes an inventory item itself (this player's Removed Components); else a new one.
+                PartInstance part = null;
+                if (CareerStatus.Get()?.GetInventory() is { } owned) foreach (var p in owned) if (p != null && p.GetPartId() == sku) { part = p; break; }
+                plan.Part = part ?? PartInstance.NewPartInstance(sku, 0, null) ?? throw new InvalidDataException($"panel {sku} is unknown");
+            }
+            plan.Finished = error => { if (error != null) Direct(error); };
+            CoopController.Instance.Replays.Start(plan);
+        }
+        catch (Exception e) { Direct(e.Message); }
+    }
+
+    private void SubmitFinish(OperationId token, NetObjectId pc, NetObjectId slot, bool done)
+    {
+        var actor = _coop.Activity.Get(_world.Local);
+        // A rejoin or a new world already released the claim.
+        if (actor?.Pending?.Token != token) return;
+        if (!_world.Submit(CommandTypes.CasePanel, CasePanelWorld.Finish(actor.Epoch, token, pc, slot, done), out var op))
+            Plugin.Logger.LogWarning($"[panels] the end of panel change {token} could not be sent; the host's world keeps the PC held until this player leaves.");
+        else Plugin.Logger.LogInfo($"[panels] panel change {token} {(done ? "finished" : "stopped with the panel as it was")} here; sent ({op}).");
     }
 
     private static bool Shows(Slot slot, bool remove)
@@ -181,30 +294,66 @@ internal sealed class NativeCaseAccess : IPanelNative
         return remove ? !fitted : fitted;
     }
 
-    /// <summary>Per frame: rebind a PC once its accepted panel change has finished natively (no edit state running).</summary>
+    /// <summary>Per frame: once an accepted panel change has finished natively (no edit state running), the requester
+    /// reports it and the PC is rebound. The other player's change waits while they still hold the PC.</summary>
     public void Update()
     {
+        var now = Time.realtimeSinceStartup;
+        foreach (var (token, (pcId, slotId)) in _waiting.ToArray())
+        {
+            // The requester left (or rejoined) without finishing: the host's world keeps the accepted change.
+            if (_coop.Activity.Get(token.Actor)?.Pending?.Token == token) continue;
+            _waiting.Remove(token);
+            var pc = _coop.Objects.Model.Pcs.SingleOrDefault(p => p.Id == pcId);
+            var fact = pc?.Resources.SingleOrDefault(r => r.Id == slotId);
+            if (pc != null && fact != null) Show(pc, fact, $"panel change {token} on PC {pcId}: the other player left before finishing it", true);
+        }
         for (var i = _finishing.Count - 1; i >= 0; i--)
         {
-            var (pc, slot, remove, until) = _finishing[i];
+            var f = _finishing[i];
             try
             {
-                if (slot == null) { _finishing.RemoveAt(i); continue; } // the PC was reloaded meanwhile; its load is checked instead
+                if (f.Slot == null)
+                {
+                    // The PC was reloaded meanwhile; its load is checked instead and shows the shared world's panel.
+                    _finishing.RemoveAt(i);
+                    if (f.Token is { } reloaded) SubmitFinish(reloaded, f.Pc, f.SlotId, done: true);
+                    continue;
+                }
                 var editing = GameController.Get()?.GetCurrentState()?.TryCast<InstallingPartState>() != null;
-                if (!editing && Shows(slot, remove)) { _finishing.RemoveAt(i); _coop.Objects.Assembly.RequestRebind(pc); continue; }
-                if (Time.realtimeSinceStartup > until) throw new TimeoutException($"the panel was still {(remove ? "fitted" : "missing")} after {FinishTimeout} s");
+                if (editing) f.SawEditing = true;
+                if (!editing && Shows(f.Slot, f.Remove))
+                {
+                    _finishing.RemoveAt(i);
+                    if (f.Token is { } token) SubmitFinish(token, f.Pc, f.SlotId, done: true);
+                    _coop.Objects.Assembly.RequestRebind(f.Pc);
+                    continue;
+                }
+                if (f.Token is { } own)
+                {
+                    // The player left the gesture (screws) with the panel as it was, or it never started: take it back.
+                    if (!editing && (f.SawEditing || now - f.Started > FinishTimeout))
+                    {
+                        _finishing.RemoveAt(i);
+                        SubmitFinish(own, f.Pc, f.SlotId, done: false);
+                        _coop.Objects.Assembly.RequestRebind(f.Pc);
+                    }
+                    continue;
+                }
+                if (now - f.Started > FinishTimeout) throw new TimeoutException($"the panel was still {(f.Remove ? "fitted" : "missing")} after {FinishTimeout} s");
             }
             catch (Exception e)
             {
                 _finishing.RemoveAt(i);
-                _coop.ProjectionFailed($"A case panel change on PC {pc} was accepted, but this game could not finish it", e);
+                _coop.ProjectionFailed($"A case panel change on PC {f.Pc} was accepted, but this game could not finish it", e);
             }
         }
     }
 
     /// <summary>The game's removal teardown without its edit state: unregister, destroy, rebuild the case, and keep the
-    /// panel in this player's Removed Components (as the native removal does).</summary>
-    private static void RemoveDirect(Slot slot)
+    /// panel in this player's Removed Components (as the native removal does), unless <paramref name="inventory"/> is false
+    /// (a load that showed a panel the shared world has off: the panel was never this player's to keep).</summary>
+    internal static void RemoveDirect(Slot slot, bool inventory = true)
     {
         var comp = slot.GetComponent();
         if (comp == null) return;
@@ -214,20 +363,20 @@ internal sealed class NativeCaseAccess : IPanelNative
         slot.SetComponentNull();
         Object.DestroyImmediate(comp.gameObject);
         mesh.UpdateGameStatus(); mesh.PostChangePart();
-        if (part != null) CareerStatus.Get()?.AddItemToInventory(part, false, false, true, false);
+        if (inventory && part != null) CareerStatus.Get()?.AddItemToInventory(part, false, false, true, false);
         if (slot.GetComponent() != null) throw new InvalidDataException("the panel is still fitted");
     }
 
     /// <summary>The game's load-time panel instantiation (<c>Slot.DoAutoInstantiation</c>): a loaded part instance in
-    /// the slot, taken from this player's Removed Components when it is there.</summary>
-    private static void RefitDirect(Slot slot, string sku)
+    /// the slot, taken from this player's Removed Components when it is there (and <paramref name="inventory"/> is true).</summary>
+    internal static void RefitDirect(Slot slot, string sku, bool inventory = true)
     {
         var existing = slot.GetComponent();
         if (existing != null && !NativeAssembly.IsPreview(existing)) return;
         if (existing != null) throw new InvalidDataException("this game is previewing a part in that slot");
         PartInstance part = null;
-        var inventory = CareerStatus.Get()?.GetInventory();
-        if (inventory != null) foreach (var p in inventory) if (p != null && p.GetPartId() == sku) { part = p; break; }
+        var owned = inventory ? CareerStatus.Get()?.GetInventory() : null;
+        if (owned != null) foreach (var p in owned) if (p != null && p.GetPartId() == sku) { part = p; break; }
         if (part != null) CareerStatus.Get().RemoveItemFromInventory(part);
         part ??= PartInstance.NewPartInstance(sku, 0, null) ?? throw new InvalidDataException($"panel {sku} is unknown");
         if (part.GetPart() == null || !PartsDatabase.s_instance.HasLoadedPart(part.GetPart(), out var loaded)) throw new InvalidDataException($"panel {sku} is not loaded");
@@ -246,7 +395,7 @@ internal sealed class NativeCaseAccess : IPanelNative
     {
         var previous = s_refittingCase;
         var slot = install.m_slot;
-        if (slot != null && Current?._finishing.Any(change => !change.Remove && change.Slot?.Pointer == slot.Pointer) == true)
+        if (slot != null && Current?._finishing.Any(change => !change.Remove && change.Slot != null && change.Slot.Pointer == slot.Pointer) == true)
             s_refittingCase = install.m_case?.Pointer ?? IntPtr.Zero;
         return previous;
     }

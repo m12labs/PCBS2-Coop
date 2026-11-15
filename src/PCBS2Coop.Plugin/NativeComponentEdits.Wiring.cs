@@ -40,6 +40,29 @@ internal sealed partial class NativeComponentEdits
         private static string FilledId(string id) => id?.EndsWith(FilledSplitterSuffix, StringComparison.Ordinal) == true ? id : null;
     }
 
+    /// <summary>0.68 (game run, November 10): <c>Case.RefreshPowerAdapterSlots</c> takes the case's cached slots of
+    /// that type, which can still hold a destroyed slot (for example a GPU preview's). The save writes
+    /// <c>powerAdapterIDs</c> by index into this list and a load fills it by index, so a gap moved the adapter of the
+    /// first Career job's GPU to a different index on each game. Keep only live slots.</summary>
+    [HarmonyPatch(typeof(Case), nameof(Case.RefreshPowerAdapterSlots))]
+    internal static class AdapterSlotsGuard
+    {
+        private static void Postfix(Case __instance)
+        {
+            try
+            {
+                var slots = __instance?.powerAdapterSlots;
+                if (slots == null || CoopSaves.Current == CoopSaves.Mode.None) return;
+                var live = new List<Slot>();
+                foreach (var slot in slots) if (slot != null) live.Add(slot);
+                if (live.Count == slots.Length) return;
+                __instance.powerAdapterSlots = new Il2CppReferenceArray<Slot>(live.ToArray());
+                Plugin.Logger.LogInfo($"[cables] case '{__instance.name}': dropped {slots.Length - live.Count} destroyed power adapter slot(s); {live.Count} remain.");
+            }
+            catch (Exception e) { Plugin.Logger.LogWarning("[cables] power adapter slots could not be checked: " + e.Message); }
+        }
+    }
+
     [HarmonyPatch]
     internal static class SplitterCableRoute
     {

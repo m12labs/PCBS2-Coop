@@ -9,6 +9,8 @@ internal sealed class FakePanelNative : IPanelNative
     public string? CheckHost(in CommandContext ctx, PcFact pc, AssemblyResource slot, PanelCommand c) => Host(c);
     public void Changed(in MutationContext ctx, PcFact pc, AssemblyResource slot, PanelCommand c) =>
         Calls.Add($"{slot.Id.Value}={(c.Remove ? "off" : c.Part)} local={ctx.FromLocalPlayer}");
+    public void Finished(in MutationContext ctx, PcFact pc, AssemblyResource slot, OperationId token, bool done) =>
+        Calls.Add($"finish {slot.Id.Value} {(done ? "done" : "back")} local={ctx.FromLocalPlayer}");
 }
 
 internal static class PanelTests
@@ -40,6 +42,7 @@ internal static class PanelTests
         }
     };
 
+    private static byte[] ActivityBytes(ActivityWorld a) { var w = new NetDataWriter(); a.Write(w); return w.CopyData(); }
     private static bool Throws(Action a) { try { a(); return false; } catch (InvalidDataException) { return true; } }
 
     public static void Run(Checker t)
@@ -63,7 +66,8 @@ internal static class PanelTests
         AssemblyResource R(ObjectWorld o, ulong id) => P(o).Resources.Single(r => r.Id == Id(id));
         byte[] Remove(ActorActivity a, ulong slot, ObjectWorld o) => CasePanelWorld.Remove(a.Epoch, Id(2), Id(slot), R(o, slot).Version);
         byte[] Refit(ActorActivity a, ulong slot, ObjectWorld o, string sku) => CasePanelWorld.Refit(a.Epoch, Id(2), Id(slot), R(o, slot).Version, sku);
-        bool Same() => ho.ToBytes().SequenceEqual(go.ToBytes()) && l.InStep && l.Divergences.Count == 0;
+        byte[] Finish(ActorActivity a, OperationId token, ulong slot, bool done = true) => CasePanelWorld.Finish(a.Epoch, token, Id(2), Id(slot), done);
+        bool Same() => ho.ToBytes().SequenceEqual(go.ToBytes()) && ActivityBytes(ha).SequenceEqual(ActivityBytes(ga)) && l.InStep && l.Divergences.Count == 0;
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Host, host), CommandTypes.ActorActivity);
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Guest, guest), CommandTypes.ActorActivity);
         l.Join();
@@ -82,11 +86,30 @@ internal static class PanelTests
         t.Check(l.Host.Revision == rev && l.GuestRejected.TakeLast(3).All(x => x.Text.Contains("isn't a case panel")),
             "a component slot, a PCI cover and a screw are not case panels");
 
-        Send(l.Guest, Remove(G(), 10, go));
+        var removal = Send(l.Guest, Remove(G(), 10, go));
         t.Check(R(go, 10).IntegralPart == "" && R(go, 10).IntegralHome == "case/LeftLid" && R(go, 10).Version == 1 &&
             AssemblyResources.Dormant(P(go)).SetEquals(new[] { Id(11), Id(12), Id(13), Id(14) }) && R(go, 13).Version == 1 &&
             gn.Calls.Last() == "10=off local=True" && hn.Calls.Last() == "10=off local=False" && Same(),
             "a guest removes a side panel: both peers keep its screws, hinge and fan mount dormant with their IDs, and both games show it once");
+
+        t.Section("Case panels: the other game waits for the finish (0.68)");
+        t.Check(G().Pending is { Kind: ActivityOperation.Edit } held && held.Token == removal && held.Pc == Id(2) && ha.Get(ActorSlot.Guest)!.Pending?.Token == removal,
+            "the accepted removal holds the whole PC for the guest on both peers while its screws come out");
+        rev = l.Host.Revision;
+        Send(l.Host, Remove(H(), 17, ho));
+        Send(l.Guest, Remove(G(), 17, go));
+        t.Check(l.Host.Revision == rev && l.HostRejected.Last().Text.Contains("changing a part of that PC") && l.GuestRejected.Last().Text.Contains("still finishing"),
+            "meanwhile the host can't change that PC and the guest can't start another panel");
+        Send(l.Host, Finish(H(), removal, 10));
+        Send(l.Guest, Finish(G(), new OperationId(ActorSlot.Guest, removal.Sequence + 99), 10));
+        t.Check(l.Host.Revision == rev && l.HostRejected.Last().Text.Contains("isn't yours") && l.GuestRejected.Last().Text.Contains("no longer holds"),
+            "only the requester finishes it, and only with the request that holds the PC");
+        Send(l.Guest, Finish(G(), removal, 10));
+        t.Check(l.Host.Revision == rev + 1 && G().Pending == null && R(go, 10).IntegralPart == "" && gn.Calls.Last() == "finish 10 done local=True" &&
+            hn.Calls.Last() == "finish 10 done local=False" && Same(),
+            "the guest's game reports the panel off: the PC is free again and the host's game shows the removal now");
+        Send(l.Guest, Finish(G(), removal, 10));
+        t.Check(l.Host.Revision == rev + 1 && l.GuestRejected.Last().Text.Contains("no longer holds"), "a second finish of the same removal is refused");
         rev = l.Host.Revision;
         Send(l.Host, Remove(H(), 10, ho));
         Send(l.Host, MechanismWorld.Toggle(H().Epoch, Id(2), Id(13), R(ho, 13).Version, true), CommandTypes.Mechanism);
@@ -100,11 +123,31 @@ internal static class PanelTests
         t.Check(l.Host.Revision == rev && l.GuestRejected.TakeLast(2).Select(x => x.Text).ToArray() is var refits &&
             refits[0].Contains("doesn't belong") && refits[1].Contains("just changed"), "another panel's SKU, or refitting a panel that is on, is refused");
         l.Guest.Submit(CommandTypes.CasePanel, Refit(G(), 10, go, "case/LeftLid"), out _);
-        l.Host.Submit(CommandTypes.CasePanel, Refit(H(), 10, ho, "case/LeftLid"), out _);
+        l.Host.Submit(CommandTypes.CasePanel, Refit(H(), 10, ho, "case/LeftLid"), out var refit);
         l.Flush();
         t.Check(l.Host.Revision == rev + 1 && R(go, 10).IntegralPart == "case/LeftLid" && AssemblyResources.Dormant(P(go)).Count == 0 &&
             R(go, 11).Version == 2 && l.GuestRejected.Last().Text.Contains("just changed") && Same(),
             "two refits of one panel: the first lands, restoring the same carried IDs, and the other is refused");
+        Send(l.Host, Finish(H(), refit, 10));
+
+        // A refit that stops part-way (the player leaves the screws) is taken back: the panel is off again on both.
+        var screwed = R(go, 11).Version;
+        var away = Send(l.Guest, Remove(G(), 10, go));
+        Send(l.Guest, Finish(G(), away, 10));
+        var undo = Send(l.Guest, Refit(G(), 10, go, "case/LeftLid"));
+        rev = l.Host.Revision;
+        Send(l.Guest, Finish(G(), undo, 10, done: false));
+        t.Check(l.Host.Revision == rev + 1 && R(go, 10).IntegralPart == "" && AssemblyResources.Dormant(P(go)).Count == 4 && R(go, 11).Version == screwed + 3 &&
+            G().Pending == null && hn.Calls.Last() == "finish 10 back local=False" && Same(),
+            "a refit taken back leaves the panel off on both peers, frees the PC and advances what it carries");
+        var keep = Send(l.Guest, Refit(G(), 10, go, "case/LeftLid"));
+        Send(l.Guest, Finish(G(), keep, 10));
+        var latch = R(go, 13);
+        var stop = Send(l.Guest, Remove(G(), 10, go));
+        Send(l.Guest, Finish(G(), stop, 10, done: false));
+        t.Check(R(go, 10).IntegralPart == "case/LeftLid" && AssemblyResources.Dormant(P(go)).Count == 0 && R(go, 13) is var after &&
+            after.Open == latch.Open && after.Rotation == latch.Rotation && after.Version == latch.Version + 2 && Same(),
+            "a removal taken back leaves the panel on with what it carries as it was");
 
         // Owner decision (4e): while the other player's edit holds part of a PC, the other player waits on that whole PC.
         var claim = Send(l.Guest, ActivityWorld.Reserve(G(), Id(2), ActivityOperation.Edit, Id(15)), CommandTypes.ActorActivity);
@@ -114,8 +157,9 @@ internal static class PanelTests
         Send(l.Host, Remove(H(), 17, ho));
         t.Check(l.Host.Revision == rev && l.HostRejected.Last().Text.Contains("changing a part of that PC"), "nor can a different panel on the same PC while that edit runs");
         Send(l.Guest, ActivityWorld.Release(G(), claim), CommandTypes.ActorActivity);
-        Send(l.Host, Remove(H(), 17, ho));
+        var front = Send(l.Host, Remove(H(), 17, ho));
         t.Check(R(go, 17).IntegralPart == "" && Same(), "once the edit is released, the other panel can be removed");
+        Send(l.Host, Finish(H(), front, 17));
 
         var mounted = Fixture(host); var withFan = mounted with { Resources = mounted.Resources.Select(r => r.Id == Id(14) ? r with { Occupant = Id(5) } :
             r.Id == Id(18) ? r with { Occupant = default } : r).ToArray() };
@@ -140,14 +184,17 @@ internal static class PanelTests
             "unknown actions and trailing bytes are malformed");
 
         var calls = gn.Calls.Count;
-        l.Guest.Submit(CommandTypes.CasePanel, Remove(G(), 10, go), out _);
+        l.Guest.Submit(CommandTypes.CasePanel, Remove(G(), 10, go), out var dup);
         var raw = l.ToHost[0]; l.Flush(); FakeLink.Deliver(l.Host, raw); l.Flush();
         t.Check(gn.Calls.Count == calls + 1 && R(go, 10).IntegralPart == "" && Same(), "a duplicated removal applies and is shown exactly once");
+        Send(l.Guest, Finish(G(), dup, 10));
         l.MarkSnapshot();
-        Send(l.Host, Refit(H(), 10, ho, "case/LeftLid"));
+        var late = Send(l.Host, Refit(H(), 10, ho, "case/LeftLid"));
+        Send(l.Host, Finish(H(), late, 10));
         calls = gn.Calls.Count;
-        t.Check(l.Guest.Adopt(out _) && gn.Calls.Count == calls + 1 && R(go, 10).IntegralPart == "case/LeftLid" && Same(),
-            "a refit after the snapshot mark is held and shown once after admission");
+        t.Check(l.Guest.Adopt(out _) && gn.Calls.Count == calls + 2 && gn.Calls.Last() == "finish 10 done local=False" && R(go, 10).IntegralPart == "case/LeftLid" &&
+            H().Pending == null && Same(),
+            "a refit and its finish after the snapshot mark are held and shown once after admission");
 
         t.Section("Case panels: state, repair and validation");
         Send(l.Guest, Remove(G(), 10, go));

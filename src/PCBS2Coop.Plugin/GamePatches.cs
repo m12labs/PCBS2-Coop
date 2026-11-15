@@ -25,6 +25,8 @@ internal static class GamePatches
             JobHooks.Apply(new Harmony(Plugin.Guid + ".jobs"));
             InboxHooks.Apply(new Harmony(Plugin.Guid + ".inbox"));
             new Harmony(Plugin.Guid + ".achievements").PatchAll(typeof(NativeAchievements.Guard));
+            new Harmony(Plugin.Guid + ".tutorial").PatchAll(typeof(NativeOnboarding.StepGuard));
+            new Harmony(Plugin.Guid + ".tutorial-card").PatchAll(typeof(NativeOnboarding.StepEndCard));
             game.PatchAll(typeof(CoopController.ExitSave));
             var menus = new Harmony(Plugin.Guid + ".save-menus");
             menus.PatchAll(typeof(CoopController.PauseLoad));
@@ -85,6 +87,7 @@ internal static class GamePatches
             cables.PatchAll(typeof(NativeComponentEdits.UnplugIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.SavedSplitterCable));
             cables.PatchAll(typeof(NativeComponentEdits.SplitterCableRoute));
+            cables.PatchAll(typeof(NativeComponentEdits.AdapterSlotsGuard));
             cables.PatchAll(typeof(NativeComponentEdits.PowerButtonIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.BenchPowerOnIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.BenchPowerToggleIntercept));
@@ -144,7 +147,7 @@ internal static class GamePatches
                 if (FoldedWith(method) is { } other)
                     Plugin.Logger.LogError($"[hooks] {method.DeclaringType?.Name}.{method.Name} and {other.DeclaringType?.Name}.{other.Name} are one native function hooked twice; running it may crash the game.");
             Ready = true;
-            Plugin.Logger.LogInfo("Game hooks installed (save, save menus, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, water cooling, BIOS, desktop input, simulation, paste, tool tables, lighting and the Cable app, decorating, room lights, seasonal decorations and wallpapers).");
+            Plugin.Logger.LogInfo("Game hooks installed (save, save menus, Career, shop, packages, jobs, inbox, achievements, tutorial, objects, activity, PC lifecycle, transfers, peripherals, latches, case panels, edit replay, component edits, cables and power, power adapters, water cooling, BIOS, desktop input, simulation, paste, tool tables, lighting and the Cable app, decorating, room lights, seasonal decorations and wallpapers).");
         }
         catch (Exception e) { Plugin.Logger.LogError("Game hooks failed: " + e); }
     }
@@ -231,6 +234,16 @@ internal static class GamePatches
     [HarmonyPatch(typeof(SaveLoadSystem), nameof(SaveLoadSystem.SaveComputer))]
     private static class ComputerSaveHook
     {
+        /// <summary>0.69 (game run, November 10): the save names power adapters by <c>Case.powerAdapterSlots</c>, which the
+        /// game rebuilds when its own player installs a part, not when the other player's install is replayed here. The
+        /// replaying game then saved the GPU without its adapter. In co-op, rebuild the list before every PC save.</summary>
+        private static void Prefix(Case caseToSave)
+        {
+            if (caseToSave == null || CoopSaves.Current == CoopSaves.Mode.None) return;
+            try { caseToSave.RefreshPowerAdapterSlots(); }
+            catch (Exception e) { Plugin.Logger.LogWarning($"[cables] case '{caseToSave.name}': power adapter slots could not be refreshed before its save: {e.Message}"); }
+        }
+
         private static void Postfix(Case caseToSave, ComputerSave __result) => CoopController.Instance?.Objects.SavedComputer(caseToSave, __result);
     }
 

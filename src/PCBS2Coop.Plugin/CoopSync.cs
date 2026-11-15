@@ -124,6 +124,11 @@ internal sealed partial class CoopController
                 if (Session.Role == Role.Host) StartSync("Host");
                 else RequestSync();
                 break;
+            case "/outlines":
+                // 0.71 diagnostics: name what this game draws in outlines and the tutorial's yellow right now.
+                if (Onboarding == null) AddChat("Not in a co-op workshop.");
+                else { Onboarding.ReportNow(); AddChat("Listed this game's outlines and yellow markers in the log."); }
+                break;
             case "/yes":
                 if (Session.Role != Role.Host) AddChat("Only the host answers sync requests.");
                 else if (!SyncRequestWaiting) AddChat("No sync request is waiting.");

@@ -14,6 +14,9 @@ internal sealed class NativePcRepair : IPcRepairNative
 {
     internal const string Message = "PC reloaded to avoid a desync. Please report if this keeps happening.";
     private const float RequestTimeout = 45f, ReloadTimeout = 60f, Quiet = 1.5f, PowerDelay = 3f;
+    /// <summary>A PC that fails again this soon after its reload from the host's record isn't reloaded again: the
+    /// host's record itself doesn't match here (0.68, game run November 10: a reload every second until the game closed).</summary>
+    private const float Repeat = 30f;
 
     private sealed class Need { public string Why = ""; public float Since, QuietSince, RequestedAt; public bool Requested; }
     private sealed class Reload
@@ -30,6 +33,7 @@ internal sealed class NativePcRepair : IPcRepairNative
     private readonly Dictionary<NetObjectId, Need> _needs = new();
     private readonly List<NetObjectId> _send = new();
     private readonly List<Reload> _reloads = new();
+    private readonly Dictionary<NetObjectId, float> _reloaded = new();
     private float _sendQuietSince;
     public PcRepairWorld Handler { get; }
 
@@ -37,7 +41,7 @@ internal sealed class NativePcRepair : IPcRepairNative
     {
         _coop = coop; _world = world;
         Handler = new PcRepairWorld(coop.Objects.Model, coop.Activity, this);
-        world.GenerationStarted += (uint _, string _) => { _needs.Clear(); _send.Clear(); _reloads.Clear(); Handler.Reset(); };
+        world.GenerationStarted += (uint _, string _) => { _needs.Clear(); _send.Clear(); _reloads.Clear(); _reloaded.Clear(); Handler.Reset(); };
         world.Rejected += (OperationId op, RejectReason reason, string text) =>
         {
             if (op.Actor == world.Local && text.Contains(Handler.Name)) Plugin.Logger.LogWarning($"[repair] {op} refused: {text}");
@@ -53,6 +57,12 @@ internal sealed class NativePcRepair : IPcRepairNative
         {
             // The host is the reference: the world keeps what its game shows; the guest's copy gets reloaded to match.
             Plugin.Logger.LogError($"[repair] {what}: {e}. The host keeps what its game shows; the guest's PC will be reloaded to match.");
+            return;
+        }
+        if (_reloaded.TryGetValue(pc, out var at) && Time.realtimeSinceStartup - at < Repeat)
+        {
+            _reloaded.Remove(pc);
+            _coop.ProjectionFailed($"PC {pc} still doesn't match the host's after reloading it from the host's record ({what})", e);
             return;
         }
         Plugin.Logger.LogError($"[repair] {what}: {e}. Reloading PC {pc} from the host's record.");
@@ -212,6 +222,7 @@ internal sealed class NativePcRepair : IPcRepairNative
     {
         _reloads.Remove(r);
         if (error != null) { _coop.ProjectionFailed($"PC {r.Pc} could not be reloaded from the host's record", new InvalidDataException(error)); return; }
+        _reloaded[r.Pc] = Time.realtimeSinceStartup;
         _coop.Objects.Assembly.ClearFault(r.Pc);
         _coop.Objects.Assembly.RequestRebind(r.Pc);
         Plugin.Logger.LogWarning($"[repair] PC {r.Pc}: reloaded from the host's record.");

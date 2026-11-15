@@ -39,6 +39,102 @@ Classify each tested item as passed, partial, failed, out of the agreed first sc
 2. Order the renovation, end the day, and close the host's game as soon as `[career] the shop renovation saved` appears. Continue: the log shows `is the shop renovation's save: its shared IDs are bound afresh`, the renovated shop loads, and a save follows. Client then joins.
 3. Disconnect Client (close its game) right after it presses Buy, Collect or Pay: after Rejoin there is one order, one payment and one result.
 
+## 0.73 fixes from the sixth in-game sweep run (18b)
+
+**Status:** coded November 12, 2026 after the sixth Career run (both games on 0.72; the Client did the job up to the GPU, the Host fitted the GPU). Release built with zero warnings or errors; all 937 automated checks passed. Not yet run in game.
+
+0.72 confirmed: the other game showed the side panel, PCI lock and PCI cover removals and the PCI lock refit with the game's own animation (`[replay] panel removal/refit at ...`); no out-of-sync.
+
+| Finding | Cause | 0.73 |
+| --- | --- | --- |
+| After the Host fitted the GPU, the tutorial stayed on "install the GPU" on both games (owner: "didn't finish GPU install"). | At INSTALL_PCI the game puts the tutorial back to INSTALL_GPU when the first GPU slot is empty (`NewStartOnboarding.InstallPCILock`, 0x832300, sets progress 12). The Host's tutorial moved on as the GPU went in; the Client followed step 13 before it showed the install (in Career it waits for the commit), its game went back to 12, and the Host followed it back. | A game holds the other player's tutorial step while their part or panel change isn't shown here yet (`[tutorial] ... held until ...`), then follows it. If the tutorial still goes back within 3 s of following, it follows once more instead of moving the other player back. |
+| Yellow lines stayed (owner). `/outlines` on the Host listed no yellow outline: only green and red part outlines on the PC on the bench. | The game's outline colours are -1 off, 0 orange, 1 green, 2 red, 3 yellow (tip) (`CustomOutline..cctor`); the leftover report had printed them as numbers. The yellow lines are not a `CustomOutline`. | `/outlines` names the colours, counts only shown outlines, finds yellow-looking materials by colour as well as by name, and lists what lies under the middle of the screen (renderer, material, shader). |
+
+## 0.72 fixes from the fifth in-game sweep run (18b)
+
+**Status:** coded November 12, 2026 after the fifth Career run (both games on 0.71; the Client did the job). Release built with zero warnings or errors; all 937 automated checks passed. Not yet run in game.
+
+0.71 confirmed: no Career error flood; the step-end handlers ran (`ended step 5/6 the game's own way`); one second after each followed step, each game drew only that step's own targets (the PC, the desk).
+
+| Finding | Cause | 0.72 |
+| --- | --- | --- |
+| Refitting the PCI lock put both games out of sync. The GPU's six `Heatsink/Screws/screwStandoff` screws left the GPU: the Host (direct refit) had them inside the lock, the Client (hand refit) had none. | The game makes a PCI card's bracket screws (`Slot.InstantiatePCIScrews`, `CodeReferenced/GenericPCIScrews`) and deletes those a fitted part covers (`Slot.RemoveContainedScrews`) only in `Slot.InstantiatePart` (a player's install), never in `InstantiatePreloadedPart` (a load or a direct refit). The screws therefore depend on how the part arrived. | Owner decision (November 12, 2026), both: bracket screws (`screwStandoff ...`) and a fitted PCI lock's screws are left out of the shared PC record (manifests written earlier still load; their entries are ignored), and the other game shows a finished panel change with the game's own install or removal (`[replay] panel refit at ...`), falling back to the direct change. |
+| Yellow boxes still showed (owner). | Not found: the logs list no leftover outline one second after the steps. | `/outlines` in chat logs everything this game draws in outlines and the tutorial's yellow at that moment. |
+
+Owner goal (November 12, 2026): a smooth co-op game without gaps; eventually both players work on the same PC at once (today one install or removal holds the whole PC).
+
+## 0.71 fixes from the fourth in-game sweep run (18b)
+
+**Status:** coded November 12, 2026 after the fourth Career run (both games on 0.70; the Client did the job). Release built with zero warnings or errors; all 937 automated checks passed. Not yet run in game.
+
+| Finding | Cause | 0.71 |
+| --- | --- | --- |
+| The Client's log filled with `career could not follow the host's ... Case_EVGA_6/Left Lid ... isn't in this game's inventory` (about 330 errors). | A removed case panel waits in the inventory as `Case_SKU/Panel`; both games add their own, so the shared item lists disagreed. | Removed panels are not shared Career items; panel presence is the panel command's. |
+| The delivery area's yellow box and other tutorial highlights stayed on the other game. | 0.69 and 0.70 cleaned up by guessing which visual was left (outline colours, stale outline entries); the leftovers are hidden by the step's own event handler (`NewStartOnboarding.OnDeliveryCollected`: a marker's `SetActive(false)` and a highlight's `enabled = false`). | Owner suggestion: when following the other player past the delivery or PC pickup step, the game's own handler runs here (its tutorial card stays with the player who did it). One second after each followed step the log names anything still drawn in the tutorial's yellow. |
+| Refitting the PCI lock put both games out of sync (`manifest changed`, GPU `Heatsink/Screws/screwStandoff` resources gone, PCI lock screws added). | Open: fitting the lock appears to move the GPU's bracket screws into the lock on the Host, while the Client's screws differ again. | Not fixed. The mismatch now lists up to 24 resources each way. |
+
+The 0.70 adapter fix worked: the Host's replay fitted the GPU's power adapter and both games agreed after the install.
+
+## 0.70 fixes from the third in-game sweep run (18b)
+
+**Status:** coded November 12, 2026 after the third Career run (both games ran 0.69; the Host did the first tutorial job). Release built with zero warnings or errors; all 937 automated checks passed. Not yet run in game.
+
+| Finding | Cause | 0.70 |
+| --- | --- | --- |
+| The Client went out of sync after the Host's GPU install (`Carried PC topology mismatch ... missing [powerAdapterIDs[0]]`). | The game adds a GPU's power adapter in `Slot.InstantiatePreloadedPart` by starting a second install state on the installing player's game (not while a PC loads). A replay never enters that state, so the replaying game had no adapter. The 0.69 save refresh could not help. | After a replayed install settles, adapter slots with an automatic part are fitted the way a PC load fits them, with the case's adapter override (`[replay] ... fitted the power adapter`). |
+| Flashing yellow outlines stayed in the air where the delivery box and the PC had been. | The game draws outlines from a static list (`CustomOutline.OutlineMeshDict`) that nothing clears when the object goes away; the co-op sync removed those objects. | Four times a second, outlines whose object is destroyed or hidden are dropped. |
+
+The 0.69 note fix worked (the Client placed Uncle Tim's note and put it away when the Host read it), and the PCI covers waited for the Host's commit.
+
+## 0.69 fixes from the second in-game sweep run (18b)
+
+**Status:** coded November 10, 2026 after the second Career run on two games (Host Career, Client joined over LAN; the Client did the first tutorial job up to the GPU install). Release built with zero warnings or errors; all 937 automated checks passed. Not yet run in game.
+
+What the run showed (logs of both games and the owner's report):
+
+| Finding | Cause | 0.69 |
+| --- | --- | --- |
+| The Client went out of sync after the GPU install (`Carried PC topology mismatch ... extra [powerAdapterIDs[0]]`). | The game rebuilds `Case.powerAdapterSlots` when its own player installs a part (`Case.OnChangePart`), not when the other player's install is replayed. The Host replayed the Client's install and saved the PC without the GPU's power adapter, and the Host's record is the shared one. | In co-op every PC save (`SaveLoadSystem.SaveComputer`) first rebuilds the case's power adapter slots. |
+| After the reload from the Host's record, the removed PCI lock came back fitted on the Client (`native assembly manifest changed ... native only [... PCI_Plate[7]/@panel/Screw ...]`). | The game's save keeps case panels as flags by position in the case's cached slot lists (`miscCaseSlots`, `optionalCaseSlots`); the PCI lock's flag didn't survive the round trip. | Panel presence is a shared fact: after a PC is loaded on either game, panels that differ from the shared world are removed or fitted to match (logged as `[panels] PC ... loaded with case panels that differ from the shared world`). |
+| The PCI covers came off on the Host while the Client was still turning their screws (owner report). | Part removals and installs are replayed live on the other game; the replay's own screws are automatic. | Owner request (November 10, 2026), as for panels in 0.68: in Career the other game shows a part removal or install once the player doing it has committed it. Free Build keeps its live replay. |
+| Yellow flashing outlines stayed on the other game after the PC and GPU pickups. | The outline is the game's `CustomOutline` in its action-tip colour, which outlives the action tip that 0.68 cleared. | Following a tutorial step also turns off every outline in the action-tip colour. |
+| Uncle Tim's note was missing on the Client of a new Career until `/sync`, and stayed (with its yellow frame) on the Client after the Host read it. | The note belongs to the first tutorial's step code: it is placed on reload and put away once read, on the game whose player did the step. | Following the read-the-note step places the note if this game has none; following a later step puts it away. |
+
+The 0.68 panel wait worked: the Host showed the side panel and the PCI lock coming off only once the Client had finished them.
+
+### Runtime checks for 0.69
+
+1. Host Career, Client joins at once. Both games show Uncle Tim's note. One player reads it: it goes away on both games.
+2. One player picks up the tutorial PC and collects the GPU: no flashing outline stays on the other game.
+3. One player removes the PCI covers, turning the screws slowly: the other game removes each cover only after the last screw is out.
+4. One player installs the tutorial GPU: the other game shows it once the install is done, with no out-of-sync or `PC reloaded` notice. The other player's game installs it the same way when the roles are swapped.
+5. Refit the PCI lock and the side panel and screw them in: no out-of-sync notice. If `native assembly manifest changed` appears, its `shared only` and `native only` lists go into the next fix.
+
+## 0.68 fixes from the first in-game sweep run (18b)
+
+**Status:** coded November 10, 2026 after the first Career run on two games (Host Career, Client joined over LAN, first tutorial job up to placing the PC under the desk). Release built with zero warnings or errors; all 937 automated checks passed. Not yet run in game.
+
+What the run showed (logs of both games):
+
+| Finding | Cause | 0.68 |
+| --- | --- | --- |
+| The Client reloaded the tutorial PC about once a second after the GPU install, until the game was closed (`Carried PC path mismatch`). | The GPU brought a power adapter (`PSU_ADAPTER_12_3X8PIN_45`). The game stores it in `ComputerSave.powerAdapterIDs` by its index in `Case.powerAdapterSlots`. `RefreshPowerAdapterSlots` takes the case's cached slots of that type, which can hold a destroyed slot, so the two games named the adapter by different indexes. | Destroyed slots are dropped from that list after the game builds it (logged as `[cables] ... dropped N destroyed power adapter slot(s)`). Adapters are named by their order among filled entries. A PC that still fails within 30 s of its reload from the host's record is reported out of sync once instead of reloading again. Both mismatch errors now name the paths or resources that differ. |
+| The Host went out of sync after refitting the PCI lock (`native assembly manifest changed (124 native resources, 128 shared)`). | Not yet known: four shared resources were missing on the host's game after the Career refit with hand-turned screws. | The error now lists the missing and extra resources. Needs the next run. |
+| The other game took the side panel off while the player removing it was still turning its screws (owner report). | A panel change was one host-ordered step: the other game showed it as soon as the host accepted the request. | Owner decision (November 10, 2026): the other game waits. The request holds the whole PC for the requester; when the requester's game shows the panel fully off or fully on and its gesture has ended, it sends a finish (`CasePanelWorld.Finish`). If the gesture stops with the panel as it was, the finish takes the change back. If the requester leaves first, the other game shows the shared world's panel. Saves and snapshots wait while a panel change runs. |
+| Yellow outlines stayed on whichever game followed a tutorial step the other player did (the PC box's outline after it was picked up, the workbench). | The tutorial sync set the step directly; the step's own end, which turns its outlines off, ran on the other game only. | Following a step clears the tutorial's action tips and their outlines, the workbench highlights, case outlines and the delivery box highlight. A remote pickup turns the case's outline off before the case leaves this game. |
+| The Client's tutorial failed entering work mode (`NewStartOnboarding.RemoveSidePanel`, null reference). | The step looked up a side panel the Host had already removed. | In co-op the tutorial's PC steps (`RemoveSidePanel`, `RemovePCILock`, `RemovePCICovers`, `InstallGPU`, `InstallPCILock`, `InstallSidePanel`, `CableGPU`) skip with one warning when they fail. |
+| The startup log listed no Career hooks. | Wording only. | The hooks line names them. |
+
+The "All done" message after the first job was correct (owner, November 10).
+
+### Runtime checks for 0.68
+
+1. Host Career, Client joins. One player removes the side panel and turns its screws slowly: the other game keeps the panel until the last screw is out and the panel is off, then removes it. The same for the refit.
+2. Start removing a panel, then leave the screw step with the panel still on: both games keep the panel on and either player can work on the PC again.
+3. Pick up the tutorial PC box on one game: the other game shows no outline where it stood, and no workbench highlight stays after the drop.
+4. Install the tutorial GPU: no `Carried PC path mismatch` and no repeated `PC reloaded` notices. Look for `[cables] ... dropped ... power adapter slot(s)` in either log.
+5. Refit the PCI lock and screw it in: no out-of-sync notice. If `native assembly manifest changed` appears, its `shared only` and `native only` lists go into the next fix.
+
 ## Career factor outcomes (18a)
 
 Status words: **coded** (shared in the named version, not yet run in game), **host** (only the host's game runs it; the guest takes the result through updates or the day reload), **local** (stays on each game by decision), **outside scope** (not part of the first supported Career) and **unverified** (needs runtime evidence). The C-numbers are the [Career checklist](../career-testing.md) cases for the in-game sweep.

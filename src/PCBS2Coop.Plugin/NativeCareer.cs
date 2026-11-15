@@ -98,12 +98,18 @@ internal sealed class NativeCareer : ICareerNative
     }
 
     /// <summary>Every owned item on this game, list by list in the game's order.</summary>
+    /// <summary>0.71 (game run, November 12): a removed case panel waits in the inventory as "Case_SKU/Panel" (game run
+    /// p8i). Each game adds its own when it removes or shows the removal, so as a shared item it was on the host's list
+    /// but not the guest's, and the guest's career failed every frame. Panel presence is shared by the panel command
+    /// (<see cref="CasePanelWorld"/>); the panel item stays with each game.</summary>
+    internal static bool RemovedPanel(PartInstance p) => p.GetPartId()?.IndexOf('/') >= 0;
+
     private static List<(PartInstance Part, ItemList List)> Natives()
     {
         var all = new List<(PartInstance, ItemList)>();
         var s = Status;
         if (s == null) return all;
-        if (s.GetInventory() is { } main) foreach (var p in main) if (p != null) all.Add((p, ItemList.Main));
+        if (s.GetInventory() is { } main) foreach (var p in main) if (p != null && !RemovedPanel(p)) all.Add((p, ItemList.Main));
         if (s.GetPeripheralInventory() is { } perifs) foreach (var p in perifs) if (p != null) all.Add((p, ItemList.Peripheral));
         // Phase 16c: the delivery box (CareerStatus.State.m_deliveries) is shared like the inventory.
         if (Data?.m_deliveries is { } box) foreach (var p in box) if (p != null) all.Add((p, ItemList.Delivery));

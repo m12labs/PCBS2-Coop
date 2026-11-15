@@ -71,7 +71,7 @@ internal sealed class NativeEditReplay
         public System.Action<string> Finished;
     }
 
-    private enum Phase { Loading, Unplugging, Animating }
+    private enum Phase { Loading, Unplugging, Animating, Adapters }
     private sealed class Run
     {
         public Plan Plan;
@@ -82,6 +82,8 @@ internal sealed class NativeEditReplay
         public bool Exited, Moved;
         public PartDesc[] InstallAssets;
         public int AssetsPending;
+        /// <summary>Power adapters the game adds after this install, fitted once their prefabs are loaded.</summary>
+        public List<(Slot Slot, PartInstance Part)> Adapters;
         /// <summary>The orientation angle held while waiting for the editor's choice.</summary>
         public float? WaitDegrees;
         public WorkingOnComputerState StandIn;
@@ -237,6 +239,9 @@ internal sealed class NativeEditReplay
                     case Phase.Animating:
                         Step(run);
                         break;
+                    case Phase.Adapters:
+                        if (run.AssetsPending == 0) FitAdapters(run);
+                        break;
                 }
             }
             catch (Exception e) { Fail(run, e.ToString()); }
@@ -336,6 +341,65 @@ internal sealed class NativeEditReplay
         _inDestroy = true;
         try { Native(run, run.State.OnStateDestroy); }
         finally { _inDestroy = false; }
+        if (StartAdapters(run)) return;
+        Finish(run);
+    }
+
+    /// <summary>0.70 (game run, November 12): a part whose prefab has a power adapter slot with an automatic part (the
+    /// first Career job's GPU) gets its adapter from <c>Slot.InstantiatePreloadedPart</c>, which starts a second install
+    /// state for it on the installing player's game only (not while a PC loads). A replay never enters that state, so
+    /// the replaying game showed the GPU without its adapter and went out of sync. Fit it the way a PC load does,
+    /// with the case's adapter override (<c>Case.m_splitterOverrides</c>). Returns whether adapters are being fitted.</summary>
+    private bool StartAdapters(Run run)
+    {
+        if (run.Plan.Part == null || run.Plan.Slot == null) return false;
+        var installed = run.Plan.Slot.GetComponent();
+        if (installed == null) return false;
+        var adapters = new List<(Slot, PartInstance)>();
+        foreach (var slot in installed.GetComponentsInChildren<Slot>(true))
+        {
+            if (slot == null || slot.m_slotType != Slot.SlotType.POWER_ADAPTER || string.IsNullOrEmpty(slot.m_autoInstantiatePartID)) continue;
+            if (slot.GetComponent() is { } held && !NativeAssembly.IsPreview(held)) continue;
+            var id = slot.m_autoInstantiatePartID;
+            if (run.Plan.Case.m_splitterOverrides is { } overrides)
+                foreach (var o in overrides)
+                    if (o != null && o.OriginalID == id && !string.IsNullOrEmpty(o.ReplacementID)) { id = o.ReplacementID; break; }
+            adapters.Add((slot, PartInstance.NewPartInstance(id, 0, null) ?? throw new InvalidDataException($"power adapter {id} is unknown")));
+        }
+        if (adapters.Count == 0) return false;
+        run.Adapters = adapters;
+        run.Phase = Phase.Adapters;
+        run.AssetsPending = 0;
+        var database = PartsDatabase.s_instance;
+        foreach (var desc in adapters.Select(a => a.Item2.GetPart() ?? throw new InvalidDataException($"power adapter {a.Item2.GetPartId()} is unknown")).DistinctBy(d => d.m_id))
+        {
+            if (database.HasLoadedPart(desc, out _)) continue;
+            run.AssetsPending++;
+            PartsDatabase.TestDelegate loaded = (System.Action<PartsDatabase.LoadedPart, Transform>)((asset, parent) => run.AssetsPending--);
+            database.InitPartLoading(desc, loaded, null);
+        }
+        if (run.AssetsPending == 0) FitAdapters(run);
+        return true;
+    }
+
+    private void FitAdapters(Run run)
+    {
+        var fitted = new List<string>();
+        foreach (var (slot, part) in run.Adapters)
+        {
+            if (slot == null) throw new InvalidDataException("the power adapter slot was destroyed");
+            if (!PartsDatabase.s_instance.HasLoadedPart(part.GetPart(), out var loaded)) throw new InvalidDataException($"power adapter {part.GetPartId()} did not load");
+            Native(run, () =>
+            {
+                var comp = slot.InstantiatePreloadedPart(part, loaded, true) ?? throw new InvalidDataException($"power adapter {part.GetPartId()} was not created");
+                slot.SetComponent(comp);
+                run.Plan.Case.OnChangePart(comp.gameObject, true, true);
+            });
+            fitted.Add(part.GetPartId());
+        }
+        Native(run, run.Plan.Case.RefreshPowerAdapterSlots);
+        Plugin.Logger.LogInfo($"[replay] {run.Plan.Label}: fitted the power adapter the game adds with this part ({string.Join(", ", fitted)}).");
+        run.Adapters = null;
         Finish(run);
     }
 
