@@ -1,5 +1,7 @@
 # Remote player model
 
+**November 16, 2026 — plain palette material.** The bundle exports `PlayerModel.FlatLit` with opaque state, no maps and black emission. Runtime copies those defaults and uses the game's own HDRP/Lit shader asset. The 0.80 two-game A/B showed that the bundled shader, despite reporting supported, drew room textures across the body; replacing only that shader made the same palette render as solid blue with orange accents. Cold 0.81 host and guest launches both showed clean solid palette colours, including each player's accent colour. Build the template through **PCBS2Coop → Build Player Bundle**.
+
 ## Current avatar
 
 The remote avatar is Mannequiny from GDQuest's v0.2.0 release. The adapted mesh stands 1.8 m tall and faces +Z in Unity. A 45-bone Humanoid rig drives one skinned mesh with three flat materials. The white accents receive the player's colour in game. The owner confirmed the replacement model in PCBS2. [Character and motion credits](../third-party/Mannequiny.NOTICE.md)

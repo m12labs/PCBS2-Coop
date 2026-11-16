@@ -37,8 +37,17 @@ public static class BuildPlayerBundle
 
         var palette = WritePalette(renderers[0].sharedMaterials, tintName);
 
-        // A plain copy (no prefab link) with the materials removed, so no shader is pulled into the bundle.
+        // A plain copy without prefab links; palette colours are applied to our own opaque Lit template at runtime.
         if (!AssetDatabase.IsValidFolder(TempDir)) AssetDatabase.CreateFolder("Assets/PlayerModel", "_Build");
+        var flat = new Material(Shader.Find("HDRP/Lit") ?? throw Fail("HDRP/Lit shader not found")) { name = "PlayerModel.FlatLit" };
+        foreach (var property in flat.GetTexturePropertyNames()) flat.SetTexture(property, null);
+        flat.SetColor("_BaseColor", Color.white);
+        flat.SetColor("_EmissiveColor", Color.black);
+        flat.SetFloat("_Metallic", 0f);
+        flat.SetFloat("_Smoothness", 0.3f);
+        UnityEngine.Rendering.HighDefinition.HDMaterial.SetSurfaceType(flat, false);
+        UnityEngine.Rendering.HighDefinition.HDMaterial.ValidateMaterial(flat);
+        AssetDatabase.CreateAsset(flat, TempDir + "/PlayerModel.FlatLit.mat");
         var copy = Object.Instantiate(prefab);
         copy.name = "PlayerModel";
         try
@@ -59,8 +68,8 @@ public static class BuildPlayerBundle
             var build = new AssetBundleBuild
             {
                 assetBundleName = BundleName,
-                assetNames = new[] { TempDir + "/PlayerModel.prefab", TempDir + "/PlayerModel.palette.txt" },
-                addressableNames = new[] { "PlayerModel", "PlayerModel.palette" },
+                assetNames = new[] { TempDir + "/PlayerModel.prefab", TempDir + "/PlayerModel.palette.txt", TempDir + "/PlayerModel.FlatLit.mat" },
+                addressableNames = new[] { "PlayerModel", "PlayerModel.palette", "PlayerModel.FlatLit" },
             };
             var manifest = BuildPipeline.BuildAssetBundles(OutDir, new[] { build },
                 BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode, BuildTarget.StandaloneWindows64);
