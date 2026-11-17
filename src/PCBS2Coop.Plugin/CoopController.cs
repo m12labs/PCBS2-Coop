@@ -1007,6 +1007,8 @@ internal sealed partial class CoopController
     public bool HasRemoteView => _view != null;
     public Vector3? RemoteViewPosition => _view?.Position;
 
+    internal object RemoteViewDiagnostic => _view?.Diagnostic();
+
     /// <summary>Where the remote capsule is relative to the local camera, for test logs.</summary>
     public string RemoteViewReport
     {

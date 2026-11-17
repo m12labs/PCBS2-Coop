@@ -3,11 +3,13 @@ param(
     [ValidateSet('host', 'join')][string]$Role = 'host',
     [string]$GameDir,
     [switch]$Deploy,
+    [ValidateSet('freebuild', 'career')][string]$World = 'freebuild',
     [ValidateSet('3', '4', '6')][string]$Phase = '3',
     # Relaunch on this run's disposable saves. Hosts Continue; phase 6 guests request a fresh host snapshot.
     [switch]$Resume
 )
 $ErrorActionPreference = 'Stop'
+if ($World -eq 'career' -and $Phase -ne '6') { throw 'Career launch is supported by the phase 6 probe only.' }
 . (Join-Path $PSScriptRoot 'ProbeProcessIdentity.ps1')
 . (Join-Path $PSScriptRoot 'LocalPaths.ps1')
 $probeGame = [IO.Path]::GetFullPath((Resolve-LocalPath -Value $GameDir -EnvName 'PCBS2_GAME_DIR' -PropName 'GameDir' -What 'game folder'))
@@ -17,6 +19,7 @@ $probeEvidenceDir = Join-Path $probeGame "BepInEx/PCBS2Coop-diag/phase$Phase/$Ru
 $probeRecordFile = Join-Path $probeRecordDir "$Role-process.json"
 if ($Resume) {
     $probeCoopSaves = Join-Path $probeEvidenceDir "saves-$Role/Coop"
+    if ($World -eq 'career') { $probeCoopSaves = Join-Path $probeCoopSaves 'Career' }
     if ($Role -eq 'host') {
         if (-not ((Test-Path -LiteralPath $probeCoopSaves) -and @(Get-ChildItem -LiteralPath $probeCoopSaves -Filter '*.binary*' -File).Count -gt 0)) { throw 'Nothing to resume: this run has no disposable co-op save.' }
     }
@@ -85,11 +88,12 @@ $probeDeployHashes = @(foreach ($probeFile in $probeFiles) {
 ConvertTo-Json -InputObject $probeDeployHashes | Set-Content -LiteralPath (Join-Path $probeRecordDir 'deployed-hashes.json') -Encoding UTF8
 
 $probeEnvironment = @{}
-foreach ($probeName in @('PCBS2COOP_AUTOTEST', 'PCBS2COOP_PROBE', 'PCBS2COOP_PROBE_RUN', 'PCBS2COOP_PROBE_RESUME')) { $probeEnvironment[$probeName] = [Environment]::GetEnvironmentVariable($probeName) }
+foreach ($probeName in @('PCBS2COOP_AUTOTEST', 'PCBS2COOP_PROBE', 'PCBS2COOP_PROBE_RUN', 'PCBS2COOP_PROBE_RESUME', 'PCBS2COOP_AUTOTEST_WORLD')) { $probeEnvironment[$probeName] = [Environment]::GetEnvironmentVariable($probeName) }
 try {
     $env:PCBS2COOP_AUTOTEST = $Role
     $env:PCBS2COOP_PROBE = $Phase
     $env:PCBS2COOP_PROBE_RUN = $RunId
+    $env:PCBS2COOP_AUTOTEST_WORLD = $World
     $env:PCBS2COOP_PROBE_RESUME = $(if ($Resume) { '1' } else { $null })
     # This is the interactive game under test, not a background helper window.
     $probeLaunched = Start-Process -FilePath (Join-Path $probeGame 'PCBS2.exe') -WorkingDirectory $probeGame -ArgumentList @('-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720') -PassThru

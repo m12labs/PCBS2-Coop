@@ -34,9 +34,9 @@ Free Build highlights below; see the **[full sync tracker](docs/sync-progress.md
 | Software and tuning | BIOS, desktop input, programs, benchmarks, GPU Tuner, Fan Control and failures |
 | Tools and customization | Peripherals, thermal paste, finished tool-table results, case designs, lighting and custom cables |
 | Workshop | Decorator, wallpapers and PC imports |
-| Sessions and players | Late join, Rejoin, saves, backups, animated avatars, chat and `/sync` |
+| Sessions and players | Late join, Rejoin, saves, backups, animated avatars with solid player colours, chat and `/sync` |
 
-**Career is in development and has not been tested in game.** The source includes hosting, saves, shared progression and inventory, shop carts, checkout and part sales, deliveries and packages, PC Bay, and jobs with a shared inbox. [Career checklist](docs/career-testing.md)
+**Career is in development; its in-game acceptance sweep is still in progress.** The source includes hosting, saves, shared progression and inventory, shop carts, checkout and part sales, deliveries and packages, PC Bay, and jobs with a shared inbox. [Career checklist](docs/career-testing.md)
 
 ## Installation
 

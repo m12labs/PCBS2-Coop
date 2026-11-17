@@ -21,7 +21,7 @@ namespace PCBS2Coop;
 /// </summary>
 internal sealed class NativeOnboarding : IOnboardingNative
 {
-    private const float SampleEvery = 0.25f, PendingTimeout = 10f, HoldTimeout = NativeComponentEdits.EditTimeout + 10f, BackWindow = 3f;
+    private const float SampleEvery = 0.25f, PendingTimeout = 10f, BackWindow = 3f;
 
     private readonly CoopController _coop;
     private readonly WorldSync _world;
@@ -30,7 +30,7 @@ internal sealed class NativeOnboarding : IOnboardingNative
     private float _next;
     private bool _readFailed;
     /// <summary>0.73: the other player's steps this game holds until their part change is shown here.</summary>
-    private readonly Dictionary<string, (OnboardingFact Fact, float Since, float NotBefore)> _held = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, float> _held = new(StringComparer.Ordinal);
     /// <summary>0.73: the step this game last followed for each tutorial, when, and whether that was a second try.</summary>
     private readonly Dictionary<string, (int To, float At, bool Again)> _followed = new(StringComparer.Ordinal);
 
@@ -126,7 +126,7 @@ internal sealed class NativeOnboarding : IOnboardingNative
         if (ctx.FromLocalPlayer) return;
         if (OtherPlayersChangeShowing)
         {
-            _held[fact.Type] = (fact, Time.realtimeSinceStartup, 0f);
+            _held[fact.Type] = 0f;
             Plugin.Logger.LogInfo($"[tutorial] {Short(fact.Type)} step {fact.Progress}: held until the other player's change to the PC is shown here.");
             return;
         }
@@ -152,13 +152,13 @@ internal sealed class NativeOnboarding : IOnboardingNative
     {
         if (_held.Count == 0) return;
         var waiting = OtherPlayersChangeShowing;
-        foreach (var (type, held) in _held.ToList())
+        foreach (var (type, notBefore) in _held.ToList())
         {
-            var timedOut = now - held.Since > HoldTimeout;
-            if ((waiting || now < held.NotBefore) && !timedOut) continue;
+            // Hand-turned panel screws can take as long as the player needs. A timeout must not
+            // run the next native step against a PC that still shows the previous panel state.
+            if (waiting || now < notBefore) continue;
             _held.Remove(type);
             if (Handler.Fact(type) is not { } shared) continue;
-            if (timedOut && waiting) Plugin.Logger.LogWarning($"[tutorial] {Short(type)}: the other player's change took over {HoldTimeout:0} s to show here; following their step anyway.");
             Follow(shared);
         }
     }
@@ -171,7 +171,7 @@ internal sealed class NativeOnboarding : IOnboardingNative
         if (fact.State != shared.State || fact.Progress >= shared.Progress) return false;
         if (!_followed.TryGetValue(fact.Type, out var f) || f.To != shared.Progress || now - f.At > BackWindow || f.Again) return false;
         _followed[fact.Type] = f with { Again = true };
-        _held[fact.Type] = (shared, now, now + 1f);
+        _held[fact.Type] = now + 1f;
         Plugin.Logger.LogInfo($"[tutorial] {Short(fact.Type)} went back to step {fact.Progress} on this game right after following step {shared.Progress}; following again once the other player's change is shown here.");
         return true;
     }
@@ -337,6 +337,9 @@ internal sealed class NativeOnboarding : IOnboardingNative
         try
         {
             var found = new List<string>();
+            // A busy PC can contribute more than forty outlines by itself. Keep the actual focus diagnostic
+            // outside that capped list so /outlines still identifies a guide or marker under the pointer.
+            if (r.Progress < 0) Plugin.Logger.LogInfo("[tutorial] /outlines focus: " + string.Join("; ", LookedAt()) + ".");
             if (cakeslice.CustomOutline.OutlineMeshDict is { } outlines)
                 foreach (var key in outlines.Keys)
                     found.Add($"outline {(key == null ? "(destroyed)" : key.name + (key.activeInHierarchy ? "" : " (hidden)"))}");
@@ -356,7 +359,6 @@ internal sealed class NativeOnboarding : IOnboardingNative
                 if (YellowMaterial(renderer) is { } material)
                     found.Add($"yellow {renderer.name} ({material}) under {Path(renderer.transform)}");
             }
-            if (r.Progress < 0) found.AddRange(LookedAt());
             var list = found.Count == 0 ? "nothing" : string.Join("; ", found.Take(40));
             Plugin.Logger.LogInfo(r.Progress < 0 ? $"[tutorial] /outlines: this game draws: {list}." : $"[tutorial] {Short(r.Type)} step {r.Progress} followed; this game still draws: {list}.");
         }
@@ -453,6 +455,38 @@ internal sealed class NativeOnboarding : IOnboardingNative
 
     private static string Short(string type) => type.Length > 48 ? type[^48..] : type;
 
+    /// <summary>The first tutorial's removal methods remember the slot and SKU for their later refits. A player who
+    /// follows the other player's removal never runs that setup. Its fixed office PC still has the same shared
+    /// integral panel slots while those panels are off; restore the references before the native refit step runs.</summary>
+    private static void BindRefitPanels(NewStartOnboarding tutorial, Case mesh)
+    {
+        var coop = CoopController.Instance;
+        if (tutorial == null || mesh == null || coop?.Objects.Initialized != true) return;
+        var id = coop.Objects.IdOf(mesh);
+        var pc = coop.Objects.Model.Pcs.SingleOrDefault(p => p.Id == id);
+        if (pc == null) return;
+        (Slot Slot, string Sku) Panel(string known, string suffix)
+        {
+            var fact = pc.Resources.SingleOrDefault(r => r.Kind == AssemblyResourceKind.Slot &&
+                !string.IsNullOrEmpty(r.IntegralHome) && (string.IsNullOrEmpty(known)
+                    ? r.IntegralHome.EndsWith(suffix, StringComparison.Ordinal) : r.IntegralHome == known));
+            return fact == null ? default : (coop.Objects.Assembly.NativeFor(id, fact.Id)?.TryCast<Slot>(), fact.IntegralHome);
+        }
+        // These are the serialized panel names of NewStartOnboarding.OFFICE_PC_PREBUILD (office_no_gpu).
+        var pci = Panel(tutorial.pciLockID, "/PCI Plate");
+        if (pci.Slot != null && (tutorial.pciSlot == null || tutorial.pciSlot.Pointer != pci.Slot.Pointer || tutorial.pciLockID != pci.Sku))
+        {
+            tutorial.pciSlot = pci.Slot; tutorial.pciLockID = pci.Sku;
+            Plugin.Logger.LogInfo($"[tutorial] bound the PCI lock refit to {pci.Slot.name} ({pci.Sku}) on {id}.");
+        }
+        var side = Panel(tutorial.sidePanelID, "/Left Lid");
+        if (side.Slot != null && (tutorial.sidePanelSlot == null || tutorial.sidePanelSlot.Pointer != side.Slot.Pointer || tutorial.sidePanelID != side.Sku))
+        {
+            tutorial.sidePanelSlot = side.Slot; tutorial.sidePanelID = side.Sku;
+            Plugin.Logger.LogInfo($"[tutorial] bound the side panel refit to {side.Slot.name} ({side.Sku}) on {id}.");
+        }
+    }
+
     /// <summary>0.68 (game run, November 10): the first Career tutorial's PC steps look up the side panel, the PCI lock
     /// and its covers when this player enters work mode. When the other player already took one off, the game's own
     /// step code fails (<c>RemoveSidePanel</c>), and the work mode it was entering stops part-way. In co-op that step is
@@ -465,6 +499,12 @@ internal sealed class NativeOnboarding : IOnboardingNative
             new[] { "RemoveSidePanel", "RemovePCILock", "RemovePCICovers", "InstallGPU", "InstallPCILock", "InstallSidePanel", "CableGPU" }
                 .Select(name => (System.Reflection.MethodBase)HarmonyLib.AccessTools.Method(typeof(NewStartOnboarding), name)
                     ?? throw new MissingMethodException(nameof(NewStartOnboarding), name));
+
+        private static void Prefix(NewStartOnboarding __instance, Case __0, System.Reflection.MethodBase __originalMethod)
+        {
+            if (!NativePcLifecycle.InCoopWorkshop || __originalMethod.Name is not ("InstallPCILock" or "InstallSidePanel")) return;
+            BindRefitPanels(__instance, __0);
+        }
 
         private static Exception Finalizer(Exception __exception, System.Reflection.MethodBase __originalMethod)
         {

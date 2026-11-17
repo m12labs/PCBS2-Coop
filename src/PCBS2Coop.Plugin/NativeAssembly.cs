@@ -168,8 +168,9 @@ internal sealed class NativeAssembly : IAssemblyNative
     /// first Career job's PCI lock, removed on both games, came back fitted when the guest reloaded the PC from the host's
     /// record. Panel presence is a shared fact (4d): after a native load, fit or remove panels to match the model. Panels
     /// carried by a removed panel are left to it. Returns whether anything changed.</summary>
-    private bool MatchPanels(PcFact pc, Case mesh, ComputerSave save)
+    internal bool MatchPanels(PcFact pc, Case mesh, ComputerSave save)
     {
+        MainThread();
         var dormant = AssemblyResources.Dormant(pc);
         var panels = pc.Resources.Where(r => r.Kind == AssemblyResourceKind.Slot && r.IntegralHome != "" && !dormant.Contains(r.Id)).ToArray();
         if (panels.Length == 0) return false;

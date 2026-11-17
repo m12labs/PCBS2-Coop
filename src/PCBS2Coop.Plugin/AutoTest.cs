@@ -47,6 +47,9 @@ internal sealed class AutoTest
     public static bool IsEnabled => Role is "host" or "join";
     private static string Role => Environment.GetEnvironmentVariable("PCBS2COOP_AUTOTEST")?.Trim().ToLowerInvariant();
 
+    /// <summary>Opt-in Career probe; the ordinary self test stays Free Build.</summary>
+    private static bool CareerProbe => Phase6Probe.Enabled && Environment.GetEnvironmentVariable("PCBS2COOP_AUTOTEST_WORLD") == "career";
+
     /// <summary>Probe relaunch: reuse this run's disposable folder; hosts Continue and phase 6 guests rejoin.</summary>
     private static bool ProbeResume => (Phase3Probe.Enabled || Phase6Probe.Enabled) && Environment.GetEnvironmentVariable("PCBS2COOP_PROBE_RESUME") == "1";
 
@@ -116,14 +119,15 @@ internal sealed class AutoTest
                 Shot(r, "coop-menu");
                 if (ProbeResume && _role == "host")
                 {
-                    if (!r.Menu.ContinueButton.activeInHierarchy) { Fail("resume run has no world to continue."); break; }
+                    var resume = CareerProbe ? r.Menu.CareerContinueButton : r.Menu.ContinueButton;
+                    if (!resume.activeInHierarchy) { Fail("resume run has no world to continue."); break; }
                     Plugin.Logger.LogInfo("AUTOTEST: resuming this probe run; clicking Host Co-op > 'Continue' with pointer events.");
-                    Click(r.Menu.ContinueButton);
+                    Click(resume);
                     _deadline = now + 240;
                     _step = 4; Next(now);
                     break;
                 }
-                var target = _role == "host" ? r.Menu.NewGameButton : r.Menu.JoinButton;
+                var target = _role == "host" ? (CareerProbe ? r.Menu.CareerNewGameButton : r.Menu.NewGameButton) : r.Menu.JoinButton;
                 Plugin.Logger.LogInfo($"AUTOTEST: clicking '{target.name}' with pointer events.");
                 Click(target);
                 Next(now + 1.5f);
@@ -437,22 +441,25 @@ internal sealed class AutoTest
                 : Phase6Probe.Enabled
                     ? Path.Combine(_dir, "phase6", Phase6Probe.RunId, $"saves-{_role}")
                     : Path.Combine(_dir, $"saves-{_role}");
+            // Isolate before validation too: a failed resume must never leave the menu pointing at owner saves.
+            var original = SaveLoadSystem.s_saveDir;
+            var target = dir.Replace('\\', '/');
+            SaveLoadSystem.s_saveDir = target;
+            SaveLoadSystem.s_pcSharingDefaultDir = target + "/PCs";
+            if (SaveLoadSystem.s_saveDir != target) throw new IOException("The game refused the isolated save folder.");
             // Audit runs use fresh, named folders and retain earlier evidence. A resume reopens only its own run's folder.
             if (ProbeResume)
             {
                 if (_role == "host")
                 {
-                    if (!Directory.Exists(Path.Combine(dir, "Coop")) || Directory.GetFiles(Path.Combine(dir, "Coop"), "*.binary*").Length == 0) throw new IOException("Resume needs this run's existing co-op save.");
+                    var saves = CareerProbe ? Path.Combine(dir, "Coop", "Career") : Path.Combine(dir, "Coop");
+                    if (!Directory.Exists(saves) || Directory.GetFiles(saves, "*.binary*").Length == 0) throw new IOException("Resume needs this run's existing co-op save.");
                 }
                 else if (!Phase6Probe.Enabled || !Directory.Exists(dir)) throw new IOException("A guest can relaunch only its existing isolated phase 6 folder.");
             }
             else if ((Phase3Probe.Enabled || Phase6Probe.Enabled) && Directory.Exists(dir)) throw new IOException("Use a fresh probe run ID; its saves already exist.");
             if (!Phase3Probe.Enabled && !Phase6Probe.Enabled && Directory.Exists(dir)) Directory.Delete(dir, true);
             Directory.CreateDirectory(dir);
-            var original = SaveLoadSystem.s_saveDir;
-            var target = dir.Replace('\\', '/');
-            SaveLoadSystem.s_saveDir = target;
-            if (SaveLoadSystem.s_saveDir != target) return false;
             IsolatedSaveDir = target;
             if (Phase3Probe.Enabled || Phase6Probe.Enabled)
             {
@@ -466,6 +473,8 @@ internal sealed class AutoTest
         catch (Exception e)
         {
             Plugin.Logger.LogError("AUTOTEST: save redirect failed: " + e);
+            // This process was explicitly launched for the isolated self test. Close it on a failed setup.
+            Application.Quit();
             return false;
         }
     }

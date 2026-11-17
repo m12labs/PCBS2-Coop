@@ -742,6 +742,15 @@ internal sealed class NativeObjectState : IWorldState
         foreach (var pc in expected)
         {
             var o = observations.SingleOrDefault(x => x.Key == bindings[pc.Id]) ?? throw new InvalidDataException($"Missing native binding for {pc.Id}.");
+            // Initial paired restore validates before the live assembly updater runs. Apply the same panel
+            // reconciliation here, while IDs are still unpublished, then capture the corrected native record.
+            if (o.Mesh != null && Assembly.MatchPanels(pc, o.Mesh, o.Save))
+            {
+                var refreshed = o.Location.Place == PcPlace.Bench
+                    ? Saves.benchSlots.Single(b => BenchKey(b) == o.Location.Key).GetComputer(true)
+                    : Workshop.GetCarriedComputer();
+                o = new Observation(o.Key, o.Location, refreshed, o.Mesh);
+            }
             CheckParts(pc, o.Save);
             NativeAssembly.CheckProfile(pc, o.Save);
             Assembly.Validate(pc, o.Mesh, o.Save, rebind: true);

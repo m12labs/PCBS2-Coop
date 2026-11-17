@@ -22,6 +22,8 @@ internal static class PlayerModelAssets
     private static GameObject _prefab;
 
     public static IReadOnlyList<PaletteSlot> Palette { get; private set; } = Array.Empty<PaletteSlot>();
+    /// <summary>Opaque HDRP/Lit without maps, authored with the matching HDRP version; absent in older bundles.</summary>
+    public static Material FlatLit { get; private set; }
 
     /// <summary>The model prefab, or null when the bundle is missing or invalid. Main thread only.</summary>
     public static GameObject Prefab
@@ -58,6 +60,12 @@ internal static class PlayerModelAssets
             palette.hideFlags |= HideFlags.DontUnloadUnusedAsset;
             _prefab = prefab;
             Palette = slots;
+            FlatLit = LoadNow<Material>(_bundle, "PlayerModel.FlatLit");
+            if (FlatLit != null)
+            {
+                FlatLit.hideFlags |= HideFlags.DontUnloadUnusedAsset;
+                Plugin.Logger.LogInfo($"[model] palette template '{FlatLit.name}' ({FlatLit.shader?.name}, supported {FlatLit.shader?.isSupported}).");
+            }
             Plugin.Logger.LogInfo($"[model] loaded {BundleFile}: prefab '{prefab.name}', palette '{palette.name}' ({string.Join(", ", slots.Select(s => s.Tint ? s.Name + "*" : s.Name))}).");
         }
         catch (Exception e)

@@ -83,6 +83,45 @@ internal sealed class RemotePlayerView
     public string PoseLook => _carrying ? "Carry" : _workPose.ToString();
     public void SetWorkPose(RemoteWorkPose pose) => _requestedWorkPose = pose;
 
+    /// <summary>Read-only renderer evidence for the opt-in acceptance probe.</summary>
+    internal object Diagnostic()
+    {
+        var camera = Camera.main ?? GameController.Get()?.GetActiveCamera();
+        object[] Occluders(Vector3 center)
+        {
+            if (camera == null) return Array.Empty<object>();
+            var offset = center - camera.transform.position;
+            return Physics.RaycastAll(camera.transform.position, offset.normalized, offset.magnitude, ~0,
+                    QueryTriggerInteraction.Ignore)
+                .Where(h => h.collider != LocalPlayer.Controller).OrderBy(h => h.distance).Take(4)
+                .Select(h => (object)new { name = h.collider.name, distance = h.distance }).ToArray();
+        }
+        return new
+        {
+            root = _root.transform.position.ToString(), target = _targetPos.ToString(),
+            visual = _visual.position.ToString(), active = _visual.gameObject.activeInHierarchy,
+            camera = camera?.transform.position.ToString(), cullingMask = camera?.cullingMask,
+            renderers = _visual.GetComponentsInChildren<Renderer>(true).Select(r => new
+            {
+                name = r.name, type = r.GetIl2CppType().Name, enabled = r.enabled,
+                active = r.gameObject.activeInHierarchy, layer = r.gameObject.layer,
+                center = r.bounds.center.ToString(), size = r.bounds.size.ToString(),
+                viewport = camera == null ? null : camera.WorldToViewportPoint(r.bounds.center).ToString(),
+                occluders = Occluders(r.bounds.center),
+                materials = r.sharedMaterials.Select(m => m == null ? null : new
+                {
+                    name = m.name, shader = m.shader?.name, shaderPointer = m.shader?.Pointer.ToInt64(), supported = m.shader?.isSupported,
+                    queue = m.renderQueue,
+                    surface = m.HasProperty("_SurfaceType") ? m.GetFloat("_SurfaceType") : (float?)null,
+                    textures = new[] { "_BaseColorMap", "_MaskMap", "_NormalMap", "_DetailMap", "_EmissiveColorMap",
+                        "_CoatMaskMap", "_BentNormalMap", "_SubsurfaceMaskMap", "_ThicknessMap", "_SpecularColorMap" }
+                        .Where(p => m.HasProperty(p) && m.GetTexture(p) != null).Select(p => p + "=" + m.GetTexture(p).name).ToArray(),
+                    color = m.HasProperty("_BaseColor") ? m.GetColor("_BaseColor").ToString() : null
+                }).ToArray()
+            }).ToArray()
+        };
+    }
+
     public static RemotePlayerView Create(string name)
     {
         var root = new GameObject("PCBS2Coop Remote " + name);
@@ -103,7 +142,7 @@ internal sealed class RemotePlayerView
         return new RemotePlayerView(root, visual, label, animator, anchor);
     }
 
-    /// <summary>Instantiate the bundle's character and give each material slot a copy of the scene's HDRP/Lit with the palette color.</summary>
+    /// <summary>Instantiate the character and paint copies of its plain Lit material with the palette colours.</summary>
     private static Animator BuildModel(Transform parent, Color tint, out Transform anchor)
     {
         anchor = null;
@@ -397,11 +436,21 @@ internal sealed class RemotePlayerView
         {
             foreach (var mr in Object.FindObjectsOfType<MeshRenderer>())
             {
+                if (mr.transform.root.name.StartsWith("PCBS2Coop Remote ", StringComparison.Ordinal)) continue;
                 var sm = mr.sharedMaterial;
                 if (sm != null && sm.shader != null && sm.shader.name == "HDRP/Lit") { _template = sm; break; }
             }
-            if (_template != null) Plugin.Logger.LogInfo($"Remote player material: copy of '{_template.name}' (HDRP/Lit).");
+            if (_template != null) Plugin.Logger.LogInfo($"[model] palette uses the game's shader from '{_template.name}' (HDRP/Lit).");
         }
+        if (PlayerModelAssets.FlatLit is { } flat)
+        {
+            // Keep our opaque, texture-free defaults, but use the game's compiled shader. The bundled Lit
+            // shader reports supported yet renders room textures across the body (0.80 runtime A/B).
+            var material = new Material(flat);
+            if (_template?.shader != null) material.shader = _template.shader;
+            return material;
+        }
+        // Compatibility with bundles exported before the plain material was added.
         if (_template != null) return new Material(_template);
 
         var shader = Shader.Find("HDRP/Lit") ?? Shader.Find("HDRP/Unlit");
