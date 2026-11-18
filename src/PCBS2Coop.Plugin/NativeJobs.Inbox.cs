@@ -249,7 +249,7 @@ internal static class InboxHooks
     }
 
     /// <summary>A mirrored click on the other player's desktop never organizes this game's inbox.</summary>
-    private static bool NotMirrored() => !NativeCareer.InCareer || NativeProjection.Active || NativeJobs.HostRunning || !NativeDesktopInput.Injecting;
+    private static bool NotMirrored() => !NativeCareer.InCareer || NativeJobs.HostRunning || !NativeDesktopInput.Injecting;
 
     [HarmonyPatch(typeof(EmailApp), nameof(EmailApp.OnClickRow))]
     internal static class ClickRow

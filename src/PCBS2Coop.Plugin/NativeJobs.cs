@@ -59,6 +59,7 @@ internal sealed partial class NativeJobs : IJobNative
     private MailFact _mailSending;
     /// <summary>Host: shared PCs its game removed by itself, to share.</summary>
     private readonly List<NetObjectId> _removed = new();
+    private readonly Dictionary<NetObjectId, (int Frame, PcLocation Location)> _removedChecks = new();
 
     public NativeJobs(CoopController coop, WorldSync world)
     {
@@ -68,11 +69,12 @@ internal sealed partial class NativeJobs : IJobNative
         world.Rejected += OnRejected;
     }
 
-    private void Clear() { _shared = null; _pending.Clear(); _forGuest.Clear(); _mailPending.Clear(); _mailForGuest.Clear(); _inboxForGuest.Clear(); _removed.Clear(); _dayHoldUntil = 0; }
+    private void Clear() { _shared = null; _pending.Clear(); _forGuest.Clear(); _mailPending.Clear(); _mailForGuest.Clear(); _inboxForGuest.Clear(); _removed.Clear(); _removedChecks.Clear(); _dayHoldUntil = 0; }
 
     /// <summary>A job or e-mail action is waiting for the host's answer or waiting to run on the host: End Day waits
     /// for it (phase 17d).</summary>
-    internal bool Busy => _forGuest.Count > 0 || _mailForGuest.Count > 0 || _pending.Count > 0 || _mailPending.Count > 0;
+    internal bool Busy => _forGuest.Count > 0 || _mailForGuest.Count > 0 || _pending.Count > 0 || _mailPending.Count > 0 ||
+        _removedChecks.Count > 0 || _removed.Count > 0;
 
     private bool Active => NativeCareer.InCareer && Handler.Bound && _world.Admitted && _world.Divergence == null && _coop.WorldReady;
     private ulong Epoch => _coop.Activity.Get(_world.Local)?.Epoch ?? 0;
@@ -639,7 +641,12 @@ internal sealed partial class NativeJobs : IJobNative
         if (!Active || _world.Local != ActorSlot.Host || _coop.Objects?.Initialized != true) return list;
         foreach (var pc in _coop.Objects.Model.Pcs)
         {
-            if (pc.Location.Place == PcPlace.Bench && _coop.Objects.FindBench(pc.Id) != null) list.Add(pc.Id);
+            if (pc.Location.Place == PcPlace.Bench)
+            {
+                // A cleared bench can retain the previous ComputerSave alias. Presence requires its actual case.
+                var mesh = _coop.Objects.BenchAt(pc.Location.Key)?.GetCaseInSlot();
+                if (mesh != null && _coop.Objects.IdOf(mesh) == pc.Id) list.Add(pc.Id);
+            }
             else if (pc.Location.Place == PcPlace.Storage && _coop.Objects.FindStored(pc.Id) != null) list.Add(pc.Id);
         }
         return list;
@@ -649,12 +656,26 @@ internal sealed partial class NativeJobs : IJobNative
     internal void NoteRemoved(List<NetObjectId> before)
     {
         if (before == null || before.Count == 0) return;
-        var now = new HashSet<NetObjectId>(PresentShared());
-        foreach (var id in before) if (!now.Contains(id) && !_removed.Contains(id)) _removed.Add(id);
+        // Native Object.Destroy completes at frame end, after this hook's postfix.
+        foreach (var id in before)
+            if (_coop.Objects.Model.Pcs.FirstOrDefault(pc => pc.Id == id) is { } pc)
+                _removedChecks[id] = (Time.frameCount + 1, pc.Location);
     }
 
     private void ShareRemoved()
     {
+        if (_removedChecks.Count > 0)
+        {
+            var present = new HashSet<NetObjectId>(PresentShared());
+            foreach (var (id, check) in _removedChecks.ToArray())
+            {
+                if (Time.frameCount < check.Frame) continue;
+                _removedChecks.Remove(id);
+                // An unrelated PC may move during the deferred frame. Its new custody is not a job removal.
+                if (_coop.Objects.Model.Pcs.FirstOrDefault(pc => pc.Id == id)?.Location != check.Location) continue;
+                if (!present.Contains(id) && !_removed.Contains(id)) _removed.Add(id);
+            }
+        }
         if (_removed.Count == 0) return;
         foreach (var id in _removed.ToList())
         {

@@ -17,12 +17,15 @@ internal static class JobHooks
     /// <summary>Whether this game runs the job action itself.</summary>
     private static bool Run(Job job, JobAct act, int value)
     {
-        if (!NativeCareer.InCareer || NativeProjection.Active || NativeJobs.HostRunning || job == null) return true;
+        if (!NativeCareer.InCareer || NativeJobs.HostRunning || job == null) return true;
+        // Desktop injection itself runs inside NativeProjection. Check it first so a replay cannot pay or accept
+        // a job locally before the host's one authoritative result arrives.
         if (NativeDesktopInput.Injecting)
         {
             Plugin.Logger.LogInfo($"[jobs] the other player's mirrored click would {act} job {job.m_id} here; their game sends it.");
             return false;
         }
+        if (NativeProjection.Active) return true;
         var jobs = NativeJobs.Current;
         if (jobs == null) return true;
         if (CoopSaves.Current == CoopSaves.Mode.Host) return jobs.AllowHostOwn(job, act);
@@ -41,7 +44,7 @@ internal static class JobHooks
     /// quit confirmation on this player's game); the clicking game handles its own buttons.</summary>
     private static bool NotMirrored(Job job, string button)
     {
-        if (!NativeCareer.InCareer || NativeProjection.Active || NativeJobs.HostRunning || !NativeDesktopInput.Injecting) return true;
+        if (!NativeCareer.InCareer || NativeJobs.HostRunning || !NativeDesktopInput.Injecting) return true;
         Plugin.Logger.LogInfo($"[jobs] the other player's mirrored {button} click on job {job?.m_id ?? 0} stays on their game.");
         return false;
     }
@@ -105,12 +108,13 @@ internal static class JobHooks
     /// it (decompile: both test <c>m_removed</c> first), which stays on this game.</summary>
     private static bool RunMail(Email mail)
     {
-        if (!NativeCareer.InCareer || NativeProjection.Active || NativeJobs.HostRunning || mail == null || mail.m_removed) return true;
+        if (!NativeCareer.InCareer || NativeJobs.HostRunning || mail == null || mail.m_removed) return true;
         if (NativeDesktopInput.Injecting)
         {
             Plugin.Logger.LogInfo("[jobs] the other player's mirrored e-mail click stays on their game.");
             return false;
         }
+        if (NativeProjection.Active) return true;
         var jobs = NativeJobs.Current;
         if (jobs == null) return true;
         try
