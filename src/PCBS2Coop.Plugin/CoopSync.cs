@@ -231,7 +231,7 @@ internal sealed partial class CoopController
                 AddChat(_renovating ? "Renovation saved. Loading the renovated workshop." : _switch == null ? "Sync: saved. Reloading the world." : _switch.Reset ? "Resetting the world to the default build." : $"Loading \"{CoopSaves.DisplayName(_switch.File)}\".");
                 var loader = Object.FindObjectOfType<NewLoadingScreen>();
                 if (loader == null) { FailSync("no loading screen was found"); return; }
-                loader.LoadScene(CoopRunner.MenuScene, false);
+                LoadMenu(loader);
                 return;
             case SyncStep.ToMenu:
                 if (now > _syncDeadline) { LeaveToMenu("The sync could not return to the main menu.", false); return; }
@@ -412,7 +412,7 @@ internal sealed partial class CoopController
         Objects.Reset(); ResetAutosave(); DestroyView();
         if (CoopRunner.Instance?.Scene == CoopRunner.MenuScene) return;
         var loader = Object.FindObjectOfType<NewLoadingScreen>();
-        if (loader != null) loader.LoadScene(CoopRunner.MenuScene, false);
+        if (loader != null) LoadMenu(loader);
         else LeaveToMenu("No loading screen was found for the sync.", false);
     }
 

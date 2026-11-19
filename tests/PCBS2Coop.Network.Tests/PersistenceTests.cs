@@ -66,9 +66,11 @@ internal static class PersistenceTests
             try { CoopSavePair.Decode(OldLayout(version, native, state)); return ""; }
             catch (InvalidDataException e) { return e.Message; }
         }
-        var older = Message("0.15"); var newer = Message("0.99"); var junk = Message("x\u0001y");
+        var current = Version.Parse(ModVersion.Value);
+        var future = $"{current.Major}.{checked(current.Minor + 1)}";
+        var older = Message("0.15"); var newer = Message(future); var junk = Message("x\u0001y");
         t.Check(older.Contains("0.15") && older.Contains("0.16 onwards"), $"a 0.15 save is refused with a clear reason ({older})");
-        t.Check(newer.Contains("newer") && newer.Contains("0.99"), $"a save from a newer mod version says to update ({newer})");
+        t.Check(newer.Contains("newer") && newer.Contains(future), $"a save from a newer mod version says to update ({newer})");
         t.Check(junk.Contains("unknown"), "an unreadable version string is not echoed");
         var foreign = (byte[])encoded.Clone(); foreign[0] ^= 0xFF;
         t.Check(Throws(() => CoopSavePair.Decode(foreign)), "a file that isn't a co-op save is refused");

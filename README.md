@@ -36,7 +36,7 @@ Free Build highlights below; see the **[full sync tracker](docs/sync-progress.md
 | Workshop | Decorator, wallpapers and PC imports |
 | Sessions and players | Late join, Rejoin, saves, backups, animated avatars with solid player colours, chat and `/sync` |
 
-**Career is in development; its in-game acceptance sweep is still in progress.** The source includes hosting, saves, shared progression and inventory, shop carts, checkout and part sales, deliveries and packages, PC Bay, and jobs with a shared inbox. The first virus job's payment and returned-PC removal passed on two local games; broader settlement and End Day cases remain open. [Career checklist](docs/career-testing.md)
+**Career is in development; its in-game acceptance sweep is still in progress.** The source includes hosting, saves, shared progression and inventory, shop carts, checkout and part sales, deliveries and packages, PC Bay, and jobs with a shared inbox. The first virus job's payment and returned-PC removal passed on two local games; broader settlement and End Day cases remain open. Career disconnects now return to a usable menu, with the visible Rejoin flow tested on two local games. [Career checklist](docs/career-testing.md)
 
 ## Installation
 

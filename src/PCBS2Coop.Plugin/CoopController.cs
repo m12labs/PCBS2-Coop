@@ -812,8 +812,18 @@ internal sealed partial class CoopController
         if (CoopRunner.Instance?.Scene == CoopRunner.MenuScene || _leavingToMenu) return;
         _leavingToMenu = true;
         var loader = Object.FindObjectOfType<NewLoadingScreen>();
-        if (loader != null) loader.LoadScene(CoopRunner.MenuScene, false);
+        if (loader != null) LoadMenu(loader);
         else Plugin.Logger.LogError("[world] no loading screen found to return to the main menu.");
+    }
+
+    /// <summary>Match ExitPanel.Exit's tutorial-scene cleanup before a mod-initiated menu load. Otherwise
+    /// LevelLoadPersistency.OnSceneLoaded takes its opening-tutorial branch and skips the menu PC setup that the
+    /// loading screen waits for. This is a scene-routing flag, not the saved/shared tutorial progress.</summary>
+    private static void LoadMenu(NewLoadingScreen loader)
+    {
+        var level = Object.FindObjectOfType<LevelLoadPersistency>();
+        if (level != null) level.isNewStartObjectiveActive = false;
+        loader.LoadScene(CoopRunner.MenuScene, false);
     }
 
     private void OnPeerDisconnected(string reason)
