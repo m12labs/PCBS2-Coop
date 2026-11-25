@@ -216,7 +216,7 @@ internal sealed partial class NativeComponentEdits
     /// <summary>A cable edit or power press is still moving on this PC, or its replay is queued or running here.</summary>
     internal bool WireMoving(Case mesh) => CablesBusy(mesh) || _wireRuns.Any(r => r.Mesh != null && r.Mesh.Pointer == mesh.Pointer);
 
-    private static PowerConnector FindConnector(Case mesh, BenchSlot bench, string id)
+    internal static PowerConnector FindConnector(Case mesh, BenchSlot bench, string id)
     {
         if (mesh != null)
             foreach (var c in mesh.GetComponentsInChildren<PowerConnector>(true)) if (c != null && c.id == id) return c;
@@ -484,6 +484,19 @@ internal sealed partial class NativeComponentEdits
     /// <summary>The game doesn't save power: shortly after this game's world loads (Continue, late join), turn on each PC
     /// on its bench that the shared world says is on. Only in that window: later, a PC that switched off by itself (a
     /// simulation shutdown, phases 6-7) is left alone. Tried once per PC, so a press that can't work here isn't repeated.</summary>
+    [ThreadStatic] private static IntPtr _restoringPowerCase;
+
+    // A later Career tutorial can forbid pressing the office power button, while an already-powered PC still
+    // needs restoring after native load (power is not saved). This exception applies only inside that restore.
+    [HarmonyPatch(typeof(JobTutorialHintUi), nameof(JobTutorialHintUi.AllowPowerButton))]
+    internal static class RestorePowerPermission
+    {
+        private static void Postfix(Case __0, ref bool __result)
+        {
+            if (NativeProjection.Active && __0 != null && __0.Pointer == _restoringPowerCase) __result = true;
+        }
+    }
+
     private void UpdatePower()
     {
         if (!Active) { _worldSeen = -1; return; }
@@ -501,8 +514,10 @@ internal sealed partial class NativeComponentEdits
             if (running == pc.Powered || !pc.Powered) continue;
             if (!_powerTried.Add((pc.Id, pc.Powered))) continue;
             Plugin.Logger.LogInfo($"[cables] PC {pc.Id} is {(running ? "on" : "off")} here; the shared world has it {(pc.Powered ? "on" : "off")}: turning it {(pc.Powered ? "on" : "off")}.");
+            var previousRestore = _restoringPowerCase;
             try
             {
+                _restoringPowerCase = mesh.Pointer;
                 NativeProjection.Run(() =>
                 {
                     var mb = mesh.GetMotherboard();
@@ -511,6 +526,7 @@ internal sealed partial class NativeComponentEdits
                 });
             }
             catch (Exception e) { Plugin.Logger.LogWarning($"[cables] PC {pc.Id}: power change failed here: {e.Message}"); }
+            finally { _restoringPowerCase = previousRestore; }
         }
     }
 

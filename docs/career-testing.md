@@ -1,6 +1,6 @@
 # Career co-op acceptance checklist
 
-All cases are pending. Implement the known sync paths in phases 15–17, build against the installed game's interop, and run the model/network checks before the first full in-game pass. Run the gameplay cases on disposable co-op saves. Record the mod/game build, case, roles, transport, visible outcomes on both games, normalized state or save evidence, and result. Retest failures and add cases for any newly found native paths. [Roadmap](../plan.md#career-implementation-and-testing-order)
+All full cases remain open. The [November 18 run](audit/phase-18.md#092095-first-job-settlement-and-recovery-18b) passed first-virus-job payment, returned-PC retirement, cold restore, fresh guest admission after interruption, guest PC movement and host Exit. The [focused Rejoin follow-up](audit/phase-18.md#096099-guest-menu-return-and-visible-rejoin-18b) fixed the loading-screen blocker and passed a visible Rejoin click. Showcase progression, End Day and full recovery cases remain open. The [November 17 run](audit/phase-18.md#085091-usb-transfers-and-first-virus-job-18b) records USB transfer/replay fixes and remaining guest/preview checks. Run full cases on disposable co-op saves and record build, roles, transport, visible outcomes, native/canonical state and save evidence. [Roadmap](../plan.md#career-implementation-and-testing-order)
 
 ## 15. Start, save and join
 

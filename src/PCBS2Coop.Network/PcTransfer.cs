@@ -7,7 +7,11 @@ public enum TransferAction : byte { Pickup = 1, Drop = 2, Store = 3, Retrieve = 
 /// the requester saw on that bench (a deliberate swap) or none. <see cref="Absent"/> names the departed seat for Recover.</summary>
 public sealed record TransferCommand(TransferAction Action, ulong Epoch, NetObjectId Pc, NetObjectId Bench, NetObjectId Occupant, ActorSlot Absent);
 /// <summary>One location change of an accepted transfer. A swap has two, committed together; moves leaving a bench come first.</summary>
-public sealed record PcMove(NetObjectId Pc, PcLocation From, PcLocation To);
+public sealed record PcMove(NetObjectId Pc, PcLocation From, PcLocation To)
+{
+    /// <summary>Native pickup roots removed in this same accepted change, derived from its previous PC fact.</summary>
+    public IReadOnlyList<string> RemovedUsb { get; init; } = Array.Empty<string>();
+}
 
 /// <summary>Native side of PC transfers. CheckHost runs on the host during validation and only reads.
 /// Moved runs after the model changed and must not submit commands.</summary>
@@ -15,6 +19,9 @@ public interface IPcTransferNative
 {
     string? CheckHost(in CommandContext ctx, TransferCommand command, IReadOnlyList<PcMove> moves);
     void Moved(in MutationContext ctx, TransferCommand command, IReadOnlyList<PcMove> moves);
+    /// <summary>Read-only host prediction of the assembly profile after native pickup returns motherboard USB
+    /// devices to inventory. The adapter must not run the pickup or change the live record here.</summary>
+    PcBuildProfile? PickupProfile(PcFact before, PcFact after) => throw new InvalidDataException("USB pickup profile is unavailable.");
 }
 
 /// <summary>Host-ordered atomic PC transfers between a bench, a player's hands and the shared cupboard. Each
@@ -22,7 +29,7 @@ public interface IPcTransferNative
 /// checks the source, the destination and every moved PC's activity; a drop names the bench occupant the requester
 /// saw, so a bench that was just taken refuses instead of becoming a surprise swap. Recover (host only) moves a
 /// departed player's carried PCs to the shared cupboard.</summary>
-public sealed class PcTransfers : ICommandHandler
+public sealed class PcTransfers : ICanonicalCommandHandler
 {
     private readonly ObjectWorld _objects;
     private readonly ActivityWorld _activity;
@@ -41,7 +48,7 @@ public sealed class PcTransfers : ICommandHandler
     private static byte[] Encode(TransferAction action, ulong epoch, Action<NetDataWriter> body)
     { var w = new NetDataWriter(); w.Put((byte)action); w.Put(epoch); body(w); return w.CopyData(); }
 
-    private static TransferCommand Parse(NetDataReader r)
+    private static TransferCommand Parse(NetDataReader r, bool canonical = false)
     {
         var action = (TransferAction)r.GetByte(); var epoch = r.GetULong();
         TransferCommand c = action switch
@@ -52,7 +59,7 @@ public sealed class PcTransfers : ICommandHandler
             TransferAction.Recover => new(action, epoch, default, default, default, (ActorSlot)r.GetByte()),
             _ => throw new FormatException("Unknown PC transfer action.")
         };
-        if (r.AvailableBytes != 0) throw new FormatException("Trailing PC transfer bytes.");
+        if (!canonical && r.AvailableBytes != 0) throw new FormatException("Trailing PC transfer bytes.");
         if (c.Action == TransferAction.Recover && c.Absent is not (ActorSlot.Host or ActorSlot.Guest)) throw new FormatException("Invalid departed seat.");
         return c;
     }
@@ -69,18 +76,60 @@ public sealed class PcTransfers : ICommandHandler
         return error == null ? CommandVerdict.Accept : CommandVerdict.Reject(error);
     }
 
+    public byte[] Canonicalize(in CommandContext ctx, NetDataReader request)
+    {
+        var bytes = request.GetRemainingBytes(); var c = Parse(new NetDataReader(bytes));
+        if (Plan(ctx.Op.Actor, c, tolerant: false, out var moves) is { } error) throw new InvalidDataException(error);
+        var profiles = new List<(NetObjectId Pc, PcBuildProfile? Profile)>();
+        foreach (var move in moves.Where(m => m.From.Place == PcPlace.Bench))
+        {
+            var before = _objects.Pcs.Single(p => p.Id == move.Pc); var after = PickupUsb.Remove(before);
+            if (ReferenceEquals(before, after)) continue;
+            var profile = _native.PickupProfile(before, after);
+            if (before.BuildProfile != null && profile == null) throw new InvalidDataException("USB pickup lost its assembly profile.");
+            profiles.Add((before.Id, profile));
+        }
+        var w = new NetDataWriter(); w.Put(bytes); w.Put(profiles.Count);
+        foreach (var (pc, profile) in profiles) { pc.Write(w); ObjectWorld.WriteProfile(w, profile); }
+        return w.CopyData();
+    }
+
     public void Apply(in MutationContext ctx, NetDataReader payload)
     {
-        var c = Parse(payload);
+        var c = Parse(payload, canonical: true);
+        var count = payload.GetInt();
+        if (count is < 0 or > 2) throw new FormatException("Invalid pickup profile count.");
+        var profiles = new Dictionary<NetObjectId, PcBuildProfile?>();
+        for (var i = 0; i < count; i++)
+            if (!profiles.TryAdd(NetObjectId.Read(payload), ObjectWorld.ReadProfile(payload))) throw new FormatException("Duplicate pickup profile.");
+        if (payload.AvailableBytes != 0) throw new FormatException("Trailing accepted transfer bytes.");
         // The same checks against this peer's copy of the same revision. A difference is a divergence, never a guess.
         if (Plan(ctx.Op.Actor, c, tolerant: !_authority, out var moves) is { } error) throw new InvalidDataException("PC transfer no longer applies: " + error);
         if (moves.Count == 0) return; // only host-only PCs this guest never saw
         var to = moves.ToDictionary(m => m.Pc, m => m.To);
         // A PC leaving its bench is next shown by a native load, which closes latches over installed parts (4b N3).
         var leaving = moves.Where(m => m.From.Place == PcPlace.Bench).Select(m => m.Pc).ToHashSet();
-        _objects.Replace(_objects.WorldId, _objects.NextId, _objects.Locations,
-            _objects.Pcs.Select(x => to.TryGetValue(x.Id, out var l)
-                ? (leaving.Contains(x.Id) ? AssemblyResources.SettleLoad(x) : x).At(l) : x).ToArray(), _objects.Retired);
+        var pcs = _objects.Pcs.Select(before =>
+        {
+            if (!to.TryGetValue(before.Id, out var location)) return before;
+            var after = before;
+            if (leaving.Contains(before.Id))
+            {
+                after = PickupUsb.Remove(before);
+                if (!ReferenceEquals(before, after))
+                {
+                    if (!profiles.Remove(before.Id, out var profile) || (before.BuildProfile != null && profile == null))
+                        throw new InvalidDataException("Missing host USB pickup profile.");
+                    after = after with { BuildProfile = profile };
+                }
+                after = AssemblyResources.SettleLoad(after);
+            }
+            return after.At(location);
+        }).ToArray();
+        if (profiles.Keys.Any(id => _authority || !_objects.Retired.Contains(id))) throw new InvalidDataException("Unexpected pickup profile.");
+        var live = pcs.SelectMany(AssemblyResources.AllIds).ToHashSet();
+        var retired = _objects.Retired.Concat(_objects.Pcs.SelectMany(AssemblyResources.AllIds).Where(id => !live.Contains(id))).Distinct();
+        _objects.Replace(_objects.WorldId, _objects.NextId, _objects.Locations, pcs, retired);
         _native.Moved(ctx, c, moves);
     }
 
@@ -105,7 +154,7 @@ public sealed class PcTransfers : ICommandHandler
                 if (pc.Location != PcLocation.Bench(bench)) return "Someone else moved that PC.";
                 if (held != null) return "Your hands already hold a PC.";
                 if (_activity.MovementBlock(pc.Id) is { } block) return block;
-                moves.Add(new(pc.Id, pc.Location, hands));
+                moves.Add(new(pc.Id, pc.Location, hands) { RemovedUsb = PickupUsb.Roots(pc) });
                 return null;
             }
             case TransferAction.Drop:
@@ -120,7 +169,7 @@ public sealed class PcTransfers : ICommandHandler
                 if (occupant != null)
                 {
                     if (_activity.MovementBlock(occupant.Id) is { } busy) return busy;
-                    moves.Add(new(occupant.Id, occupant.Location, hands));
+                    moves.Add(new(occupant.Id, occupant.Location, hands) { RemovedUsb = PickupUsb.Roots(occupant) });
                 }
                 if (HostOnly(c.Pc)) return null;
                 if (Find(c.Pc) is not { } pc || pc.Location != hands) { moves.Clear(); return "That PC is not in your hands."; }

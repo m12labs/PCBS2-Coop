@@ -20,9 +20,11 @@ internal sealed class NativeObjectState : IWorldState
     internal ComputerSave RecordFor(NetObjectId id) => _saveRoots.GetValueOrDefault(id) ?? _carrierRecords.GetValueOrDefault(id);
     internal ComputerSave CaptureRecord(NetObjectId id)
     {
+        // A cleared source bench can retain its previous ComputerSave. Prefer the actual carried mesh over that
+        // stale record alias, especially when rebinding the same case after OnPickup removed USB occupants.
+        if (IdOf(Workshop.GetCarriedCase()) == id) return Workshop.GetCarriedComputer();
         var bench = FindBench(id);
         if (bench != null) return bench.GetComputer(true);
-        if (IdOf(Workshop.GetCarriedCase()) == id) return Workshop.GetCarriedComputer();
         return RecordFor(id);
     }
     private readonly Dictionary<long, NetObjectId> _cases = new(), _saves = new();
@@ -312,12 +314,19 @@ internal sealed class NativeObjectState : IWorldState
         Projections.Remove(id);
     }
 
+    internal static void RemovePickupUsb(ComputerSave record, IEnumerable<string> roots)
+    {
+        foreach (var root in roots)
+        {
+            var index = int.Parse(root.AsSpan("usbSlots[".Length, root.Length - "usbSlots[".Length - 1), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture);
+            if (record.usbSlots == null || index >= record.usbSlots.Length) throw new InvalidDataException("USB pickup slot is missing.");
+            record.usbSlots[index] = null;
+        }
+    }
+
     private void HoldRemote(PcFact pc, ActorSlot carrier, ComputerSave record)
     {
-        // Pickup side effects (power off, external cables, USB devices) can change a PC's graph; the model keeps its
-        // facts until component edits are synchronized (phase 4). Report it instead of refusing the accepted move.
-        try { CheckParts(pc, record); }
-        catch (InvalidDataException e) { Plugin.Logger.LogWarning($"[objects] PC {pc.Id} record differs from its facts after the move: {e.Message}"); }
+        CheckParts(pc, record);
         RememberSave(pc.Id, record);
         _carrierRecords[pc.Id] = record;
         _saveBindings[pc.Id] = "remote-carry:" + carrier;
@@ -325,7 +334,7 @@ internal sealed class NativeObjectState : IWorldState
 
     /// <summary>The other player picked this PC up from a bench: the same pickup side effects as the native
     /// <c>Case.OnPickup</c>, then the bench's own removal. The mod holds the record; the remote view shows a box.</summary>
-    internal void RemotePickup(PcFact pc, BenchSlot bench, ActorSlot carrier)
+    internal void RemotePickup(PcFact pc, BenchSlot bench, ActorSlot carrier, IReadOnlyList<string> removedUsb)
     {
         var mesh = bench.GetCaseInSlot();
         if (mesh == null && _benchLoads.TryGetValue(pc.Id, out var loading) && loading.Pointer == bench.Pointer &&
@@ -334,6 +343,7 @@ internal sealed class NativeObjectState : IWorldState
             // Drop then pickup can arrive in one network poll. Ownership moves immediately; the earlier load
             // remains only an obsolete attempt, which is suppressed before it can place its mesh.
             _benchLoads.Remove(pc.Id); _settleDrops.Remove(pc.Id); bench.m_caseLoadingToSlot = false;
+            RemovePickupUsb(held, removedUsb);
             UnbindMesh(pc.Id); HoldRemote(pc, carrier, held);
             return;
         }
@@ -347,6 +357,9 @@ internal sealed class NativeObjectState : IWorldState
         try { if (mesh.IsOutlined) NativeProjection.Run(() => mesh.SetOutline(false, 0, true, false)); }
         catch (Exception e) { Plugin.Logger.LogWarning($"[objects] PC {pc.Id}: its outline could not be cleared before the pickup: {e.Message}"); }
         NativeProjection.Run(() => bench.DestroyComputer());
+        // Object.Destroy completes at frame end. Strip only the roots this transfer explicitly retired;
+        // any other native/model difference must still fail, including unexpected USB devices.
+        RemovePickupUsb(record, removedUsb);
         UnbindMesh(pc.Id);
         HoldRemote(pc, carrier, record);
     }

@@ -5,12 +5,16 @@ internal sealed class FakeTransferNative : IPcTransferNative
 {
     public Func<TransferCommand, IReadOnlyList<PcMove>, string?> Host = (_, _) => null;
     public readonly List<string> Calls = new();
+    public readonly List<string[]> RemovedUsb = new();
+    public Func<PcFact, PcFact, PcBuildProfile?> Profile = (_, after) => after.BuildProfile;
+    public PcBuildProfile? PickupProfile(PcFact before, PcFact after) => Profile(before, after);
     public string? CheckHost(in CommandContext ctx, TransferCommand c, IReadOnlyList<PcMove> moves) => Host(c, moves);
     /// <summary>Injected projection failure: the native move throws, as a failed native load would.</summary>
     public Func<TransferCommand, bool> Fail = _ => false;
     public void Moved(in MutationContext ctx, TransferCommand c, IReadOnlyList<PcMove> moves)
     {
         if (Fail(c)) throw new InvalidDataException("injected projection failure");
+        RemovedUsb.Add(moves.SelectMany(m => m.RemovedUsb).ToArray());
         Calls.Add($"{c.Action} {string.Join(",", moves.Select(m => $"{m.Pc.Value}:{Where(m.From)}>{Where(m.To)}"))} local={ctx.FromLocalPlayer}");
     }
     private static string Where(PcLocation l) => l.Place switch { PcPlace.Bench => l.Key, PcPlace.Storage => "S", _ => l.Actor.ToString() };
@@ -20,6 +24,7 @@ internal static class PcTransferTests
 {
     public static void Run(Checker t)
     {
+        UsbPickup(t);
         t.Section("PC transfers: atomic pickup, drop/swap, store, retrieve and departure recovery");
         var l = new FakeLink(); var ho = new ObjectWorld(); var go = new ObjectWorld();
         var ha = new ActivityWorld(ho); var ga = new ActivityWorld(go);
@@ -170,4 +175,66 @@ internal static class PcTransferTests
         Send(l.Host, PcTransfers.Pickup(E(ha, ActorSlot.Host), new(8), A));
         t.Check(l.Divergences.Count == before + 1, "a transfer that no longer applies on the receiving peer diverges explicitly");
     }
+    private static void UsbPickup(Checker t)
+    {
+        t.Section("PC pickup: motherboard USB removal stays in the accepted transfer");
+        foreach (var actor in new[] { ActorSlot.Host, ActorSlot.Guest })
+        foreach (var swap in new[] { false, true })
+        {
+            var link = new FakeLink(); var host = new ObjectWorld(); var guest = new ObjectWorld();
+            var ha = new ActivityWorld(host); var ga = new ActivityWorld(guest);
+            var prior = new PcBuildProfile(new string('0', 64), Array.Empty<string>());
+            var after = new PcBuildProfile(new string('1', 64), Array.Empty<string>());
+            var hn = new FakeTransferNative { Profile = (_, _) => after }; var gn = new FakeTransferNative
+                { Profile = (_, _) => throw new InvalidOperationException("A guest must use the host's profile.") };
+            link.Host.RegisterState(host); link.Guest.RegisterState(guest);
+            link.Host.RegisterState(ha); link.Guest.RegisterState(ga);
+            link.Host.Register(CommandTypes.ActorActivity, ha); link.Guest.Register(CommandTypes.ActorActivity, ga);
+            link.Host.Register(CommandTypes.PcTransfer, new PcTransfers(host, ha, hn, true));
+            link.Guest.Register(CommandTypes.PcTransfer, new PcTransfers(guest, ga, gn, false));
+            link.Host.BeginGeneration("USB pickup");
+            var hp = PlayerId.New(); var gp = PlayerId.New();
+            var pc = new PcFact(new(4), new(InstanceOrigin.Baseline, hp, default), PcLocation.Bench("A"),
+                new[] { new PartFact(new(5), "case", "CasePartInstance"), new PartFact(new(6), "board", "MotherboardPartInstance"),
+                    new PartFact(new(7), "USBDrive", "USBDrivePartInstance"), new PartFact(new(8), "USBDrive", "USBDrivePartInstance"),
+                    new PartFact(new(9), "USBDrive", "USBDrivePartInstance"), new PartFact(new(10), "USBDrive", "USBDrivePartInstance") },
+                new[] { new PartLink("caseID", new(5)), new PartLink("motherboardID", new(6)),
+                    new PartLink("usbSlots[6]", new(7)), new PartLink("usbSlots[6].m_generatedCopy", new(8)),
+                    new PartLink("usbSlots[0]", new(9)), new PartLink("usbSlots[0].m_generatedCopy", new(10)) })
+                { BuildProfile = prior, Powered = true, Resources = new[] {
+                    new AssemblyResource(new(11), new(6), "Slot:rearUSB", "Slot", AssemblyResourceKind.Slot, new(7), false, 0, 0, Array.Empty<NetObjectId>()),
+                    new AssemblyResource(new(12), new(5), "Slot:frontUSB", "Slot", AssemblyResourceKind.Slot, new(9), false, 0, 0, Array.Empty<NetObjectId>()) } };
+            var other = new PcFact(new(13), pc.Provenance, PcLocation.Carried(actor, actor == ActorSlot.Host ? hp : gp),
+                new[] { new PartFact(new(14), "other case", "CasePartInstance") }, new[] { new PartLink("caseID", new(14)) });
+            host.Replace(Guid.NewGuid(), swap ? 15UL : 13UL, new[] { new LocationFact(new(1), "A"), new LocationFact(new(2), "B") },
+                swap ? new[] { pc, other } : new[] { pc }, new[] { new NetObjectId(3) });
+            void Send(WorldSync w, byte[] bytes, ushort type = CommandTypes.PcTransfer) { w.Submit(type, bytes, out _); link.Flush(); }
+            Send(link.Host, ActivityWorld.Presence(ActorSlot.Host, hp), CommandTypes.ActorActivity);
+            Send(link.Host, ActivityWorld.Presence(ActorSlot.Guest, gp), CommandTypes.ActorActivity); link.Join();
+            var sender = actor == ActorSlot.Host ? link.Host : link.Guest;
+            var activity = actor == ActorSlot.Host ? ha : ga;
+            var epoch = activity.Get(actor)!.Epoch;
+            Send(sender, swap ? PcTransfers.Drop(epoch, new(13), new(1), new(4)) : PcTransfers.Pickup(epoch, new(4), new(1)));
+            var carried = guest.Pcs.Single(p => p.Id.Value == 4);
+            var label = $"{actor} {(swap ? "swap" : "pickup")}";
+            t.Check(hn.RemovedUsb.Last().OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(new[] { "usbSlots[0]", "usbSlots[6]" }) && gn.RemovedUsb.Last().SequenceEqual(hn.RemovedUsb.Last()),
+                $"{label} gives both native adapters only the USB roots this transfer retired");
+            t.Check(carried.Links.All(x => !x.Path.StartsWith("usbSlots[6]", StringComparison.Ordinal)) &&
+                carried.Parts.All(x => x.Id.Value is not (7 or 8 or 9 or 10)) && guest.Retired.Contains(new(7)) && guest.Retired.Contains(new(8)) &&
+                carried.Links.All(x => x.Path != "usbSlots[0]") && guest.Retired.Contains(new(9)) && guest.Retired.Contains(new(10)) && carried.Parts.Count == 2,
+                $"{label} removes motherboard and case USB roots and generated copies; other parts survive");
+            t.Check(carried.Resources.Single(x => x.Id.Value == 11).Occupant.IsNone && carried.Resources.Single(x => x.Id.Value == 11).Version == 1 &&
+                carried.Resources.Single(x => x.Id.Value == 12).Occupant.IsNone && carried.Resources.Single(x => x.Id.Value == 12).Version == 1 && carried.BuildProfile?.Signature == after.Signature && !carried.Powered &&
+                host.ToBytes().SequenceEqual(guest.ToBytes()) && link.InStep && link.Divergences.Count == 0,
+                $"{label} publishes cleared slot/version, host profile and power-off atomically on both peers");
+            Send(sender, PcTransfers.Drop(epoch, new(4), new(2), default));
+            t.Check(guest.Pcs.Single(p => p.Id.Value == 4).Location == PcLocation.Bench("B") && guest.Pcs.Single(p => p.Id.Value == 4).Parts.Count == 2 &&
+                host.ToBytes().SequenceEqual(guest.ToBytes()) && link.Divergences.Count == 0,
+                $"{label} drop does not reintroduce removed USB identities");
+            link.Join();
+            t.Check(host.ToBytes().SequenceEqual(guest.ToBytes()) && guest.Retired.Contains(new(8)),
+                $"{label}/drop snapshot retains USB retirement and exact remaining identities");
+        }
+    }
+
 }

@@ -1,5 +1,7 @@
 # Free Build gameplay acceptance
 
+Career acceptance is in progress; see the [current sweep record](audit/phase-18.md#096099-guest-menu-return-and-visible-rejoin-18b). Career checklist rows stay open until their full cases pass.
+
 Two-game results for the supported Free Build gameplay scope. Each checked row has recorded evidence. The phase audits give the expected outcomes and the boundaries of each check.
 
 Current build **0.57**. All **90 applicable gameplay checks** have passed. One Delidding table case is inapplicable in game 1.17.02. The roadmap separately tracks Free Build presentation and release acceptance. [Roadmap](../plan.md)

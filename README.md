@@ -18,11 +18,11 @@ Build PCs together in **PC Building Simulator 2**. This unofficial co-op mod let
 | Joining | **LAN/direct IP** or optional **Steam invites** |
 | Epic Games invites | **Coming soon™** (planned) |
 | Free Build gameplay | **[90/90 applicable checks passed](docs/needs_testing.md)** at version 0.57 |
-| Automated checks | **[937 passed](docs/audit/phase-18.md#073-fixes-from-the-sixth-in-game-sweep-run-18b)** for version 0.73 |
-| Development version | **[0.73](Directory.Build.props)** |
+| Automated checks | **[963 passed](docs/audit/phase-18.md#096099-guest-menu-return-and-visible-rejoin-18b)** for version 0.99 |
+| Development version | **[0.99](Directory.Build.props)** |
 | Reference game | **1.17.02 · Windows x64** |
 
-Follow development in the [roadmap](plan.md).
+Development is active, and in-game testing is moving slowly as time allows. If you have a copy of the game and want to try a development build with a friend, we’d welcome your help. Pick a case from the [Career testing checklist](docs/career-testing.md) or share a bug you ran into. Include your game and mod versions, whether you were hosting or joining, how you connected, and what you did before it happened. [Join the Discord](https://discord.gg/fVJZtqKYrc) · [Report an issue on GitHub](https://github.com/m12labs/PCBS2-Coop/issues) · [Follow the roadmap](plan.md)
 
 ## What's synced?
 
@@ -36,7 +36,7 @@ Free Build highlights below; see the **[full sync tracker](docs/sync-progress.md
 | Workshop | Decorator, wallpapers and PC imports |
 | Sessions and players | Late join, Rejoin, saves, backups, animated avatars with solid player colours, chat and `/sync` |
 
-**Career is in development; its in-game acceptance sweep is still in progress.** The source includes hosting, saves, shared progression and inventory, shop carts, checkout and part sales, deliveries and packages, PC Bay, and jobs with a shared inbox. The first virus job's payment and returned-PC removal passed on two local games; broader settlement and End Day cases remain open. Career disconnects now return to a usable menu, with the visible Rejoin flow tested on two local games. [Career checklist](docs/career-testing.md)
+**Career is experimental.** The source includes hosting, saves, shared progression and inventory, shopping, deliveries, PC Bay and jobs with a shared inbox. Two local game instances verified a single payout for the first virus job, removal of the returned PC, a save restored after restarting, and the guest’s return via the visible **Rejoin** button. Showcase jobs, End Day and multi-day sessions across two machines still need testing. [Career checklist](docs/career-testing.md)
 
 ## Installation
 
@@ -93,7 +93,7 @@ To remove the loader again, run `.\scripts\Uninstall-Loader.ps1`. It restores or
 Launch PCBS2 through Epic Games Launcher, then open `<GameDir>\BepInEx\LogOutput.log` and look for:
 
 ```text
-[Info   :PCBS2 Coop] PCBS2 Coop 0.73 loaded.
+[Info   :PCBS2 Coop] PCBS2 Coop 0.99 loaded.
 ```
 
 The main menu also gains a **Co-op** entry above Options, and a GitHub icon with the mod version in the bottom row.
@@ -113,7 +113,7 @@ LAN/direct-IP joining works without Steam. Dependency and App ID notes are in [t
 
 The guest can join at any time while the host is in the workshop, and can leave and rejoin. For LAN, `127.0.0.1` only reaches the same PC; allow the game through Windows Firewall on your private network if prompted, or forward the UDP port for direct-IP play outside your LAN.
 
-**Saves.** Free Build worlds use `<GameDir>\Saves\Coop`; Career worlds use `<GameDir>\Saves\Coop\Career`. Each native save needs its matching `.coop` sidecar. The 0.73 development build reads co-op pairs written by versions 0.16 through 0.73; for an older save, start a fresh co-op world.
+**Saves.** Free Build worlds use `<GameDir>\Saves\Coop` and Career worlds use `<GameDir>\Saves\Coop\Career`. Each native save needs its matching `.coop` sidecar. The current build supports pairs written by 0.16 through 0.97 and by 0.99.
 
 The host saves on an interval (Co-op Options, default 5 minutes), on Exit and from the Save screen; the game's own autosaves are skipped in co-op. If a save is interrupted, Continue restores a readable backup or selects the newest readable save, with a notice. The guest uses a temporary folder and keeps the host's latest save in that mode's `Joined` subfolder. Guests can't save, load or reset the world. Solo saves stay separate.
 

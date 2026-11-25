@@ -4,7 +4,12 @@ using PCBS2Coop.Network;
 internal sealed class FakeDayNative : IDayNative
 {
     public readonly List<string> Calls = new();
-    public void ReadyChanged(in MutationContext ctx, int day, bool byChange) => Calls.Add($"ready {day} change={byChange} local={ctx.FromLocalPlayer}");
+    public readonly List<int?> Days = new();
+    public void ReadyChanged(in MutationContext ctx, int? day, bool byChange)
+    {
+        Days.Add(day);
+        Calls.Add($"ready {day ?? 0} change={byChange} local={ctx.FromLocalPlayer}");
+    }
 }
 
 /// <summary>Phase 17d: the day ends only when both players are ready.</summary>
@@ -99,7 +104,7 @@ internal static class DayTests
         Send(l.Guest, DayWorld.Ready(G(), 5));
         busy = null;
         Send(l.Guest, DayWorld.Ready(G(), 4));
-        Send(l.Guest, DayWorld.Ready(G(), 0));
+        Send(l.Guest, DayWorld.Ready(G(), -1));
         t.Check(l.GuestRejected.Count == before + 3 && l.GuestRejected[^3].Text.Contains("carrying") && l.GuestRejected[^2].Text.Contains("another day") &&
                 l.GuestRejected[^1].Text.Contains("Invalid day"),
             "the host's game refuses a ready mark while the client is busy, for another day, or for no day");
@@ -117,6 +122,21 @@ internal static class DayTests
         Send(l.Host, ActivityWorld.Presence(ActorSlot.Guest, PlayerId.New()), CommandTypes.ActorActivity);
         Send(l.Guest, DayWorld.Ready(oldEpoch, 5));
         t.Check(l.GuestRejected.Last().Text.Contains("presence"), "a ready mark from an earlier presence is refused");
+
+        // The first in-game Career sweep reports Calendar.GetToday() == 0. Zero is a real day, not an absent mark.
+        hostDay = 0;
+        t.Check(!hd.GuestReady(0) && !gd.GuestReady(0), "the first Career day starts without a ready mark");
+        Send(l.Guest, DayWorld.Ready(G(), 0));
+        t.Check(hd.GuestReady(0) && gd.GuestReady(0) && hn.Days.Last() == 0 && gn.Days.Last() == 0 && l.InStep, "the client can be ready on Career day zero");
+        s.Reset(); hd.Write(s); copy.Read(new NetDataReader(s.CopyData()));
+        t.Check(copy.GuestReady(0), "a ready mark for day zero survives the snapshot");
+        Send(l.Host, ActivityWorld.Presence(ActorSlot.Guest, default), CommandTypes.ActorActivity);
+        t.Check(!hd.GuestReady(0) && !gd.GuestReady(0) && hn.Days.Last() == null && gn.Days.Last() == null, "departure clears a day-zero ready mark on both peers");
+        var legacy = new NetDataWriter(); legacy.Put(true); legacy.Put(0);
+        copy.Read(new NetDataReader(legacy.CopyData()));
+        t.Check(copy.Bound && !copy.HasReady && !copy.GuestReady(0), "an older snapshot's zero still means no ready mark");
+        legacy.Reset(); legacy.Put(true); legacy.Put(5); copy.Read(new NetDataReader(legacy.CopyData()));
+        t.Check(copy.GuestReady(5), "an older snapshot's positive ready mark still loads");
         copy.Reset();
         t.Check(!copy.Bound && copy.ReadyDay == 0, "a new world generation starts unbound and not ready");
 

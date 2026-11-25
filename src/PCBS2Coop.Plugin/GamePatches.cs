@@ -89,6 +89,7 @@ internal static class GamePatches
             cables.PatchAll(typeof(NativeComponentEdits.SplitterCableRoute));
             cables.PatchAll(typeof(NativeComponentEdits.AdapterSlotsGuard));
             cables.PatchAll(typeof(NativeComponentEdits.PowerButtonIntercept));
+            cables.PatchAll(typeof(NativeComponentEdits.RestorePowerPermission));
             cables.PatchAll(typeof(NativeComponentEdits.BenchPowerOnIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.BenchPowerToggleIntercept));
             cables.PatchAll(typeof(NativeComponentEdits.WalkingMonitorPowerIntercept));

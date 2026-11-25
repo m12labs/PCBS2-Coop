@@ -498,6 +498,17 @@ internal sealed partial class NativeComponentEdits : IEditNative
                 // From the catalog, the game installs a copy and the item stays; from the inventory, the item itself.
                 else part = fromInventory || career ? match : PartVariants.Copy(match);
             }
+            // The ordinary USB tool is reusable: native installation copies its inventory template, so the
+            // installed instance has no consumed owned-item ID and FromInventory is false. Copy an owned plain
+            // tool here too; cloned-OS USB devices and every consumable still require their exact source above.
+            if (part == null && career && item == 0 && !fromInventory && variant == "" && edit.Part == "USBDrive")
+            {
+                var inventory = CareerStatus.Get()?.GetInventory();
+                var tool = inventory?.ToArray().FirstOrDefault(p => p != null && p.GetPartId() == "USBDrive" &&
+                    p.GetPart()?.m_type == PartDesc.Type.USB_DRIVE && p.TryCast<USBDrivePartInstance>()?.IsCloneUsbDrive != true &&
+                    (_coop.Career?.IdOf(p) ?? 0) != 0);
+                if (tool != null) part = PartVariants.Copy(tool);
+            }
             // Career has no catalog: a part that isn't owned here is never made up (the PC is repaired from the host instead).
             if (part == null && career) throw new InvalidDataException($"this game owns no {edit.Part}{(variant == "" ? "" : $" ({variant})")} to install");
             part ??= PartInstance.NewPartInstance(edit.Part, 0, null) ?? throw new InvalidDataException($"part {edit.Part} is unknown");

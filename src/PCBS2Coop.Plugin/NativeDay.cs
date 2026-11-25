@@ -121,20 +121,20 @@ internal sealed class NativeDay : IDayNative
 
     // ---------------- IDayNative ----------------
 
-    public void ReadyChanged(in MutationContext ctx, int day, bool byChange)
+    public void ReadyChanged(in MutationContext ctx, int? day, bool byChange)
     {
         if (_world.Local == ActorSlot.Host)
         {
-            if (day != 0)
+            if (day.HasValue)
             {
                 _coop.AddChat("Client is ready to end the day.");
                 _coop.Notice("Client is ready to end the day. Press End Day to end it.");
             }
             else if (byChange) _coop.AddChat("Client started something and is no longer ready to end the day.");
-            Plugin.Logger.LogInfo($"[day] the client's ready mark is now {(day == 0 ? "off" : "day " + day)}.");
+            Plugin.Logger.LogInfo($"[day] the client's ready mark is now {(day.HasValue ? "day " + day : "off")}.");
             return;
         }
-        if (day != 0)
+        if (day.HasValue)
         {
             if (ctx.FromLocalPlayer && _pending == ctx.Op) _pending = null;
             _coop.Notice("You're ready to end the day. The host ends it.");

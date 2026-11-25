@@ -188,6 +188,19 @@ internal sealed class NativePcTransfers : IPcTransferNative
         }
     }
 
+    public PcBuildProfile PickupProfile(PcFact before, PcFact after)
+    {
+        var bench = Objects.FindBench(before.Id) ?? throw new InvalidDataException("USB pickup bench is missing.");
+        var mesh = bench.GetCaseInSlot() ?? throw new InvalidDataException("USB pickup case is missing.");
+        // Clone only: predicting the accepted record must not remove a device or grant inventory in the live game.
+        var source = Objects.RecordFor(before.Id) ?? throw new InvalidDataException("USB pickup record is missing.");
+        NativeObjectState.CheckParts(before, source);
+        var record = NativePcCodec.Read(NativePcCodec.Write(source));
+        NativeObjectState.RemovePickupUsb(record, PickupUsb.Roots(before));
+        NativeObjectState.CheckParts(after, record);
+        return NativeAssembly.CaptureProfile(after, mesh, record);
+    }
+
     public void Moved(in MutationContext ctx, TransferCommand c, IReadOnlyList<PcMove> moves)
     {
         var what = string.Join(", ", moves.Select(m => $"{m.Pc} {m.From.Place}→{m.To.Place}"));
@@ -195,6 +208,9 @@ internal sealed class NativePcTransfers : IPcTransferNative
         {
             if (ctx.FromLocalPlayer && c.Action != TransferAction.Recover) ProjectHere(c, moves, LocalRequest(ctx));
             else foreach (var m in moves) ProjectRemote(m);
+            // Local pickup keeps the same case mesh, but OnPickup can destroy USB occupants at frame end.
+            // A binding from the bench must not certify those old component pointers after the move.
+            foreach (var move in moves.Where(m => m.From.Place == PcPlace.Bench)) Objects.Assembly.Forget(move.Pc);
             Plugin.Logger.LogInfo($"[objects] {c.Action} by {ctx.Op}: {what}" + (ctx.FromLocalPlayer && c.Action != TransferAction.Recover ? " (here)." : " (projected)."));
         }
         catch (Exception e)
@@ -249,7 +265,7 @@ internal sealed class NativePcTransfers : IPcTransferNative
         switch ((m.From.Place, m.To.Place))
         {
             case (PcPlace.Bench, PcPlace.Carrier):
-                Objects.RemotePickup(pc, Objects.BenchAt(m.From.Key) ?? throw new InvalidDataException("bench missing"), m.To.Actor); break;
+                Objects.RemotePickup(pc, Objects.BenchAt(m.From.Key) ?? throw new InvalidDataException("bench missing"), m.To.Actor, m.RemovedUsb); break;
             case (PcPlace.Storage, PcPlace.Carrier): Objects.RemoteRetrieve(pc, m.To.Actor); break;
             case (PcPlace.Carrier, PcPlace.Bench):
                 Objects.RemoteDrop(pc, Objects.BenchAt(m.To.Key) ?? throw new InvalidDataException("bench missing")); break;

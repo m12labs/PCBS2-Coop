@@ -226,7 +226,14 @@ internal sealed class NativeAssembly : IAssemblyNative
     /// that persisted result as its reference, so close those clips synchronously before its repair capture.</summary>
     internal bool PrepareReload()
     {
-        MainThread(); if (!CanCapture) return false;
+        MainThread();
+        // A reload cancels uncommitted inventory previews. A tutorial can gate Exit until the install completes;
+        // waiting for the player to dismiss that preview would otherwise make /sync time out forever.
+        var coop = CoopController.Instance;
+        if (HasPreview && GameController.Get()?.GetCurrentState()?.TryCast<WorkingOnComputerState>() is { } work &&
+            coop?.Edits?.Busy != true && coop?.Panels?.Busy != true && coop?.Replays.Busy != true)
+            NativeProjection.Run(work.ClearPlaceholders);
+        if (!CanCapture) return false;
         var pins = new Dictionary<long, Pin>();
         foreach (var pc in _objects.Model.Pcs)
             if (_objects.Projections.TryGet(pc.Id, out var mesh) && mesh != null)

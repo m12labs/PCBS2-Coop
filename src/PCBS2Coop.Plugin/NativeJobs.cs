@@ -36,7 +36,7 @@ namespace PCBS2Coop;
 internal sealed partial class NativeJobs : IJobNative
 {
     private const float ObserveEvery = 1f, PendingTimeout = 20f, DayHold = 90f;
-    private const byte Layout = 1;
+    private const byte Layout = 2;
     private const int Slots = 22;
 
     private readonly CoopController _coop;
@@ -87,10 +87,13 @@ internal sealed partial class NativeJobs : IJobNative
     // ---------------- reading the game ----------------
 
     /// <summary>Every job the game holds (each list and every multi-job's parts), once each.</summary>
-    private static IEnumerable<(Job Job, int Master)> AllJobs(CareerStatus.State d)
+    private static IEnumerable<(Job Job, int Master)> AllJobs(CareerStatus.State d) => AllJobs(new[]
+        { d.m_jobs, d.m_todaysJobs, d.m_acceptedJobs, d.m_flaggedJobs, d.m_doneJobs, d.m_deletedJobs, d.m_rejectedJobs });
+
+    private static IEnumerable<(Job Job, int Master)> AllJobs(IEnumerable<JobList> lists)
     {
         var seen = new HashSet<int>();
-        foreach (var list in new[] { d.m_jobs, d.m_todaysJobs, d.m_acceptedJobs, d.m_flaggedJobs, d.m_doneJobs, d.m_deletedJobs, d.m_rejectedJobs })
+        foreach (var list in lists)
         {
             if (list == null) continue;
             foreach (var j in list)
@@ -211,6 +214,10 @@ internal sealed partial class NativeJobs : IJobNative
         return b.ToString();
     }
 
+    internal static string NativeDigest() => Data is { } data
+        ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(Fingerprint(data)))) : null;
+    internal static string NativeFingerprint() => Data is { } data ? Fingerprint(data) : null;
+
     /// <summary>The game's job, inbox and calendar lists as one object graph (shared references stay shared).</summary>
     private static Il2CppReferenceArray<Il2CppSystem.Object> Graph(CareerStatus.State d)
     {
@@ -266,6 +273,20 @@ internal sealed partial class NativeJobs : IJobNative
         var w = new NetDataWriter();
         w.Put(Layout); w.Put(d.m_nextJobId); w.Put(d.m_numberJobsCompleted); w.Put(d.m_quitJobs); w.Put(d.m_fiveStarJobs);
         w.Put(d.m_lastJobID != null); if (d.m_lastJobID != null) w.Put(d.m_lastJobID);
+        // Job.OnDeserialization recomputes this display cache from a detached PC graph. Preserve the host's
+        // actual value explicitly, including null/empty, instead of publishing that different local cache.
+        var statuses = AllJobs(d).Select(x => x.Job).ToArray();
+        if (statuses.Length > InboxUpdate.MaxJobs) throw new InvalidDataException("Too many native job statuses.");
+        w.Put(statuses.Length);
+        foreach (var job in statuses)
+        {
+            w.Put(job.m_id); w.Put(job.m_pcStatus != null);
+            if (job.m_pcStatus != null)
+            {
+                if (job.m_pcStatus.Length > 4096) throw new InvalidDataException("Native job status is too long.");
+                w.Put(job.m_pcStatus);
+            }
+        }
         // The compressed graph is the rest of the data.
         w.Put(output.ToArray());
         return w.CopyData();
@@ -274,9 +295,22 @@ internal sealed partial class NativeJobs : IJobNative
     private static void Unpack(CareerStatus.State d, byte[] data)
     {
         var r = new NetDataReader(data);
-        if (r.GetByte() != Layout) throw new InvalidDataException("the host's inbox has a layout this version doesn't read");
+        var layout = r.GetByte();
+        if (layout is not (1 or Layout)) throw new InvalidDataException("the host's inbox has a layout this version doesn't read");
         var next = r.GetInt(); var completed = r.GetInt(); var quit = r.GetInt(); var five = r.GetInt();
         var last = r.GetBool() ? r.GetString(1024) : null;
+        Dictionary<int, string> statuses = null;
+        if (layout >= 2)
+        {
+            var count = r.GetInt();
+            if (count is < 0 or > InboxUpdate.MaxJobs) throw new InvalidDataException("Invalid native job status count.");
+            statuses = new();
+            for (var i = 0; i < count; i++)
+            {
+                var id = r.GetInt(); var text = r.GetBool() ? r.GetString(4096) : null;
+                if (!statuses.TryAdd(id, text)) throw new InvalidDataException("Invalid native job status identity.");
+            }
+        }
         if (r.AvailableBytes is < 1 or > JobWorld.MaxBytes) throw new InvalidDataException("the host's inbox data is missing");
         var compressed = r.GetRemainingBytes();
         using var input = new DeflateStream(new MemoryStream(compressed), CompressionMode.Decompress);
@@ -293,6 +327,14 @@ internal sealed partial class NativeJobs : IJobNative
             if (graph.Length != Slots || stream.Position != stream.Length) throw new InvalidDataException("the host's inbox has an unexpected shape");
         }
         finally { stream.Dispose(); }
+        if (statuses != null)
+        {
+            // Validate and restore the detached graph before replacing any live list.
+            var jobs = AllJobs(Enumerable.Range(0, 7).Select(i => As<JobList>(graph[i], i))).Select(x => x.Job).ToArray();
+            if (jobs.Length != statuses.Count || jobs.Any(j => !statuses.ContainsKey(j.m_id)))
+                throw new InvalidDataException("The native job status map does not match its graph.");
+            foreach (var job in jobs) job.m_pcStatus = statuses[job.m_id];
+        }
         NativeProjection.Run(() =>
         {
             Take(d, graph);

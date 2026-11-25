@@ -37,6 +37,21 @@ internal sealed partial class Phase6Probe
                     if (bits.Length != 2) throw new ArgumentException("gesture-work:<pc>");
                     GestureWork(RequirePc(bits[1]));
                     return true;
+                case "gesture-pickup":
+                    if (bits.Length != 2) throw new ArgumentException("gesture-pickup:<pc>");
+                    GesturePickup(RequirePc(bits[1]));
+                    return true;
+                case "gesture-bench-actions":
+                    if (bits.Length != 2) throw new ArgumentException("gesture-bench-actions:<bench-index>");
+                    RequireGestureWorld();
+                    var bench = Object.FindObjectOfType<SaveLoadSystem>().benchSlots[int.Parse(bits[1])];
+                    Event("gesture-bench-actions", bench.GetInteractions().ToArray().Select(a => new
+                    { name = a.m_name, control = a.m_control.ToString(), callback = a.m_action != null }).ToArray());
+                    return true;
+                case "gesture-selected-actions":
+                case "gesture-selected":
+                    SelectedInteraction(bits);
+                    return true;
                 case "gesture-pin":
                     if (bits.Length != 3) throw new ArgumentException("gesture-pin:<pc>:<pin-resource-id>");
                     GesturePin(RequirePc(bits[1]), ParseResourceId(bits[2]));
@@ -236,6 +251,9 @@ internal sealed partial class Phase6Probe
             loops = record?.m_loops?.Count ?? 0,
             resources,
             powerConnectors,
+            workstationConnectors = bench.m_workStation?.m_connectors?.ToArray().Where(c => c != null).Select(c => new
+            { c.id, type = c.m_type.ToString(), connected = c.IsConnected(), remote = c.Remote()?.id,
+                path = GesturePath(c.transform, null) }).ToArray(),
             waterConnectors,
             plugs
         };
@@ -285,6 +303,36 @@ internal sealed partial class Phase6Probe
         var entered = GameController.Get()?.GetCurrentState()?.TryCast<WorkingOnComputerState>();
         Event("gesture-work", new { pc = pc.Id.Value, entered = entered?.m_case?.Pointer == mesh.Pointer, state = entered?.Pointer.ToInt64() });
         if (entered?.m_case?.Pointer != mesh.Pointer) throw new InvalidOperationException("The game's work interaction did not enter the selected PC.");
+    }
+
+    private void GesturePickup(PcFact pc)
+    {
+        var (bench, mesh) = NativeBench(pc);
+        if (GameController.Get()?.GetCurrentState()?.TryCast<WalkingState>() == null || !mesh.gameObject.activeInHierarchy)
+            throw new InvalidOperationException("Native bench pickup requires walking and an unpacked, visible PC.");
+        Event("gesture-direct-call", new { command = "gesture-pickup", pc = pc.Id.Value,
+            callback = "BenchSlot.OnPickupPC", pointerReachInputVerified = false });
+        bench.OnPickupPC();
+    }
+
+    private void SelectedInteraction(string[] bits)
+    {
+        RequireGestureWorld();
+        var selected = GameController.Get()?.GetCurrentState()?.TryCast<WalkingState>()?.GetSelected();
+        if (selected == null || !selected.IsActive()) throw new InvalidOperationException("Walking has no active native-selected target.");
+        var actions = selected.GetInteractions().ToArray();
+        if (bits[0] == "gesture-selected-actions")
+        {
+            Event("gesture-selected-actions", actions.Select(a => new { name = a.m_name, control = a.m_control.ToString() }).ToArray());
+            return;
+        }
+        if (bits.Length != 2 || bits[1] is not ("DEFAULT" or "ALTERNATIVE" or "POWER"))
+            throw new ArgumentException("gesture-selected:<DEFAULT|ALTERNATIVE|POWER>");
+        var action = actions.SingleOrDefault(a => a.m_control.ToString() == bits[1]);
+        if (action?.m_action == null) throw new InvalidOperationException("The selected target has no unique available action with that control.");
+        Event("gesture-direct-call", new { command = "gesture-selected", name = action.m_name, control = bits[1],
+            callback = "WalkingState.GetSelected().GetInteractions().m_action", nativeSelectionRetained = true, physicalButtonVerified = false });
+        action.m_action.Invoke();
     }
 
     private void GestureRemove(PcFact pc, NetObjectId resourceId)
@@ -378,6 +426,8 @@ internal sealed partial class Phase6Probe
     private void GestureInstall(PcFact pc, NetObjectId resourceId, string sku)
     {
         var coop = RequireGestureWorld();
+        if (NativeCareer.InCareer)
+            throw new InvalidOperationException("Select the owned part in the game's inventory, then use gesture-commit-preview in Career.");
         var (_, mesh) = NativeBench(pc);
         var work = RequireWork(pc, mesh);
         if (_gesturePreparingInstall)

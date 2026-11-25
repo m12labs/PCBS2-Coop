@@ -182,6 +182,7 @@ internal sealed partial class Phase6Probe
         }
         try
         {
+            harmony.PatchAll(typeof(ConsumeInputGuard));
             Hook(typeof(Bios), "ApplyRestart", nameof(BeforeApply), nameof(AfterApply));
             Hook(typeof(Bios), "ResetSettings", nameof(BeforeReset), nameof(AfterReset));
             // Which native step of a replayed install fails when this player isn't at that bench (owner, Nov 1).
@@ -463,6 +464,10 @@ internal sealed partial class Phase6Probe
             else if (command == "look-up" && LocalPlayer.Root is { } root && Camera.main is { } camera)
                 LookAt(root, camera.transform.position + Vector3.up);
             else if (command == "desktop-report") Event("desktop-report", DesktopReport());
+            else if (command == "career-report") CareerReport();
+            else if (command.StartsWith("action-hold:", StringComparison.Ordinal)) HoldAction(command[12..]);
+            else if (command.StartsWith("input-hold:", StringComparison.Ordinal)) HoldInput(command);
+            else if (command.StartsWith("work-view:", StringComparison.Ordinal)) WorkView(command);
             else if (command.StartsWith("hold-bios-key:", StringComparison.Ordinal)) HoldBiosKey(command[14..]);
             else if (command.StartsWith("screen-dump:", StringComparison.Ordinal)) Event("screen-dump", ScreenDump(command[12..]));
             else if (command.StartsWith("repair:", StringComparison.Ordinal) && uint.TryParse(command[7..], out var repairPc))
@@ -660,8 +665,11 @@ internal sealed partial class Phase6Probe
         Component target = bits[1] switch
         {
             "bench" => Object.FindObjectOfType<SaveLoadSystem>().benchSlots[index],
+            "door" => Object.FindObjectsOfType<WorkshopDoor>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             "cupboard" => Object.FindObjectsOfType<Cupboard>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             "peripheral" => Object.FindObjectsOfType<PeripheralSlot>(true).OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
+            "note" => Object.FindObjectsOfType<InteractableNote>().OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
+            "delivery" => Object.FindObjectsOfType<DeliveryBox>().OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             "light-switch" => Object.FindObjectsOfType<LightSwitch>().OrderBy(x => DesktopPath(x.transform, null)).ElementAt(index),
             "room-wheel" when index <= 1 => Object.FindObjectsOfType<AddressableFlag>().Single(flag =>
                 flag.m_decorationType == DecorationType.COLOURWHEEL && flag.m_colourWheel != null &&
@@ -673,7 +681,10 @@ internal sealed partial class Phase6Probe
         point.y += offset;
         var reset = (target as BenchSlot)?.PlayerResetPosition;
         var pos = reset != null ? reset.transform.position : point + target.transform.forward * (roomWheel && index == 1 ? -1.3f : 1.3f);
-        pos.y = root.position.y;
+        // A resumed diagnostic save can retain the work state's hidden player height. A bench's native reset
+        // point is the reference when placing a walking test player; keep work/monitor state placement alone.
+        pos.y = reset != null && GameController.Get()?.GetCurrentState()?.TryCast<WalkingState>() != null
+            ? reset.transform.position.y : root.position.y;
         var cc = LocalPlayer.Controller;
         var wasEnabled = cc != null && cc.enabled;
         if (wasEnabled) cc.enabled = false;

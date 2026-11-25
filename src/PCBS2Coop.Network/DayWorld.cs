@@ -6,9 +6,9 @@ namespace PCBS2Coop.Network;
 public interface IDayNative
 {
     /// <summary>The guest became ready to end <paramref name="day"/> (its End Day or Skip Work), or stopped being ready
-    /// (<paramref name="day"/> 0): it started a new change, or it left. <paramref name="byChange"/> says it started
+    /// (<paramref name="day"/> null): it started a new change, or it left. <paramref name="byChange"/> says it started
     /// something.</summary>
-    void ReadyChanged(in MutationContext ctx, int day, bool byChange);
+    void ReadyChanged(in MutationContext ctx, int? day, bool byChange);
 }
 
 /// <summary>
@@ -39,11 +39,12 @@ public sealed class DayWorld : ICommandHandler, IWorldState, IChangeObserver
     public Func<int, string?>? ReadyCheck { get; set; }
 
     public bool Bound { get; private set; }
-    /// <summary>The day the guest is ready to end, or 0.</summary>
+    /// <summary>The day the guest is ready to end, valid when <see cref="HasReady"/> is true. Career starts at zero.</summary>
     public int ReadyDay { get; private set; }
-    public bool GuestReady(int day) => Bound && day > 0 && ReadyDay == day;
+    public bool HasReady { get; private set; }
+    public bool GuestReady(int day) => Bound && HasReady && ReadyDay == day;
 
-    public void Reset() { Bound = false; ReadyDay = 0; }
+    public void Reset() { Bound = false; ReadyDay = 0; HasReady = false; }
 
     /// <summary>Host, when a Career generation starts.</summary>
     public void BindHost() { Reset(); Bound = true; }
@@ -59,8 +60,8 @@ public sealed class DayWorld : ICommandHandler, IWorldState, IChangeObserver
         if (!Bound) return CommandVerdict.Reject("The day is shared only in a co-op career.");
         if (ctx.Op.Actor != ActorSlot.Guest) return CommandVerdict.Reject("Only the client marks itself ready; the host ends the day.");
         if (_activity.Get(ActorSlot.Guest) is not { } guest || guest.Epoch != epoch) return CommandVerdict.Reject("Actor presence changed.");
-        if (day is < 1 or > MaxDay) return CommandVerdict.Reject("Invalid day.");
-        if (ReadyDay == day) return CommandVerdict.Reject("You're already ready to end the day.");
+        if (day is < 0 or > MaxDay) return CommandVerdict.Reject("Invalid day.");
+        if (HasReady && ReadyDay == day) return CommandVerdict.Reject("You're already ready to end the day.");
         return ReadyCheck?.Invoke(day) is { } why ? CommandVerdict.Reject(why) : CommandVerdict.Accept;
     }
 
@@ -68,6 +69,7 @@ public sealed class DayWorld : ICommandHandler, IWorldState, IChangeObserver
     {
         var (_, day) = Parse(payload);
         ReadyDay = day;
+        HasReady = true;
         _native.ReadyChanged(ctx, day, false);
     }
 
@@ -83,9 +85,10 @@ public sealed class DayWorld : ICommandHandler, IWorldState, IChangeObserver
 
     public void Applied(ushort type, in MutationContext ctx, byte[] payload)
     {
-        if (!Bound || ReadyDay == 0 || !StartsChange(type, ctx.Op.Actor, payload)) return;
+        if (!Bound || !HasReady || !StartsChange(type, ctx.Op.Actor, payload)) return;
         ReadyDay = 0;
-        _native.ReadyChanged(ctx, 0, !IsGuestPresence(type, payload));
+        HasReady = false;
+        _native.ReadyChanged(ctx, null, !IsGuestPresence(type, payload));
     }
 
     /// <summary>Whether this applied change takes the guest's ready mark back: the guest leaving or coming back, or the
@@ -126,7 +129,7 @@ public sealed class DayWorld : ICommandHandler, IWorldState, IChangeObserver
     public void Write(NetDataWriter w)
     {
         w.Put(Bound);
-        if (Bound) w.Put(ReadyDay);
+        if (Bound) { w.Put(ReadyDay); w.Put(HasReady); }
     }
 
     public void Read(NetDataReader r)
@@ -135,6 +138,9 @@ public sealed class DayWorld : ICommandHandler, IWorldState, IChangeObserver
         if (!r.GetBool()) return;
         var day = r.GetInt();
         if (day is < 0 or > MaxDay) throw new InvalidDataException("Invalid day state.");
-        ReadyDay = day; Bound = true;
+        // Through 0.76 zero meant no mark. The optional flag distinguishes ready on the first Career day.
+        var ready = r.AvailableBytes > 0 ? r.GetBool() : day > 0;
+        if (!ready && day != 0) throw new InvalidDataException("A missing ready mark has a day.");
+        ReadyDay = day; HasReady = ready; Bound = true;
     }
 }

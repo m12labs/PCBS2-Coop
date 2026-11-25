@@ -67,8 +67,29 @@ public static class CoopSavePair
     /// 0.69 saves a PC's power adapters after refreshing the case's adapter slots (the save format is unchanged).
     /// 0.72 leaves bracket screws and a fitted PCI lock's screws out of manifest checks; older manifests that list them still load.
     /// 0.73 holds a tutorial step until the other player's part change is shown (the save format is unchanged).
+    /// 0.74 adds opt-in Career test launch and observation (the save format is unchanged).
+    /// 0.75 uses a bundled plain player material and adds isolated held-action test input (the save format is unchanged).
+    /// 0.76 corrects isolated Career probe resume paths and closes a failed test setup (the save format is unchanged).
+    /// 0.77 adds an optional day-state ready-presence flag so Career day zero can be ready (older states still read).
+    /// 0.78 matches native case panels to the saved world before initial identity validation (the save format is unchanged).
+    /// 0.79 waits for a slow panel edit before following its tutorial step (the save format is unchanged).
+    /// 0.80 reports native install-camera screw positions and adds an opt-in test camera view (format unchanged).
+    /// 0.81 uses the game's compiled shader with the avatar's plain material defaults (format unchanged).
+    /// 0.82 adds bounded test input and native Career evidence for cursor-locked testing (format unchanged).
+    /// 0.83 includes walking's ConsumeDown seam in bounded test input (format unchanged).
+    /// 0.84 exposes native inbox fingerprint details to the isolated Career probe (format unchanged).
+    /// 0.85 orders native pickup USB removal in transfer confirmations (paired state layout unchanged).
+    /// 0.86 refreshes physical assembly bindings after a bench pickup (format unchanged).
+    /// 0.87 prefers the live carried record over a cleared bench cache during pickup rebind (format unchanged).
+    /// 0.88 replays the owned reusable USB tool and clears previews before reload (format unchanged).
+    /// 0.89 exposes native workstation cable choices to the isolated probe (format unchanged).
+    /// 0.90 includes case USB ports in pickup and preserves host job display caches; inbox graph layout 1 still reads.
+    /// 0.91 restores agreed power through later tutorial input gates (format unchanged).
+    /// 0.92 checks job PC removal after native destruction and records ledger evidence (format unchanged).
+    /// 0.93 blocks mirrored job/mail mutations before projection guards (format unchanged).
+    /// 0.94 exposes native door/day-screen acceptance controls in the isolated probe (format unchanged).
     /// The world state is the same across those builds.</summary>
-    private static readonly string[] SameFormat = { "0.72", "0.71", "0.70", "0.69", "0.68", "0.67", "0.66", "0.65", "0.64", "0.63", "0.62", "0.61", "0.60", "0.59", "0.58", "0.57", "0.56", "0.55", "0.54", "0.53", "0.52", "0.51", "0.50", "0.49", "0.48", "0.47", "0.46", "0.45", "0.44", "0.43", "0.42", "0.41", "0.40", "0.39", "0.38", "0.37", "0.36", "0.35", "0.34", "0.33", "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
+    private static readonly string[] SameFormat = { "0.97", "0.96", "0.95", "0.94", "0.93", "0.92", "0.91", "0.90", "0.89", "0.88", "0.87", "0.86", "0.85", "0.84", "0.83", "0.82", "0.81", "0.80", "0.79", "0.78", "0.77", "0.76", "0.75", "0.74", "0.73", "0.72", "0.71", "0.70", "0.69", "0.68", "0.67", "0.66", "0.65", "0.64", "0.63", "0.62", "0.61", "0.60", "0.59", "0.58", "0.57", "0.56", "0.55", "0.54", "0.53", "0.52", "0.51", "0.50", "0.49", "0.48", "0.47", "0.46", "0.45", "0.44", "0.43", "0.42", "0.41", "0.40", "0.39", "0.38", "0.37", "0.36", "0.35", "0.34", "0.33", "0.32", "0.31", "0.30", "0.29", "0.28", "0.27", "0.26", "0.25", "0.24", "0.23", "0.22", "0.21", "0.20", "0.19", "0.18", "0.17", "0.16" };
 
     /// <summary>Whether this build loads a co-op save written by mod version <paramref name="version"/>.</summary>
     public static bool Readable(string version) => version == ModVersion.Value || SameFormat.Contains(version);

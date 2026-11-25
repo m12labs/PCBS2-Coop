@@ -185,6 +185,8 @@ internal sealed class NativeCareer : ICareerNative
         return hash;
     }
 
+    internal static string NativeLedgerDigest() => Convert.ToHexString(LedgerHash(Data?.m_transactions?.Count ?? 0));
+
     // ---------------- binding ----------------
 
     private void Bind(PartInstance p, ulong id)

@@ -11,7 +11,7 @@ internal sealed partial class Phase6Probe
         if (!command.StartsWith("gesture-power:", StringComparison.Ordinal) &&
             !command.StartsWith("gesture-unplug:", StringComparison.Ordinal) &&
             !command.StartsWith("gesture-cable-start:", StringComparison.Ordinal) &&
-            !command.StartsWith("gesture-cable-end:", StringComparison.Ordinal)) return false;
+            !command.StartsWith("gesture-cable-end:", StringComparison.Ordinal) && command != "gesture-cable-cancel") return false;
         try
         {
             var bits = command.Split(':');
@@ -30,6 +30,13 @@ internal sealed partial class Phase6Probe
                 case "gesture-cable-start":
                     if (bits.Length != 3) throw new ArgumentException("gesture-cable-start:<pc>:<connector-id>");
                     GestureCableStart(RequirePc(bits[1]), bits[2]);
+                    break;
+                case "gesture-cable-cancel":
+                    RequireGestureWorld();
+                    if (GameController.Get()?.GetCurrentState()?.TryCast<ConnectCableState>() == null)
+                        throw new InvalidOperationException("No native cable choice is active.");
+                    GameController.Get().GoToPreviousState();
+                    Event("gesture-direct-call", new { command, callback = "GameController.GoToPreviousState", cancelsUncommittedCableChoice = true });
                     break;
                 case "gesture-cable-end":
                     if (bits.Length != 2) throw new ArgumentException("gesture-cable-end:<connector-id>");
@@ -108,9 +115,9 @@ internal sealed partial class Phase6Probe
 
     private void GestureCableStart(PcFact pc, string connectorId)
     {
-        var (_, mesh) = NativeBench(pc);
+        var (bench, mesh) = NativeBench(pc);
         var work = RequireWork(pc, mesh);
-        var connector = mesh.GetComponentsInChildren<PowerConnector>(true).FirstOrDefault(candidate => candidate != null && candidate.id == connectorId)
+        var connector = NativeComponentEdits.FindConnector(mesh, bench, connectorId)
             ?? throw new InvalidOperationException($"Connector '{connectorId}' is not present on this PC.");
         var closure = new WorkingOnComputerState.__c__DisplayClass70_0 { __4__this = work, connector = connector };
         Event("gesture-direct-call", new

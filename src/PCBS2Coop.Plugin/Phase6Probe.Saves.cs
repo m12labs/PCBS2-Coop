@@ -17,6 +17,16 @@ internal sealed partial class Phase6Probe
         if (coop == null) return false;
         switch (command)
         {
+            case "day-end":
+            {
+                RequireGestureWorld();
+                var day = Object.FindObjectsOfType<DaySummary>(true).SingleOrDefault(d =>
+                    d.m_endButton != null && d.m_endButton.gameObject.activeInHierarchy && d.m_endButton.interactable)
+                    ?? throw new InvalidOperationException("No unique visible native End Day button is enabled.");
+                day.OnEndDay();
+                Event("day-end", new { callback = "DaySummary.OnEndDay", visibleNativeButton = true, physicalClickVerified = false });
+                return true;
+            }
             case "summary-report": Event("summary-report", Summary(coop)); return true;
             case "pose": Event("pose", LocalPlayer.Find() is { } p ? new { x = p.X, y = p.Y, z = p.Z, yaw = p.Yaw } : null); return true;
             case "save": Event("save", coop.SaveWorld("probe")); return true;
@@ -24,6 +34,7 @@ internal sealed partial class Phase6Probe
             case "world-reset": Event("world-switch", new { reset = true, nativeMayRun = coop.OnFreeBuildReset() }); return true;
             case "saves-report": Event("saves-report", SavesReport()); return true;
             case "dialog-report": Event("dialog-report", DialogReport()); return true;
+            case "menu-report": Event("menu-report", MenuReport()); return true;
             case "exit":
             {
                 // As the pause menu's Exit button: the co-op exit hook runs first.
@@ -121,7 +132,7 @@ internal sealed partial class Phase6Probe
         Vector2 screen = default;
         if (apply != null && apply.GetComponent<RectTransform>() is { } rt)
         {
-            var corners = new Vector3[4];
+            var corners = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<Vector3>(4);
             rt.GetWorldCorners(corners);
             var canvas = apply.GetComponentInParent<Canvas>();
             var cam = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
@@ -135,4 +146,24 @@ internal sealed partial class Phase6Probe
             applyAt = new { x = Mathf.RoundToInt(screen.x), y = Mathf.RoundToInt(Screen.height - screen.y) }
         };
     }
+
+    private static object MenuReport() => new
+    {
+        scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name,
+        timeScale = Time.timeScale, delta = Time.deltaTime, unscaledDelta = Time.unscaledDeltaTime,
+        saveThread = SaveLoadSystem.WaitingOnThread(), probesUpdating = LightProbeManager.AnyProbesUpdating(),
+        loadingScreens = Object.FindObjectsOfType<NewLoadingScreen>(true).Select(s => new
+        {
+            path = DesktopPath(s.transform, null), active = s.gameObject.activeInHierarchy, loading = s.m_loading,
+            wipeCamera = s.wipeCam != null && s.wipeCam.enabled,
+            wipeImage = s.wipeImage != null && s.wipeImage.gameObject.activeInHierarchy,
+            wipeAlpha = s.wipeImage != null ? s.wipeImage.color.a : -1f,
+            fan = s.m_fan != null && s.m_fan.gameObject.activeInHierarchy && s.m_fan.enabled,
+            groups = s.GetComponentsInChildren<CanvasGroup>(true).Select(g => new
+            { path = DesktopPath(g.transform, null), active = g.gameObject.activeInHierarchy, g.alpha, g.interactable, g.blocksRaycasts }).ToArray()
+        }).ToArray(),
+        menus = Object.FindObjectsOfType<NewMainMenu>(true).Select(m => new
+        { path = DesktopPath(m.transform, null), active = m.gameObject.activeInHierarchy, loaded = m.m_loaded }).ToArray(),
+        dialog = DialogReport()
+    };
 }
